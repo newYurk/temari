@@ -592,15 +592,15 @@ export function Ball() {
 
       <group
         visible={mode === "studio" && !layerDone && !!startPin}
-        position={startPin ? [startPin[0] * 1.018, startPin[1] * 1.018, startPin[2] * 1.018] : [0, 1, 0]}
+        position={startPin ? [startPin[0] * 1.028, startPin[1] * 1.028, startPin[2] * 1.028] : [0, 1, 0]}
         quaternion={startQuat}
       >
-        <mesh>
-          <cylinderGeometry args={[0.007, 0.007, 0.072, 8]} />
+        <mesh position={[0, 0.016, 0]}>
+          <cylinderGeometry args={[0.0055, 0.0065, 0.036, 8]} />
           <meshStandardMaterial color="#9a958c" roughness={0.42} metalness={0.28} />
         </mesh>
-        <mesh position={[0, 0.044, 0]}>
-          <sphereGeometry args={[0.022, 12, 10]} />
+        <mesh position={[0, 0.038, 0]}>
+          <sphereGeometry args={[0.016, 12, 10]} />
           <meshStandardMaterial color="#ece8e1" roughness={0.36} metalness={0.14} />
         </mesh>
       </group>
@@ -612,8 +612,8 @@ export function Ball() {
         visible={mode === "studio"}
         count={0}
       >
-        <sphereGeometry args={[0.016, 10, 8]} />
-        <meshStandardMaterial color="#2a2420" roughness={0.55} metalness={0.08} />
+        <sphereGeometry args={[0.01, 10, 8]} />
+        <meshStandardMaterial color="#6a453c" roughness={0.52} metalness={0.08} />
       </instancedMesh>
 
       <mesh ref={snapGhost} visible={false}>

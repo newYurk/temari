@@ -11,12 +11,12 @@ export const CRAFT_META: Record<Craft, { label: string; hint: string }> = {
     hint: "тык — булавка-начало; крутите — нить от неё",
   },
   pin: {
-    label: "Метки",
-    hint: "булавки на сетке — откуда начнётся ряд кагари",
+    label: "Булавки",
+    hint: "втыкайте булавки, нить идёт между ними",
   },
   stitch: {
-    label: "Кагари",
-    hint: "ряды ёлочки: от полюса наружу или от края внутрь",
+    label: "Стежок",
+    hint: "стежок за стежком по сетке деления",
   },
 };
 
@@ -31,7 +31,7 @@ export const WRAP_STYLES: WrapStyle[] = ["around", "spiral"];
 export const WRAP_META: Record<WrapStyle, { label: string; hint: string }> = {
   around: {
     label: "Вокруг",
-    hint: "по большому кругу от булавки · тык — переставить начало",
+    hint: "по большому кругу, шар всё время чуть поворачивается",
   },
   spiral: {
     label: "Спираль",
@@ -55,6 +55,9 @@ const MIN_DOT = 0.9994;
 const MAX_LIVE = 220;
 const MAX_STRANDS = 48;
 const MAX_JOINS = 16;
+/** Almost a full lap, then change heading so wraps don't share a pole. */
+const LAP = Math.PI * 2 * 0.928;
+const TURN = 1.85;
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
@@ -120,6 +123,24 @@ function stampPole(ctx: CanvasRenderingContext2D, p: THREE.Vector3, hex: string)
   else ctx.fillRect(0, H - h, W, h);
 }
 
+function stampDot(
+  ctx: CanvasRenderingContext2D,
+  p: THREE.Vector3,
+  hex: string,
+  width: number,
+) {
+  const [u, v] = toUV(p);
+  ctx.fillStyle = hex;
+  ctx.globalAlpha = 0.82;
+  const r = Math.max(2.2, width * 0.52);
+  for (const shift of [-1, 0, 1]) {
+    ctx.beginPath();
+    ctx.arc((u + shift) * W, v * H, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  stampPole(ctx, p, hex);
+}
+
 function strokeSeg(
   ctx: CanvasRenderingContext2D,
   a: THREE.Vector3,
@@ -147,7 +168,7 @@ function strokeSeg(
       line(alpha, w, u0 + shift, v0, u1 + shift, v1);
     }
   };
-  paint(0.5, width * 1.4);
+  paint(0.45, width * 1.55);
   paint(0.96, width);
 }
 
@@ -166,8 +187,7 @@ function stroke(
     strokeSeg(ctx, _slerpA, _slerpB, hex, width);
     _slerpA.copy(_slerpB);
   }
-  stampPole(ctx, a, hex);
-  stampPole(ctx, b, hex);
+  stampDot(ctx, b, hex, width);
 }
 
 type Strand = { color: number; hex: string; points: THREE.Vector3[] };
@@ -234,9 +254,11 @@ export class WrapBuffer {
         hex,
         points: !far && this.last ? [this.last.clone(), p] : [p],
       });
+      stampDot(this.ctx, p, hex, this.strokeWidth * 1.35);
       this.last = p;
       this.live = [p.clone()];
       this.liveColor = hex;
+      this.texture.needsUpdate = true;
       return true;
     }
     if (this.last && this.last.dot(p) > MIN_DOT) return false;
@@ -268,9 +290,11 @@ export class WrapBuffer {
     }
     if (this.strands.length >= MAX_STRANDS) this.strands.shift();
     this.strands.push({ color, hex, points: [p] });
+    stampDot(this.ctx, p, hex, this.strokeWidth * 1.35);
     this.last = p;
     this.live = [p.clone()];
     this.liveColor = hex;
+    this.texture.needsUpdate = true;
   }
 
   undo() {
@@ -293,6 +317,8 @@ export class WrapBuffer {
         const b = strand.points[i];
         if (a && b) stroke(this.ctx, a, b, strand.hex, this.strokeWidth);
       }
+      const first = strand.points[0];
+      if (first) stampDot(this.ctx, first, strand.hex, this.strokeWidth * 1.35);
     }
     const last = this.strands[this.strands.length - 1];
     this.last = last?.points[last.points.length - 1] ?? null;
@@ -319,12 +345,13 @@ export function resetWrapBuffer() {
 
 export function strokePx(thickness: number) {
   const t = Math.max(0, Math.min(1, thickness));
-  return (H / 512) * (8.4 + t * 10);
+  return (H / 512) * (12.2 + t * 14);
 }
 
 /**
  * Two real ways to lay the base:
- *  - around (maki): full circumference through the start pin, plane slowly tilts
+ *  - around (maki): full-circumference wraps, heading changes each lap
+ *    so no two successive wraps are parallel and they don't share a pole
  *  - spiral (uzumaki): spherical spiral whose pole is the start pin
  * A new colour may continue from the last point, or begin at a moved start pin.
  */
@@ -342,13 +369,15 @@ export class MariWinder {
   private tmp = new THREE.Vector3();
   private q = new THREE.Quaternion();
   private spiralT = 0.02;
+  private arc = 0;
 
   reset(thickness: number) {
     const t = Math.max(0, Math.min(1, thickness));
     this.s = 0;
     this.wrapCount = 0;
-    this.sNeeded = Math.PI * 2 * (40 + (1 - t) * 48);
-    this.pitch = (strokePx(t) * Math.PI) / 768 * 0.82;
+    this.arc = 0;
+    this.sNeeded = Math.PI * 2 * (36 + (1 - t) * 40);
+    this.pitch = (strokePx(t) * Math.PI) / 768 * 0.72;
     this.axis.set(0.24, 0.95, 0.18).normalize();
     this.dir.crossVectors(this.axis, new THREE.Vector3(1, 0, 0));
     if (this.dir.lengthSq() < 0.05) this.dir.crossVectors(this.axis, new THREE.Vector3(0, 0, 1));
@@ -365,6 +394,7 @@ export class MariWinder {
   reorigin(point: THREE.Vector3, style: WrapStyle, from?: THREE.Vector3 | null) {
     this.style = style;
     this.tmp.copy(point).normalize();
+    this.arc = 0;
     if (style === "spiral") {
       this.pole.copy(this.tmp);
       this.framePole();
@@ -405,6 +435,10 @@ export class MariWinder {
     ).normalize();
   }
 
+  fill(buffer: WrapBuffer, color: number, hex: string) {
+    this.advance(buffer, this.sNeeded, color, hex, 0.12);
+  }
+
   advance(buffer: WrapBuffer, ds: number, color: number, hex: string, step = 0.085) {
     if (ds <= 0 || this.progress >= 1) return;
     let left = Math.min(ds, this.sNeeded - this.s);
@@ -425,21 +459,20 @@ export class MariWinder {
       } else {
         this.q.setFromAxisAngle(this.axis, h);
         this.dir.applyQuaternion(this.q);
-        this.q.setFromAxisAngle(this.dir, h * 0.148);
-        this.axis.applyQuaternion(this.q).normalize();
-        this.tmp.copy(this.axis).multiplyScalar(this.dir.dot(this.axis));
-        this.dir.sub(this.tmp).normalize();
+        this.arc += h;
+        if (this.arc >= LAP) {
+          this.arc -= LAP;
+          const kick = TURN + 0.28 * Math.sin(this.s * 0.37);
+          this.q.setFromAxisAngle(this.dir, kick);
+          this.axis.applyQuaternion(this.q).normalize();
+          this.tmp.copy(this.axis).multiplyScalar(this.dir.dot(this.axis));
+          this.dir.sub(this.tmp).normalize();
+        }
         buffer.addPoint(this.dir, color, hex, true);
       }
       this.s += h;
       left -= h;
       this.wrapCount = Math.floor(this.s / (Math.PI * 2));
     }
-  }
-
-  /** Fast complete wrap for the title / example mari. */
-  fill(buffer: WrapBuffer, color: number, hex: string) {
-    this.style = "around";
-    this.advance(buffer, this.sNeeded, color, hex, 0.14);
   }
 }
