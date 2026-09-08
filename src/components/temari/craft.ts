@@ -480,7 +480,7 @@ export class MariWinder {
   spin(dAngle: number, buffer: WrapBuffer, color: number, hex: string) {
     if (dAngle <= 1e-6) return;
     let left = dAngle;
-    const h0 = 0.05;
+    const h0 = 0.032;
     const band = (buffer.strokeWidth * Math.PI) / H;
     const nudge = Math.max(0.045, band * 0.92);
     while (left > 1e-6) {
