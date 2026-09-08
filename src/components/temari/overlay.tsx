@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Eye, LocateFixed, RotateCcw, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { CRAFT_META, WRAP_META, WRAP_STYLES, type Craft } from "./craft";
+import { CRAFT_META, type Craft } from "./craft";
 import { DIVISION_META, fillsMatch, type Division } from "./division";
 import { PALETTE_LIST, PALETTES } from "./palettes";
 import { MOTIF_LIST, MOTIF_META, KAGARI_DIR_META, type KagariDir } from "./patterns";
@@ -129,7 +129,6 @@ function Workbench() {
   const layerDone = useTemari((s) => s.layerDone);
   const kikuLayers = useTemari((s) => s.kikuLayers);
   const kagariDir = useTemari((s) => s.kagariDir);
-  const wrapStyle = useTemari((s) => s.wrapStyle);
   const startPin = useTemari((s) => s.startPin);
   const toTitle = useTemari((s) => s.toTitle);
   const setDivision = useTemari((s) => s.setDivision);
@@ -144,7 +143,6 @@ function Workbench() {
   const setKikuLayers = useTemari((s) => s.setKikuLayers);
   const setKagariDir = useTemari((s) => s.setKagariDir);
   const fillKiku = useTemari((s) => s.fillKiku);
-  const setWrapStyle = useTemari((s) => s.setWrapStyle);
   const setPeeking = useTemari((s) => s.setPeeking);
   const setPuzzle = useTemari((s) => s.setPuzzle);
   const nextPuzzle = useTemari((s) => s.nextPuzzle);
@@ -171,7 +169,7 @@ function Workbench() {
         ? wrapProgress >= 1
           ? "слой набран — завершите, чтобы вышивать"
           : startPin
-            ? WRAP_META[wrapStyle].hint
+            ? "по большой окружности · тык — переставить начало"
             : "тык — булавка-начало, крутите шар"
         : craft === "pin"
           ? pins.length >= 3
@@ -233,17 +231,6 @@ function Workbench() {
 
               {!layerDone ? (
                 <div className="mb-1.5 px-0.5">
-                  <div className="mb-1.5 flex gap-1 rounded-md bg-ink p-0.5">
-                    {WRAP_STYLES.map((id) => (
-                      <Seg
-                        key={id}
-                        active={wrapStyle === id}
-                        onClick={() => setWrapStyle(id)}
-                      >
-                        {WRAP_META[id].label}
-                      </Seg>
-                    ))}
-                  </div>
                   <div className="h-1 overflow-hidden rounded-full bg-ink">
                     <div
                       className="h-full bg-linen/55 transition-[width] duration-150"
