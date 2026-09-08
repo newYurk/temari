@@ -60,8 +60,8 @@ function TitleLayer() {
           Темари
         </h1>
         <p className="temari-rise temari-rise-3 mt-3 max-w-sm text-sm leading-relaxed text-stone">
-          Крутите шар — нить идёт вокруг или спиралью от булавки-начала.
-          Смена цвета — от того же места или от новой булавки. Ошибиться нельзя.
+          Сначала тонкая намотка. Потом кагари: ряды ёлочки от полюса, лепесток
+          растёт. Булавки — только метки, откуда начинается ряд.
         </p>
         <div className="temari-rise temari-rise-4 pointer-events-auto mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
           <Button
@@ -69,6 +69,9 @@ function TitleLayer() {
             onClick={enterStudio}
           >
             Начать
+          </Button>
+          <Button variant="ghost" onClick={() => useTemari.getState().showExample()}>
+            Пример кику
           </Button>
           <Button variant="ghost" onClick={() => enterKata()}>
             По образцу
@@ -143,6 +146,7 @@ function Workbench() {
   const setPeeking = useTemari((s) => s.setPeeking);
   const setPuzzle = useTemari((s) => s.setPuzzle);
   const nextPuzzle = useTemari((s) => s.nextPuzzle);
+  const showExample = useTemari((s) => s.showExample);
 
   const palette = PALETTES[paletteId];
   const puzzle = PUZZLES[puzzleIndex];
@@ -167,9 +171,13 @@ function Workbench() {
           : startPin
             ? WRAP_META[wrapStyle].hint
             : "тык — булавка-начало, крутите шар"
-        : craft === "pin" && pins.length >= 3
-          ? "три булавки — можно залить кику"
-          : CRAFT_META[craft].hint
+        : craft === "pin"
+          ? pins.length >= 3
+            ? "три метки — можно залить кику"
+            : "метки на узлах сетки, потом кагари"
+          : motif === "kiku"
+            ? MOTIF_META.kiku.hint
+            : CRAFT_META[craft].hint
       : puzzle
         ? puzzle.hint
         : "";
@@ -397,19 +405,16 @@ function Workbench() {
                 >
                   <Eye className="size-4" />
                 </Button>
-              ) : embroidering ? (
+              ) : (
                 <Button
                   variant="ghost"
                   className="min-h-11 px-2.5 text-xs"
-                  aria-label="Пример узора"
-                  onClick={() => {
-                    setCraft("stitch");
-                    setMotif("kiku");
-                  }}
+                  aria-label="Пример кику"
+                  onClick={showExample}
                 >
                   Пример
                 </Button>
-              ) : null}
+              )}
               <Button
                 variant="ghost"
                 className="size-11 px-0"

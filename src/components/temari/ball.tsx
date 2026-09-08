@@ -18,6 +18,7 @@ import { createTemariMaterial, syncTemariMaterial } from "./shader";
 import { createMotifGeometry, getYarnTexture } from "./stitches";
 import { useTemari } from "./store";
 import * as feel from "./feel";
+import { DEFAULT_KIND, threadMetalness, threadRoughness } from "./thread";
 
 const pointer = { x: 0, y: 0, down: false, dragged: false };
 const _right = new THREE.Vector3();
@@ -60,8 +61,8 @@ function ThreadLayer({
             <meshStandardMaterial
               map={yarn}
               color={colors[i]}
-              roughness={0.52}
-              metalness={0.05}
+              roughness={threadRoughness(DEFAULT_KIND.stitch)}
+              metalness={threadMetalness(DEFAULT_KIND.stitch)}
               transparent
               opacity={opacity}
               depthWrite={opacity >= 1}
@@ -158,6 +159,7 @@ export function Ball() {
   const wrapStyle = useTemari((s) => s.wrapStyle);
   const startPin = useTemari((s) => s.startPin);
   const originNonce = useTemari((s) => s.originNonce);
+  const wrapSeed = useTemari((s) => s.wrapSeed);
   const paint = useTemari((s) => s.paint);
   const sew = useTemari((s) => s.sew);
   const placePin = useTemari((s) => s.placePin);
@@ -240,6 +242,15 @@ export function Ball() {
     const st = useTemari.getState();
     mari.current.reset(st.threadWidth);
     mari.current.style = st.wrapStyle;
+    if (st.wrapSeed === "full") {
+      wrap.strokeWidth = strokePx(0.55);
+      const hex = PALETTES[st.paletteId].colors[0] ?? "#8f3d32";
+      mari.current.fill(wrap, 0, hex);
+      feel.resetTurns();
+      setWrapCount(wrap.strandCount);
+      setWrapProgress(1);
+      return;
+    }
     if (st.startPin) {
       mari.current.reorigin(
         new THREE.Vector3(st.startPin[0], st.startPin[1], st.startPin[2]),
@@ -248,7 +259,7 @@ export function Ball() {
     }
     feel.resetTurns();
     setWrapCount(0);
-  }, [setWrapCount, wrap, wrapResetNonce]);
+  }, [setWrapCount, setWrapProgress, wrap, wrapResetNonce, wrapSeed]);
 
   useEffect(() => {
     if (wrapUndoNonce === 0) return;

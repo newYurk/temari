@@ -11,12 +11,12 @@ export const CRAFT_META: Record<Craft, { label: string; hint: string }> = {
     hint: "тык — булавка-начало; крутите — нить от неё",
   },
   pin: {
-    label: "Булавки",
-    hint: "втыкайте булавки, нить идёт между ними",
+    label: "Метки",
+    hint: "булавки на сетке — откуда начнётся ряд кагари",
   },
   stitch: {
-    label: "Стежок",
-    hint: "стежок за стежком по сетке деления",
+    label: "Кагари",
+    hint: "ряды ёлочки: от полюса наружу или от края внутрь",
   },
 };
 
@@ -405,12 +405,12 @@ export class MariWinder {
     ).normalize();
   }
 
-  advance(buffer: WrapBuffer, ds: number, color: number, hex: string) {
+  advance(buffer: WrapBuffer, ds: number, color: number, hex: string, step = 0.085) {
     if (ds <= 0 || this.progress >= 1) return;
     let left = Math.min(ds, this.sNeeded - this.s);
-    const step = 0.085;
+    const h0 = Math.max(0.04, step);
     while (left > 1e-6) {
-      const h = Math.min(step, left);
+      const h = Math.min(h0, left);
       if (this.style === "spiral") {
         const turns = Math.PI / Math.max(0.02, this.pitch);
         this.spiralT += h / (Math.PI * turns);
@@ -435,5 +435,11 @@ export class MariWinder {
       left -= h;
       this.wrapCount = Math.floor(this.s / (Math.PI * 2));
     }
+  }
+
+  /** Fast complete wrap for the title / example mari. */
+  fill(buffer: WrapBuffer, color: number, hex: string) {
+    this.style = "around";
+    this.advance(buffer, this.sNeeded, color, hex, 0.14);
   }
 }
