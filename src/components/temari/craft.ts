@@ -8,7 +8,7 @@ export const CRAFT_LIST: Craft[] = ["wind", "pin", "stitch"];
 export const CRAFT_META: Record<Craft, { label: string; hint: string }> = {
   wind: {
     label: "Намотка",
-    hint: "катушка: один палец мотает, два — наклон",
+    hint: "меридианы: один палец мотает, два — поворот",
   },
   pin: {
     label: "Метки",
@@ -383,13 +383,17 @@ export class MariWinder {
   s = 0;
   sNeeded = 420;
   wrapCount = 0;
-  private axis = new THREE.Vector3(0.22, 0.96, 0.16);
-  private dir = new THREE.Vector3();
+  private axis = new THREE.Vector3(1, 0, 0);
+  private pole = new THREE.Vector3(0, 1, 0);
+  private dir = new THREE.Vector3(0, 0, 1);
   private tmp = new THREE.Vector3();
   private perp = new THREE.Vector3();
+  private east = new THREE.Vector3(1, 0, 0);
+  private north = new THREE.Vector3();
   private q = new THREE.Quaternion();
   private qTo = new THREE.Quaternion();
   private arc = 0;
+  private lambda = 0;
   private tilt = 0.18;
   private cover = 0;
   private sinceCover = 0;
@@ -401,17 +405,19 @@ export class MariWinder {
     this.s = 0;
     this.wrapCount = 0;
     this.arc = 0;
+    this.lambda = 0;
     this.cover = 0;
     this.sinceCover = 0;
-    this.locked = false;
     this.lastAimT = 0;
     this.sNeeded = TWO_PI * (52 + (1 - t) * 36);
     const ang = (strokePx(t) * Math.PI) / H;
     this.tilt = ang * 2.2 + 0.1;
-    this.axis.set(0.24, 0.95, 0.18).normalize();
-    this.dir.crossVectors(this.axis, new THREE.Vector3(1, 0, 0));
-    if (this.dir.lengthSq() < 0.05) this.dir.crossVectors(this.axis, new THREE.Vector3(0, 0, 1));
-    this.dir.normalize();
+    this.pole.set(0, 1, 0);
+    this.lambda = 0;
+    this.locked = true;
+    this.rebuildAxis(Math.max(0.032, ang * 0.5));
+    this.dir.set(0, 0, 1);
+    this.keepOnEquator();
   }
 
   get progress() {
@@ -426,13 +432,20 @@ export class MariWinder {
     return out.copy(this.axis);
   }
 
-  /** Test helper: set the plane at once. Hands never do this. */
+  /** Test helper: set the spin axis; poles are rebuilt perpendicular. */
   forceAxis(x: number, y: number, z: number) {
     this.tmp.set(x, y, z).normalize();
     if (this.tmp.lengthSq() < 0.2) return;
     this.q.setFromUnitVectors(this.axis, this.tmp);
     this.axis.copy(this.tmp);
+    this.pole.applyQuaternion(this.q);
     this.dir.applyQuaternion(this.q);
+    this.pole.addScaledVector(this.axis, -this.pole.dot(this.axis)).normalize();
+    if (this.pole.lengthSq() < 0.05) {
+      this.pole.crossVectors(this.axis, new THREE.Vector3(0, 1, 0));
+      if (this.pole.lengthSq() < 0.05) this.pole.crossVectors(this.axis, new THREE.Vector3(1, 0, 0));
+      this.pole.normalize();
+    }
     this.keepOnEquator();
     this.locked = true;
     this.lastAimT = performance.now();
@@ -458,17 +471,16 @@ export class MariWinder {
   }
 
   /**
-   * Turn the wrap plane toward the hands. Never snaps — the mari
-   * only rolls as fast as a ball that size can turn.
+   * Turn the meridian family. Pole, spin axis and yarn rotate together.
    */
   aim(spinAxis: THREE.Vector3) {
     this.tmp.copy(spinAxis).normalize();
     if (this.tmp.lengthSq() < 0.2) return;
-    if (this.tmp.dot(this.axis) < 0) this.tmp.negate();
+    if (this.tmp.dot(this.pole) < 0) this.tmp.negate();
     const now = performance.now();
     const dt = this.lastAimT ? Math.min(0.048, (now - this.lastAimT) / 1000) : 0.016;
     this.lastAimT = now;
-    this.qTo.setFromUnitVectors(this.axis, this.tmp);
+    this.qTo.setFromUnitVectors(this.pole, this.tmp);
     const turn = 2 * Math.acos(clamp(this.qTo.w, -1, 1));
     if (turn < 1e-4) {
       this.locked = true;
@@ -477,36 +489,65 @@ export class MariWinder {
     const maxTurn = this.locked ? 0.85 * dt : 2.2 * dt;
     const t = Math.min(1, maxTurn / turn);
     this.q.identity().slerp(this.qTo, t);
-    this.axis.applyQuaternion(this.q).normalize();
-    this.dir.applyQuaternion(this.q);
-    this.keepOnEquator();
+    this.pole.applyQuaternion(this.q).normalize();
     this.locked = true;
+    this.rebuildAxis(0.02);
   }
 
-  /** Yarn around the current equator. The plane precesses continuously
-   *  by about one thread per lap — no corner at the join. */
+  private rebuildAxis(miss: number) {
+    this.east.crossVectors(this.pole, new THREE.Vector3(1, 0, 0));
+    if (this.east.lengthSq() < 0.05) this.east.crossVectors(this.pole, new THREE.Vector3(0, 0, 1));
+    this.east.normalize();
+    this.north.crossVectors(this.east, this.pole).normalize();
+    const ca = Math.cos(miss);
+    const sa = Math.sin(miss);
+    const cl = Math.cos(this.lambda);
+    const sl = Math.sin(this.lambda);
+    this.axis
+      .copy(this.east)
+      .multiplyScalar(ca * cl)
+      .addScaledVector(this.north, ca * sl)
+      .addScaledVector(this.pole, sa)
+      .normalize();
+    this.keepOnEquator();
+  }
+
+  /** Next meridian: one thread-width at the equator. Planes miss
+   *  the pole by half a thread, so they never stack there.
+   *  After a full set, the pole turns 90° and the cap is covered. */
+  private nextMeridian(offset: number) {
+    this.lambda += offset;
+    if (this.lambda >= TWO_PI) {
+      this.lambda -= TWO_PI;
+      this.east.crossVectors(this.pole, new THREE.Vector3(1, 0, 0));
+      if (this.east.lengthSq() < 0.05) this.east.crossVectors(this.pole, new THREE.Vector3(0, 0, 1));
+      this.east.normalize();
+      this.q.setFromAxisAngle(this.east, Math.PI * 0.5);
+      this.pole.applyQuaternion(this.q).normalize();
+    }
+    this.rebuildAxis(offset * 0.5);
+  }
+
+  /** Yarn along the current meridian. After a full lap, offset by
+   *  thread width — solid wrap, poles do not stack. */
   spin(dAngle: number, buffer: WrapBuffer, color: number, hex: string) {
     if (dAngle <= 1e-6) return;
     let left = dAngle;
     const h0 = 0.032;
     const band = (buffer.strokeWidth * Math.PI) / H;
-    const nudge = Math.max(0.04, band * 0.9);
+    const offset = Math.max(0.032, band * 0.96);
     while (left > 1e-6) {
       const h = Math.min(h0, left);
       this.q.setFromAxisAngle(this.axis, h);
       this.dir.applyQuaternion(this.q);
-      this.perp.crossVectors(this.axis, this.dir);
-      if (this.perp.lengthSq() > 1e-8) {
-        this.perp.normalize();
-        this.q.setFromAxisAngle(this.perp, (nudge / TWO_PI) * h);
-        this.axis.applyQuaternion(this.q).normalize();
-        this.dir.applyQuaternion(this.q);
-        this.keepOnEquator();
+      this.arc += h;
+      if (this.arc >= TWO_PI) {
+        this.arc -= TWO_PI;
+        this.nextMeridian(offset);
       }
       buffer.addPoint(this.dir, color, hex, true);
       this.s += h;
       this.sinceCover += h;
-      this.arc += h;
       left -= h;
       this.wrapCount = Math.floor(this.s / TWO_PI);
     }
@@ -547,16 +588,8 @@ export class MariWinder {
       this.arc += h;
       if (this.arc >= TWO_PI) {
         this.arc -= TWO_PI;
-        this.perp.crossVectors(this.axis, this.dir);
-        if (this.perp.lengthSq() < 1e-8) this.perp.set(0, 1, 0);
-        this.perp.normalize();
-        const yaw = 0.85 + 0.55 * Math.sin(this.s * 0.11) + 0.4 * Math.sin(this.s * 0.031);
-        this.q.setFromAxisAngle(this.axis, yaw);
-        this.perp.applyQuaternion(this.q);
-        const tilt = this.tilt * (0.78 + 0.44 * Math.sin(this.s * 0.37));
-        this.q.setFromAxisAngle(this.perp, tilt);
-        this.axis.applyQuaternion(this.q).normalize();
-        this.keepOnEquator();
+        const band = (buffer.strokeWidth * Math.PI) / H;
+        this.nextMeridian(Math.max(0.032, band * 0.96));
         this.cover = buffer.sampleCoverage();
       }
       buffer.addPoint(this.dir, color, hex, true);

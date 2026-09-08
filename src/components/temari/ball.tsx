@@ -553,14 +553,18 @@ export function Ball() {
         const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
         mari.current.spin(rad, wrap, st.selectedColor, hex);
       },
-      dump: () => ({
-        progress: useTemari.getState().wrapProgress,
-        color: useTemari.getState().selectedColor,
-        pin: useTemari.getState().startPin,
-        livePts: wrap.live.length,
-        yarnPts: wrap.yarn().reduce((n, s) => n + s.points.length, 0),
-        ...wrap.snapshot(),
-      }),
+      dump: () => {
+        mari.current.copyAxis(_feed);
+        return {
+          progress: useTemari.getState().wrapProgress,
+          color: useTemari.getState().selectedColor,
+          pin: useTemari.getState().startPin,
+          livePts: wrap.live.length,
+          yarnPts: wrap.yarn().reduce((n, s) => n + s.points.length, 0),
+          axis: [_feed.x, _feed.y, _feed.z],
+          ...wrap.snapshot(),
+        };
+      },
     };
     (window as Window & { __temari?: typeof probe }).__temari = probe;
   }, [wrap]);
