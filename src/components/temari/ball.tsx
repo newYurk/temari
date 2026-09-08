@@ -30,6 +30,10 @@ const _feed = new THREE.Vector3();
 const _inv = new THREE.Quaternion();
 const _local = new THREE.Vector3();
 const _binormal = new THREE.Vector3();
+const _tPrev = new THREE.Vector3();
+const _axisT = new THREE.Vector3();
+const _left = new THREE.Vector3();
+const _rgt = new THREE.Vector3();
 const Y_UP = new THREE.Vector3(0, 1, 0);
 
 const DAMP = 0.46;
@@ -140,26 +144,40 @@ function LiveThread() {
       const start = pts.length - n;
       _col.set(strands[s]?.hex ?? "#8f3d32");
       const v0 = v;
+      const lift = 1.012 + (s - skip) * 0.00035;
       for (let i = 0; i < n; i++) {
         const p = pts[start + i];
         if (!p) continue;
-        const prev = pts[start + (i === 0 ? 0 : i - 1)] ?? p;
-        const next = pts[start + (i === n - 1 ? n - 1 : i + 1)] ?? p;
+        const prev = pts[start + Math.max(0, i - 1)] ?? p;
+        const next = pts[start + Math.min(n - 1, i + 1)] ?? p;
         _feed.copy(next).sub(prev);
+        if (_feed.lengthSq() < 1e-12) {
+          _local.copy(p).normalize();
+          _feed.crossVectors(_local, _binormal.lengthSq() > 0.5 ? _binormal : Y_UP);
+        }
+        _feed.normalize();
         _local.copy(p).normalize();
-        _right.crossVectors(_local, _feed);
-        if (_right.lengthSq() < 1e-10) _right.set(1, 0, 0).cross(_local);
-        _right.normalize();
-        if (i === 0) _binormal.copy(_right);
-        else if (_right.dot(_binormal) < 0) _right.negate();
-        _binormal.copy(_right);
-        const lift = 1.014 + s * 0.00015;
-        const px = p.x * lift;
-        const py = p.y * lift;
-        const pz = p.z * lift;
+        if (i === 0) {
+          _right.crossVectors(_feed, _local);
+          if (_right.lengthSq() < 1e-10) _right.set(0, 1, 0).cross(_feed);
+          _right.normalize();
+          _binormal.copy(_right);
+          _tPrev.copy(_feed);
+        } else {
+          _axisT.crossVectors(_tPrev, _feed);
+          if (_axisT.lengthSq() > 1e-12) {
+            const ang = Math.acos(Math.min(1, Math.max(-1, _tPrev.dot(_feed))));
+            _binormal.applyAxisAngle(_axisT.normalize(), ang);
+          }
+          _binormal.addScaledVector(_feed, -_binormal.dot(_feed)).normalize();
+          _right.copy(_binormal);
+          _tPrev.copy(_feed);
+        }
+        _left.copy(_local).addScaledVector(_right, half).normalize().multiplyScalar(lift);
+        _rgt.copy(_local).addScaledVector(_right, -half).normalize().multiplyScalar(lift);
         const vi = v / 2;
-        pos.setXYZ(vi * 2, px + _right.x * half, py + _right.y * half, pz + _right.z * half);
-        pos.setXYZ(vi * 2 + 1, px - _right.x * half, py - _right.y * half, pz - _right.z * half);
+        pos.setXYZ(vi * 2, _left.x, _left.y, _left.z);
+        pos.setXYZ(vi * 2 + 1, _rgt.x, _rgt.y, _rgt.z);
         nrm.setXYZ(vi * 2, _local.x, _local.y, _local.z);
         nrm.setXYZ(vi * 2 + 1, _local.x, _local.y, _local.z);
         col.setXYZ(vi * 2, _col.r, _col.g, _col.b);
@@ -535,7 +553,7 @@ export function Ball() {
       peeking: mode === "kata" && peeking,
       camera: camera.position,
       wrap: wrap.texture,
-      wrapOn: mode === "title" || layerDone,
+      wrapOn: mode === "title",
     });
     if (guidesMat.current) guidesMat.current.color.set(palette.thread);
     if (beadMat.current) beadMat.current.color.set(palette.thread);
