@@ -31,7 +31,7 @@ const _local = new THREE.Vector3();
 const Y_UP = new THREE.Vector3(0, 1, 0);
 
 const DAMP = 0.46;
-const LIVE_MAX = 360;
+const LIVE_MAX = 400;
 
 function ThreadLayer({
   stitches,
@@ -360,7 +360,8 @@ export function Ball() {
             _inv.copy(g.quaternion).invert();
             _local.copy(_axis).applyQuaternion(_inv).normalize();
             const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
-            mari.current.follow(_local, ang * 1.2, wrap, st.selectedColor, hex);
+            mari.current.aim(_local);
+            mari.current.spin(ang, wrap, st.selectedColor, hex);
           }
         }
       }
@@ -404,6 +405,15 @@ export function Ball() {
       setCraft: (c: "wind" | "pin" | "stitch") => useTemari.getState().setCraft(c),
       setColor: (i: number) => useTemari.getState().setColor(i),
       spin: (x: number, y: number, z: number) => omega.current.set(x, y, z),
+      aim: (x: number, y: number, z: number) => {
+        _feed.set(x, y, z);
+        mari.current.aim(_feed);
+      },
+      feed: (rad: number) => {
+        const st = useTemari.getState();
+        const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
+        mari.current.spin(rad, wrap, st.selectedColor, hex);
+      },
       dump: () => ({
         progress: useTemari.getState().wrapProgress,
         color: useTemari.getState().selectedColor,
@@ -433,9 +443,12 @@ export function Ball() {
     if (state.mode === "studio" && state.craft === "wind" && !state.layerDone) {
       if (!spinning.current && spd > 0.12 && g) {
         const hex = PALETTES[state.paletteId].colors[state.selectedColor] ?? "#8f3d32";
-        _inv.copy(g.quaternion).invert();
-        _local.copy(omega.current).normalize().applyQuaternion(_inv);
-        mari.current.follow(_local, spd * d * 1.2, wrap, state.selectedColor, hex);
+        if (!mari.current.hasPlane) {
+          _inv.copy(g.quaternion).invert();
+          _local.copy(omega.current).normalize().applyQuaternion(_inv);
+          mari.current.aim(_local);
+        }
+        mari.current.spin(spd * d, wrap, state.selectedColor, hex);
         feel.wrapTurn(mari.current.wrapCount);
       }
       const next = mari.current.progress;
