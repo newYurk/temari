@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { CRAFT_META, WRAP_META, WRAP_STYLES, type Craft } from "./craft";
 import { DIVISION_META, fillsMatch, type Division } from "./division";
 import { PALETTE_LIST, PALETTES } from "./palettes";
-import { MOTIF_LIST, MOTIF_META } from "./patterns";
+import { MOTIF_LIST, MOTIF_META, KAGARI_DIR_META, type KagariDir } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import { useTemari } from "./store";
 import { unlock } from "./feel";
@@ -60,8 +60,8 @@ function TitleLayer() {
           Темари
         </h1>
         <p className="temari-rise temari-rise-3 mt-3 max-w-sm text-sm leading-relaxed text-stone">
-          Сначала тонкая намотка. Потом кагари: ряды ёлочки от полюса, лепесток
-          растёт. Булавки — только метки, откуда начинается ряд.
+          Сначала тонкая намотка. Потом кагари: ряды ёлочки от полюса, или
+          фигура по меткам — от большого края внутрь. Булавки только метят углы.
         </p>
         <div className="temari-rise temari-rise-4 pointer-events-auto mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
           <Button
@@ -128,6 +128,7 @@ function Workbench() {
   const threadWidth = useTemari((s) => s.threadWidth);
   const layerDone = useTemari((s) => s.layerDone);
   const kikuLayers = useTemari((s) => s.kikuLayers);
+  const kagariDir = useTemari((s) => s.kagariDir);
   const wrapStyle = useTemari((s) => s.wrapStyle);
   const startPin = useTemari((s) => s.startPin);
   const toTitle = useTemari((s) => s.toTitle);
@@ -141,6 +142,7 @@ function Workbench() {
   const finishLayer = useTemari((s) => s.finishLayer);
   const setThreadWidth = useTemari((s) => s.setThreadWidth);
   const setKikuLayers = useTemari((s) => s.setKikuLayers);
+  const setKagariDir = useTemari((s) => s.setKagariDir);
   const fillKiku = useTemari((s) => s.fillKiku);
   const setWrapStyle = useTemari((s) => s.setWrapStyle);
   const setPeeking = useTemari((s) => s.setPeeking);
@@ -173,8 +175,8 @@ function Workbench() {
             : "тык — булавка-начало, крутите шар"
         : craft === "pin"
           ? pins.length >= 3
-            ? "три метки — можно залить кику"
-            : "метки на узлах сетки, потом кагари"
+            ? "три метки — залейте рядами внутрь или наружу"
+            : "тык на узел — угол фигуры (треугольник, кику…)"
           : motif === "kiku"
             ? MOTIF_META.kiku.hint
             : CRAFT_META[craft].hint
@@ -291,13 +293,25 @@ function Workbench() {
                     ))}
                   </div>
                   {craft === "pin" && pins.length >= 3 ? (
-                    <div className="mb-1.5 flex items-center gap-1">
+                    <div className="mb-1.5">
+                      <div className="mb-1.5 flex gap-1 rounded-md bg-ink p-0.5">
+                        {(["in", "out"] as KagariDir[]).map((id) => (
+                          <Seg
+                            key={id}
+                            active={kagariDir === id}
+                            onClick={() => setKagariDir(id)}
+                          >
+                            {KAGARI_DIR_META[id].label}
+                          </Seg>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={fillKiku}
                         className="min-h-11 flex-1 rounded-md bg-ink px-2 text-xs tracking-wide text-linen ring-1 ring-linen/10"
                       >
-                        Заполнить кику
+                        Залить рядами
                       </button>
                       <button
                         type="button"
@@ -318,6 +332,7 @@ function Workbench() {
                       >
                         +
                       </button>
+                      </div>
                     </div>
                   ) : null}
                   {craft === "stitch" ? (

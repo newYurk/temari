@@ -109,15 +109,18 @@ export function getYarnTexture() {
     yarn = new THREE.CanvasTexture(canvas);
     return yarn;
   }
-  ctx.fillStyle = "#f3ebe0";
+  ctx.fillStyle = "#f6efe4";
   ctx.fillRect(0, 0, 128, 24);
-  for (let i = 0; i < 18; i++) {
-    const y = 1 + i * 1.25;
-    ctx.strokeStyle = i % 3 === 0 ? "rgba(42,36,32,0.28)" : "rgba(255,255,255,0.35)";
-    ctx.lineWidth = i % 3 === 0 ? 1.1 : 0.7;
+  for (let s = 0; s < 6; s++) {
+    const y = 3 + s * 3.2;
+    ctx.strokeStyle = s % 2 === 0 ? "rgba(48,40,34,0.22)" : "rgba(255,252,246,0.45)";
+    ctx.lineWidth = 1.15;
     ctx.beginPath();
-    ctx.moveTo(0, y + 2);
-    ctx.lineTo(128, y - 2);
+    for (let x = 0; x <= 128; x += 4) {
+      const yy = y + Math.sin((x / 128) * Math.PI * 6 + s) * 1.1;
+      if (x === 0) ctx.moveTo(x, yy);
+      else ctx.lineTo(x, yy);
+    }
     ctx.stroke();
   }
   const fade = ctx.createLinearGradient(0, 0, 0, 24);

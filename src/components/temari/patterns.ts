@@ -13,14 +13,21 @@ export type Stitch =
   | { kind: "loop"; points: Vec3[]; color: number; lift?: number };
 
 export const MOTIF_META: Record<MotifId, { label: string; hint: string }> = {
-  none: { label: "Нет", hint: "стежок за стежком по сетке деления" },
-  kiku: { label: "Кику", hint: "увагакэ: ёлочка от полюса наружу" },
+  none: { label: "Ряд", hint: "стежок за стежком по сетке" },
+  kiku: { label: "Кику", hint: "ёлочка от полюса: лепесток растёт наружу" },
   hoshi: { label: "Хоси", hint: "звезда {n/k} на малом круге" },
   hishi: { label: "Хиси", hint: "вложенные многоугольники у полюсов" },
   obi: { label: "Оби", hint: "пояса — малые круги параллельно экватору" },
 };
 
 export const MOTIF_LIST: MotifId[] = ["none", "kiku", "hoshi", "hishi", "obi"];
+
+export type KagariDir = "out" | "in";
+
+export const KAGARI_DIR_META: Record<KagariDir, { label: string; hint: string }> = {
+  out: { label: "Наружу", hint: "от центра к краю — лепесток растёт" },
+  in: { label: "Внутрь", hint: "от большого края к центру — фигура густеет" },
+};
 
 export function isMotifId(value: unknown): value is MotifId {
   return (
@@ -124,8 +131,8 @@ export function hitKikuSlot(
   const { theta, phi } = polarAround(poles[pole], p);
   const n = petalCount(division);
   const spec = kikuSpec(division);
-  if (theta < spec.inner * 0.4) return null;
-  const ring = Math.floor((theta - spec.outer0 + spec.pitch * 0.55) / spec.pitch);
+  if (theta < spec.inner * 0.45) return null;
+  const ring = Math.floor((theta - spec.inner + spec.pitch * 0.35) / spec.pitch);
   if (ring < 0 || ring >= spec.rounds) return null;
   let sector = Math.floor((phi / (Math.PI * 2)) * n);
   if (sector >= n) sector = n - 1;
@@ -187,9 +194,9 @@ function starSkip(division: Division) {
 }
 
 function kikuSpec(division: Division) {
-  if (division === "simple") return { inner: 0.08, outer0: 0.22, pitch: 0.08, rounds: 8 };
-  if (division === "c8") return { inner: 0.1, outer0: 0.2, pitch: 0.068, rounds: 7 };
-  return { inner: 0.09, outer0: 0.18, pitch: 0.058, rounds: 6 };
+  if (division === "simple") return { inner: 0.1, chord: 0.1, pitch: 0.068, rounds: 9 };
+  if (division === "c8") return { inner: 0.09, chord: 0.086, pitch: 0.058, rounds: 7 };
+  return { inner: 0.09, chord: 0.08, pitch: 0.052, rounds: 6 };
 }
 
 function kikuColor(ring: number) {
@@ -199,24 +206,26 @@ function kikuColor(ring: number) {
 
 function kikuPetal(
   pole: Vec3,
-  spec: { inner: number; outer0: number; pitch: number; rounds: number },
+  spec: { inner: number; chord: number; pitch: number; rounds: number },
   ring: number,
   sector: number,
   n: number,
   color: number,
 ): Stitch[] {
-  const inner = spec.inner + ring * 0.01;
-  const outer = spec.outer0 + ring * spec.pitch;
+  const inner = spec.inner + ring * spec.pitch;
+  const outer = inner + spec.chord;
   const a = (2 * Math.PI * sector) / n;
   const b = (2 * Math.PI * (sector + 1)) / n;
-  const mid = (a + b) / 2;
-  const A = around(pole, inner, a);
-  const T = around(pole, outer, mid);
-  const C = around(pole, inner, b);
-  const lift = ring * 0.0024;
+  const lift = ring * 0.0022;
   return [
-    { kind: "arc", a: A, b: T, color, lift },
-    { kind: "arc", a: T, b: C, color, lift },
+    { kind: "arc", a: around(pole, inner, a), b: around(pole, outer, b), color, lift },
+    {
+      kind: "arc",
+      a: around(pole, outer, a),
+      b: around(pole, inner, b),
+      color,
+      lift: lift + 0.0012,
+    },
   ];
 }
 
@@ -337,21 +346,59 @@ export function generateMotif(division: Division, motif: MotifId): Stitch[] {
   return [];
 }
 
-function midPhi(a: number, b: number) {
-  let d = b - a;
-  if (d > Math.PI) d -= Math.PI * 2;
-  if (d < -Math.PI) d += Math.PI * 2;
-  let m = a + d / 2;
-  if (m < 0) m += Math.PI * 2;
-  if (m >= Math.PI * 2) m -= Math.PI * 2;
-  return m;
+function slerp3(a: Vec3, b: Vec3, t: number): Vec3 {
+  const d = Math.min(1, Math.max(-1, dot(a, b)));
+  const theta = Math.acos(d);
+  if (theta < 1e-4) return normalize(a);
+  const s = Math.sin(theta);
+  const w0 = Math.sin((1 - t) * theta) / s;
+  const w1 = Math.sin(t * theta) / s;
+  return normalize([
+    a[0] * w0 + b[0] * w1,
+    a[1] * w0 + b[1] * w1,
+    a[2] * w0 + b[2] * w1,
+  ]);
 }
 
-/** Chrysanthemum fill around the spherical centroid of 3+ pins. */
+/** Nested rows filling the polygon of 3+ pins. `in` = large to small (sakasa). */
+export function sakasaArcsFromPins(
+  pins: Vec3[],
+  layers: number,
+  color: number,
+  dir: KagariDir = "in",
+): { a: Vec3; b: Vec3; color: number }[] {
+  if (pins.length < 3) return [];
+  const pole = normalize([
+    pins.reduce((s, p) => s + p[0], 0),
+    pins.reduce((s, p) => s + p[1], 0),
+    pins.reduce((s, p) => s + p[2], 0),
+  ]);
+  const sorted = pins
+    .map((p) => ({ p: normalize(p), ...polarAround(pole, p) }))
+    .sort((a, b) => a.phi - b.phi);
+  const n = sorted.length;
+  const L = Math.max(3, Math.min(14, Math.round(layers)));
+  const arcs: { a: Vec3; b: Vec3; color: number }[] = [];
+  for (let r = 0; r < L; r++) {
+    const along = r / Math.max(1, L - 1);
+    const t = dir === "in" ? along * 0.9 : (1 - along) * 0.9;
+    const ring = sorted.map((item) => slerp3(item.p, pole, t));
+    const c = r % 2 === 0 ? color : (color + 1) % 4;
+    for (let i = 0; i < n; i++) {
+      const a = ring[i];
+      const b = ring[(i + 1) % n];
+      if (a && b) arcs.push({ a, b, color: c });
+    }
+  }
+  return arcs;
+}
+
+/** Chrysanthemum herringbone around the spherical centroid of 3+ pins. */
 export function kikuArcsFromPins(
   pins: Vec3[],
   layers: number,
   color: number,
+  dir: KagariDir = "out",
 ): { a: Vec3; b: Vec3; color: number }[] {
   if (pins.length < 3) return [];
   const pole = normalize([
@@ -366,21 +413,27 @@ export function kikuArcsFromPins(
     sorted.reduce((s, p) => s + p.theta, 0) / Math.max(1, sorted.length);
   const span = Math.max(0.22, meanTheta);
   const n = sorted.length;
-  const L = Math.max(1, Math.min(8, Math.round(layers)));
+  const L = Math.max(1, Math.min(10, Math.round(layers)));
   const arcs: { a: Vec3; b: Vec3; color: number }[] = [];
-  for (let r = 0; r < L; r++) {
-    const inner = span * (0.22 + r * 0.16);
-    const outer = inner + span * 0.14;
-    const c = r % 2 === 0 ? color : (color + 2) % 4;
+  const order = Array.from({ length: L }, (_, i) => (dir === "in" ? L - 1 - i : i));
+  for (const r of order) {
+    const inner = span * (0.16 + r * 0.09);
+    const outer = inner + span * 0.12;
+    const c = r % 2 === 0 ? color : (color + 1) % 4;
     for (let i = 0; i < n; i++) {
       const a = sorted[i];
       const b = sorted[(i + 1) % n];
       if (!a || !b) continue;
-      const A = around(pole, inner, a.phi);
-      const C = around(pole, inner, b.phi);
-      const T = around(pole, outer, midPhi(a.phi, b.phi));
-      arcs.push({ a: A, b: T, color: c });
-      arcs.push({ a: T, b: C, color: c });
+      arcs.push({
+        a: around(pole, inner, a.phi),
+        b: around(pole, outer, b.phi),
+        color: c,
+      });
+      arcs.push({
+        a: around(pole, outer, a.phi),
+        b: around(pole, inner, b.phi),
+        color: c,
+      });
     }
   }
   return arcs;

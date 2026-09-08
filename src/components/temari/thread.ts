@@ -71,7 +71,7 @@ export function isThreadKind(value: unknown): value is ThreadKind {
 /** Ribbon half-width on a unit sphere. */
 export function ribbonWidth(kind: ThreadKind) {
   const t = THREAD_KIND_META[kind].thickness;
-  return 0.007 + t * 0.016;
+  return 0.011 + t * 0.028;
 }
 
 export function threadRoughness(kind: ThreadKind) {
