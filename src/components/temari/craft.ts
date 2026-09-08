@@ -8,7 +8,7 @@ export const CRAFT_LIST: Craft[] = ["wind", "pin", "stitch"];
 export const CRAFT_META: Record<Craft, { label: string; hint: string }> = {
   wind: {
     label: "Намотка",
-    hint: "крутите — нить по большой окружности",
+    hint: "крутите шар — нить по самой широкой окружности",
   },
   pin: {
     label: "Метки",
@@ -120,7 +120,8 @@ function strokeSeg(
   width: number,
 ) {
   const poleish = Math.max(Math.abs(a.y), Math.abs(b.y));
-  if (poleish > 0.88) {
+  const aroundPole = poleish > 0.7 && a.x * b.x + a.z * b.z < 0;
+  if (poleish > 0.93 || aroundPole) {
     stampDot(ctx, a, hex, width);
     stampDot(ctx, b, hex, width);
     return;
@@ -375,10 +376,10 @@ export function strokePx(thickness: number) {
 }
 
 /**
- * Base wrap (maki): full-circumference great circles.
- * After each lap the wrap plane tilts a little — like turning the
- * mari in the hands — so successive wraps are never parallel and
- * never share a pole. Pins are not used; the thread just keeps going.
+ * Base wrap (maki): always a great circle — the largest circumference.
+ * Interactive wrapping follows how the mari is turned (the spin equator).
+ * The plane may tilt only a little, as in the hands; the thread never kinks.
+ * Auto-fill (title / finish) still walks random great circles to cover.
  */
 export class MariWinder {
   s = 0;
@@ -389,9 +390,11 @@ export class MariWinder {
   private tmp = new THREE.Vector3();
   private perp = new THREE.Vector3();
   private q = new THREE.Quaternion();
+  private qTo = new THREE.Quaternion();
   private arc = 0;
   private tilt = 0.18;
   private cover = 0;
+  private sinceCover = 0;
 
   reset(thickness: number) {
     const t = Math.max(0, Math.min(1, thickness));
@@ -399,6 +402,7 @@ export class MariWinder {
     this.wrapCount = 0;
     this.arc = 0;
     this.cover = 0;
+    this.sinceCover = 0;
     this.sNeeded = TWO_PI * (52 + (1 - t) * 36);
     const ang = (strokePx(t) * Math.PI) / H;
     this.tilt = ang * 2.2 + 0.1;
@@ -422,6 +426,57 @@ export class MariWinder {
     if (this.axis.lengthSq() < 0.05) this.axis.set(1, 0, 0);
   }
 
+  private keepOnEquator() {
+    this.dir.addScaledVector(this.axis, -this.dir.dot(this.axis)).normalize();
+    if (this.dir.lengthSq() < 0.05) {
+      this.dir.crossVectors(this.axis, new THREE.Vector3(0, 1, 0));
+      if (this.dir.lengthSq() < 0.05) this.dir.crossVectors(this.axis, new THREE.Vector3(1, 0, 0));
+      this.dir.normalize();
+    }
+  }
+
+  /**
+   * Lay thread on the equator of `spinAxis` (local). Plane eases toward
+   * that axis so a change of hands never folds the yarn.
+   */
+  follow(
+    spinAxis: THREE.Vector3,
+    dAngle: number,
+    buffer: WrapBuffer,
+    color: number,
+    hex: string,
+  ) {
+    if (dAngle <= 1e-6) return;
+    this.tmp.copy(spinAxis).normalize();
+    if (this.tmp.lengthSq() < 0.2) return;
+    if (this.tmp.dot(this.axis) < 0) this.tmp.negate();
+    this.qTo.setFromUnitVectors(this.axis, this.tmp);
+    const turn = 2 * Math.acos(clamp(this.qTo.w, -1, 1));
+    if (turn > 1e-5) {
+      const maxTilt = Math.min(0.28, dAngle * 0.42 + 0.01);
+      const t = Math.min(1, maxTilt / turn);
+      this.q.identity().slerp(this.qTo, t);
+      this.axis.applyQuaternion(this.q).normalize();
+    }
+    this.keepOnEquator();
+    let left = dAngle;
+    const h0 = 0.055;
+    while (left > 1e-6) {
+      const h = Math.min(h0, left);
+      this.q.setFromAxisAngle(this.axis, h);
+      this.dir.applyQuaternion(this.q);
+      buffer.addPoint(this.dir, color, hex, true);
+      this.s += h;
+      this.sinceCover += h;
+      left -= h;
+      this.wrapCount = Math.floor(this.s / TWO_PI);
+    }
+    if (this.sinceCover > 0.7) {
+      this.sinceCover = 0;
+      this.cover = buffer.sampleCoverage();
+    }
+  }
+
   fill(buffer: WrapBuffer, color: number, hex: string) {
     this.advance(buffer, this.sNeeded, color, hex, 0.1);
     buffer.sampleCoverage();
@@ -430,12 +485,12 @@ export class MariWinder {
 
   advance(buffer: WrapBuffer, ds: number, color: number, hex: string, step = 0.07) {
     if (ds <= 0) return;
-    if (this.cover >= 0.96 && this.wrapCount >= 28) return;
+    if (this.cover >= 0.97 && this.wrapCount >= 24) return;
     if (this.s >= this.sNeeded) return;
     let left = Math.min(ds, this.sNeeded - this.s);
     const h0 = Math.max(0.035, step);
     while (left > 1e-6) {
-      if (this.cover >= 0.96 && this.wrapCount >= 28) break;
+      if (this.cover >= 0.97 && this.wrapCount >= 24) break;
       const h = Math.min(h0, left);
       this.q.setFromAxisAngle(this.axis, h);
       this.dir.applyQuaternion(this.q);
@@ -451,8 +506,7 @@ export class MariWinder {
         const tilt = this.tilt * (0.78 + 0.44 * Math.sin(this.s * 0.37));
         this.q.setFromAxisAngle(this.perp, tilt);
         this.axis.applyQuaternion(this.q).normalize();
-        this.tmp.copy(this.axis).multiplyScalar(this.dir.dot(this.axis));
-        this.dir.sub(this.tmp).normalize();
+        this.keepOnEquator();
         this.cover = buffer.sampleCoverage();
       }
       buffer.addPoint(this.dir, color, hex, true);
