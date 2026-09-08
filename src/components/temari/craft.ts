@@ -8,7 +8,7 @@ export const CRAFT_LIST: Craft[] = ["wind", "pin", "stitch"];
 export const CRAFT_META: Record<Craft, { label: string; hint: string }> = {
   wind: {
     label: "Намотка",
-    hint: "тык — начало; крутите — нить по большой окружности",
+    hint: "крутите — нить по большой окружности",
   },
   pin: {
     label: "Метки",
@@ -24,9 +24,6 @@ export function isCraft(value: unknown): value is Craft {
   return value === "wind" || value === "pin" || value === "stitch";
 }
 
-/** Ivory marking pin — slightly off-axis so the first wraps read on the facing side. */
-export const DEFAULT_START: Vec3 = [0.249, 0.746, 0.617];
-
 export type Pin = { id: string; p: Vec3 };
 export type PinArc = { a: Vec3; b: Vec3; color: number };
 
@@ -36,9 +33,7 @@ const MIN_DOT = 0.9994;
 const MAX_LIVE = 220;
 const MAX_STRANDS = 48;
 const MAX_JOINS = 16;
-/** Almost a full lap, then change heading so wraps don't share a pole. */
-const LAP = Math.PI * 2 * 0.928;
-const TURN = 1.85;
+const TWO_PI = Math.PI * 2;
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
@@ -102,13 +97,18 @@ function stampDot(
 ) {
   const [u, v] = toUV(p);
   ctx.fillStyle = hex;
-  ctx.globalAlpha = 0.88;
-  const pole = Math.abs(p.y);
-  const r = Math.max(2.4, width * 0.55) * (1 + Math.max(0, pole - 0.8) * 4);
+  ctx.globalAlpha = 0.9;
+  const r = Math.max(2.0, width * 0.48);
   for (const shift of [-1, 0, 1]) {
     ctx.beginPath();
     ctx.arc((u + shift) * W, v * H, r, 0, Math.PI * 2);
     ctx.fill();
+  }
+  if (Math.abs(p.y) > 0.9) {
+    const hPx = Math.max(r * 1.2, 5);
+    ctx.globalAlpha = 0.92;
+    if (p.y > 0) ctx.fillRect(0, 0, W, hPx);
+    else ctx.fillRect(0, H - hPx, W, hPx);
   }
 }
 
@@ -119,7 +119,9 @@ function strokeSeg(
   hex: string,
   width: number,
 ) {
-  if (Math.abs(a.y) > 0.84 || Math.abs(b.y) > 0.84) {
+  const poleish = Math.max(Math.abs(a.y), Math.abs(b.y));
+  if (poleish > 0.88) {
+    stampDot(ctx, a, hex, width);
     stampDot(ctx, b, hex, width);
     return;
   }
@@ -162,7 +164,6 @@ function stroke(
   for (let i = 1; i <= steps; i++) {
     slerpOnto(a, b, i / steps, _slerpB);
     strokeSeg(ctx, _slerpA, _slerpB, hex, width);
-    stampDot(ctx, _slerpB, hex, width);
     _slerpA.copy(_slerpB);
   }
 }
@@ -173,12 +174,15 @@ export class WrapBuffer {
   readonly canvas: HTMLCanvasElement;
   readonly texture: THREE.CanvasTexture;
   private ctx: CanvasRenderingContext2D;
+  private probe: HTMLCanvasElement;
+  private probeCtx: CanvasRenderingContext2D;
   private strands: Strand[] = [];
   private last: THREE.Vector3 | null = null;
   live: THREE.Vector3[] = [];
   liveColor = "#8f3d32";
   strokeWidth = 9;
   joins: THREE.Vector3[] = [];
+  covered = 0;
 
   constructor() {
     this.canvas = document.createElement("canvas");
@@ -187,6 +191,12 @@ export class WrapBuffer {
     const ctx = this.canvas.getContext("2d", { alpha: true });
     if (!ctx) throw new Error("wrap canvas");
     this.ctx = ctx;
+    this.probe = document.createElement("canvas");
+    this.probe.width = 192;
+    this.probe.height = 96;
+    const pctx = this.probe.getContext("2d", { alpha: true });
+    if (!pctx) throw new Error("wrap probe");
+    this.probeCtx = pctx;
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.wrapS = THREE.RepeatWrapping;
     this.texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -212,6 +222,7 @@ export class WrapBuffer {
       live: this.live.length,
       hex: this.liveColor,
       colors: this.strands.map((s) => s.color),
+      covered: this.covered,
       poleN: [poleN[0], poleN[1], poleN[2], poleN[3]],
       poleS: [poleS[0], poleS[1], poleS[2], poleS[3]],
     };
@@ -264,6 +275,36 @@ export class WrapBuffer {
     return true;
   }
 
+  sampleCoverage() {
+    const pw = this.probe.width;
+    const ph = this.probe.height;
+    this.probeCtx.clearRect(0, 0, pw, ph);
+    this.probeCtx.drawImage(this.canvas, 0, 0, pw, ph);
+    const data = this.probeCtx.getImageData(0, 0, pw, ph).data;
+    let body = 0;
+    let bodyW = 0;
+    let poles = 0;
+    let poleN = 0;
+    for (let y = 0; y < ph; y++) {
+      const w = 0.25 + 0.75 * Math.sin(((y + 0.5) / ph) * Math.PI);
+      const polar = y < 4 || y >= ph - 4;
+      for (let x = 0; x < pw; x++) {
+        const a = data[(y * pw + x) * 4 + 3];
+        const hit = a > 48 ? 1 : 0;
+        body += hit * w;
+        bodyW += w;
+        if (polar) {
+          poles += hit;
+          poleN += 1;
+        }
+      }
+    }
+    const mid = bodyW > 0 ? body / bodyW : 0;
+    const cap = poleN > 0 ? poles / poleN : 1;
+    this.covered = Math.min(1, mid * 0.82 + cap * 0.18);
+    return this.covered;
+  }
+
   /** Start a new strand at p without drawing a skip across the mari. */
   relocate(local: THREE.Vector3, color: number, hex: string) {
     const p = local.clone().normalize();
@@ -289,6 +330,7 @@ export class WrapBuffer {
   reset() {
     this.strands = [];
     this.joins = [];
+    this.covered = 0;
     this.redraw();
   }
 
@@ -308,6 +350,7 @@ export class WrapBuffer {
     this.live = last ? last.points.slice(-MAX_LIVE).map((p) => p.clone()) : [];
     this.liveColor = last?.hex ?? this.liveColor;
     this.texture.needsUpdate = true;
+    this.sampleCoverage();
   }
 
   dispose() {
@@ -333,9 +376,9 @@ export function strokePx(thickness: number) {
 
 /**
  * Base wrap (maki): full-circumference great circles.
- * Heading changes each lap so no two successive wraps are parallel
- * and they don't share a pole — the ball keeps moving, as on a real mari.
- * A new colour may continue from the last point, or begin at a moved start pin.
+ * After each lap the wrap plane tilts a little — like turning the
+ * mari in the hands — so successive wraps are never parallel and
+ * never share a pole. Pins are not used; the thread just keeps going.
  */
 export class MariWinder {
   s = 0;
@@ -344,15 +387,21 @@ export class MariWinder {
   private axis = new THREE.Vector3(0.22, 0.96, 0.16);
   private dir = new THREE.Vector3();
   private tmp = new THREE.Vector3();
+  private perp = new THREE.Vector3();
   private q = new THREE.Quaternion();
   private arc = 0;
+  private tilt = 0.18;
+  private cover = 0;
 
   reset(thickness: number) {
     const t = Math.max(0, Math.min(1, thickness));
     this.s = 0;
     this.wrapCount = 0;
     this.arc = 0;
-    this.sNeeded = Math.PI * 2 * (36 + (1 - t) * 40);
+    this.cover = 0;
+    this.sNeeded = TWO_PI * (52 + (1 - t) * 36);
+    const ang = (strokePx(t) * Math.PI) / H;
+    this.tilt = ang * 2.2 + 0.1;
     this.axis.set(0.24, 0.95, 0.18).normalize();
     this.dir.crossVectors(this.axis, new THREE.Vector3(1, 0, 0));
     if (this.dir.lengthSq() < 0.05) this.dir.crossVectors(this.axis, new THREE.Vector3(0, 0, 1));
@@ -360,7 +409,7 @@ export class MariWinder {
   }
 
   get progress() {
-    return Math.max(0, Math.min(1, this.s / this.sNeeded));
+    return Math.max(0, Math.min(1, this.cover));
   }
 
   reorigin(point: THREE.Vector3, from?: THREE.Vector3 | null) {
@@ -375,29 +424,41 @@ export class MariWinder {
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
     this.advance(buffer, this.sNeeded, color, hex, 0.1);
+    buffer.sampleCoverage();
+    this.cover = buffer.covered;
   }
 
   advance(buffer: WrapBuffer, ds: number, color: number, hex: string, step = 0.07) {
-    if (ds <= 0 || this.progress >= 1) return;
+    if (ds <= 0) return;
+    if (this.cover >= 0.96 && this.wrapCount >= 28) return;
+    if (this.s >= this.sNeeded) return;
     let left = Math.min(ds, this.sNeeded - this.s);
     const h0 = Math.max(0.035, step);
     while (left > 1e-6) {
+      if (this.cover >= 0.96 && this.wrapCount >= 28) break;
       const h = Math.min(h0, left);
       this.q.setFromAxisAngle(this.axis, h);
       this.dir.applyQuaternion(this.q);
       this.arc += h;
-      if (this.arc >= LAP) {
-        this.arc -= LAP;
-        const kick = TURN + 0.28 * Math.sin(this.s * 0.37);
-        this.q.setFromAxisAngle(this.dir, kick);
+      if (this.arc >= TWO_PI) {
+        this.arc -= TWO_PI;
+        this.perp.crossVectors(this.axis, this.dir);
+        if (this.perp.lengthSq() < 1e-8) this.perp.set(0, 1, 0);
+        this.perp.normalize();
+        const yaw = 0.85 + 0.55 * Math.sin(this.s * 0.11) + 0.4 * Math.sin(this.s * 0.031);
+        this.q.setFromAxisAngle(this.axis, yaw);
+        this.perp.applyQuaternion(this.q);
+        const tilt = this.tilt * (0.78 + 0.44 * Math.sin(this.s * 0.37));
+        this.q.setFromAxisAngle(this.perp, tilt);
         this.axis.applyQuaternion(this.q).normalize();
         this.tmp.copy(this.axis).multiplyScalar(this.dir.dot(this.axis));
         this.dir.sub(this.tmp).normalize();
+        this.cover = buffer.sampleCoverage();
       }
       buffer.addPoint(this.dir, color, hex, true);
       this.s += h;
       left -= h;
-      this.wrapCount = Math.floor(this.s / (Math.PI * 2));
+      this.wrapCount = Math.floor(this.s / TWO_PI);
     }
   }
 }

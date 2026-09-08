@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { arcsToStitches, DEFAULT_START, getWrapBuffer, pinHit, MariWinder, strokePx, toVec3 } from "./craft";
+import { arcsToStitches, getWrapBuffer, pinHit, MariWinder, strokePx, toVec3 } from "./craft";
 import { gridNodes, polePositions, regionIndex, snapToNode } from "./division";
 import { createGuideGeometry } from "./guides";
 import { PALETTES } from "./palettes";
@@ -188,8 +188,6 @@ export function Ball() {
   const wrapUndoNonce = useTemari((s) => s.wrapUndoNonce);
   const wrapResetNonce = useTemari((s) => s.wrapResetNonce);
   const layerDone = useTemari((s) => s.layerDone);
-  const startPin = useTemari((s) => s.startPin);
-  const originNonce = useTemari((s) => s.originNonce);
   const wrapSeed = useTemari((s) => s.wrapSeed);
   const paint = useTemari((s) => s.paint);
   const sew = useTemari((s) => s.sew);
@@ -198,7 +196,6 @@ export function Ball() {
   const setHoverSlot = useTemari((s) => s.setHoverSlot);
   const setWrapCount = useTemari((s) => s.setWrapCount);
   const setWrapProgress = useTemari((s) => s.setWrapProgress);
-  const setStartPin = useTemari((s) => s.setStartPin);
 
   const material = useMemo(() => createTemariMaterial(), []);
   const guideGeo = useMemo(() => createGuideGeometry(division), [division]);
@@ -224,15 +221,6 @@ export function Ball() {
     if (mode !== "studio" || craft !== "stitch" || !hoverSlot) return [];
     return stitchesForSlot(division, hoverSlot, selectedColor);
   }, [craft, division, hoverSlot, mode, selectedColor]);
-
-  const startQuat = useMemo(() => {
-    if (!startPin) return [0, 0, 0, 1] as [number, number, number, number];
-    const q = new THREE.Quaternion().setFromUnitVectors(
-      Y_UP,
-      new THREE.Vector3(startPin[0], startPin[1], startPin[2]).normalize(),
-    );
-    return [q.x, q.y, q.z, q.w] as [number, number, number, number];
-  }, [startPin]);
 
   useEffect(() => {
     matRef.current = material;
@@ -278,13 +266,8 @@ export function Ball() {
       mari.current.fill(wrap, 0, hex);
       feel.resetTurns();
       setWrapCount(wrap.strandCount);
-      setWrapProgress(1);
+      setWrapProgress(mari.current.progress);
       return;
-    }
-    if (st.startPin) {
-      mari.current.reorigin(
-        new THREE.Vector3(st.startPin[0], st.startPin[1], st.startPin[2]),
-      );
     }
     feel.resetTurns();
     setWrapCount(0);
@@ -297,17 +280,6 @@ export function Ball() {
     setWrapCount(wrap.strandCount);
     setWrapProgress(mari.current.progress);
   }, [setWrapCount, setWrapProgress, wrap, wrapUndoNonce]);
-
-  useEffect(() => {
-    if (originNonce === 0) return;
-    const pin = useTemari.getState().startPin;
-    if (!pin) return;
-    const v = new THREE.Vector3(pin[0], pin[1], pin[2]);
-    const st = useTemari.getState();
-    const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
-    mari.current.reorigin(v);
-    wrap.relocate(v, st.selectedColor, hex);
-  }, [originNonce, wrap]);
 
   useLayoutEffect(() => {
     const shaft = shafts.current;
@@ -556,10 +528,6 @@ export function Ball() {
             paint(regionIndex(p[0], p[1], p[2], division));
             return;
           }
-          if (craft === "wind" && !layerDone) {
-            setStartPin(p);
-            return;
-          }
           if (craft === "pin") {
             placePin(p);
             return;
@@ -607,26 +575,11 @@ export function Ball() {
         <meshStandardMaterial color={threadHex} roughness={0.38} metalness={0.14} />
       </mesh>
 
-      <group
-        visible={mode === "studio" && !layerDone && !!startPin}
-        position={startPin ? [startPin[0] * 1.028, startPin[1] * 1.028, startPin[2] * 1.028] : [0, 1, 0]}
-        quaternion={startQuat}
-      >
-        <mesh position={[0, 0.016, 0]}>
-          <cylinderGeometry args={[0.0055, 0.0065, 0.036, 8]} />
-          <meshStandardMaterial color="#9a958c" roughness={0.42} metalness={0.28} />
-        </mesh>
-        <mesh position={[0, 0.038, 0]}>
-          <sphereGeometry args={[0.016, 12, 10]} />
-          <meshStandardMaterial color="#ece8e1" roughness={0.36} metalness={0.14} />
-        </mesh>
-      </group>
-
       <instancedMesh
         ref={knots}
         args={[undefined, undefined, 16]}
         frustumCulled={false}
-        visible={mode === "studio"}
+        visible={false}
         count={0}
       >
         <sphereGeometry args={[0.01, 10, 8]} />

@@ -100,8 +100,8 @@ void main() {
   }
 
   float phi = atan(nL.x, nL.z);
-  float wrap = sin(nL.y * 148.0) * 0.028;
-  float stitch = sin(phi * 86.0 + nL.y * 10.0) * 0.018;
+  float wrap = sin(nL.y * 148.0) * 0.014;
+  float stitch = sin(phi * 86.0 + nL.y * 10.0) * 0.01;
   col *= 0.97 + wrap + stitch;
 
   if (region == uHover && uHover >= 0) {
@@ -113,7 +113,7 @@ void main() {
   vec3 V = normalize(uCamPos - vW);
   vec3 H = normalize(L + V);
   float ndl = max(dot(n, L), 0.0);
-  float spec = pow(max(dot(n, H), 0.0), 52.0) * 0.11;
+  float spec = pow(max(dot(n, H), 0.0), 40.0) * 0.055;
   float lit = 0.20 + 0.80 * ndl;
   float rim = pow(1.0 - max(dot(n, V), 0.0), 2.7) * 0.16;
 

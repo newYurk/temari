@@ -129,7 +129,6 @@ function Workbench() {
   const layerDone = useTemari((s) => s.layerDone);
   const kikuLayers = useTemari((s) => s.kikuLayers);
   const kagariDir = useTemari((s) => s.kagariDir);
-  const startPin = useTemari((s) => s.startPin);
   const toTitle = useTemari((s) => s.toTitle);
   const setDivision = useTemari((s) => s.setDivision);
   const setPalette = useTemari((s) => s.setPalette);
@@ -166,11 +165,9 @@ function Workbench() {
   const hint =
     mode === "studio"
       ? !layerDone
-        ? wrapProgress >= 1
+        ? wrapProgress >= 0.9
           ? "слой набран — завершите, чтобы вышивать"
-          : startPin
-            ? "по большой окружности · тык — переставить начало"
-            : "тык — булавка-начало, крутите шар"
+          : "крутите — нить по большой окружности"
         : craft === "pin"
           ? pins.length >= 3
             ? "три метки — залейте рядами внутрь или наружу"

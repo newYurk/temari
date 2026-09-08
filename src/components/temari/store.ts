@@ -7,7 +7,6 @@ import {
   type Division,
 } from "./division";
 import {
-  DEFAULT_START,
   isCraft,
   pinHit,
   type Craft,
@@ -286,7 +285,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       layerDone: false,
       wrapResetNonce: get().wrapResetNonce + 1,
       wrapCount: 0,
-      startPin: [DEFAULT_START[0], DEFAULT_START[1], DEFAULT_START[2]],
+      startPin: null,
       originNonce: get().originNonce + 1,
       wrapSeed: "empty",
     });
@@ -547,7 +546,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       wrapProgress: 0,
       layerDone: false,
       craft: "wind",
-      startPin: [DEFAULT_START[0], DEFAULT_START[1], DEFAULT_START[2]],
+      startPin: null,
       originNonce: state.originNonce + 1,
       wrapSeed: "empty",
     });
