@@ -1,9 +1,7 @@
 # Темари
 
-Нить на сфере. Классические деления Simple, C8, C10. Намотка первого слоя, булавки, стежок за стежком.
+Нить на сфере. Намотка, булавки, стежок. Simple, C8, C10.
 
-**Сайт:** https://newyurk.github.io/
+**Сайт:** https://newyurk.github.io/temari/
 
-Зеркало: https://newyurk.github.io/temari/
-
-Исходники узора — в `src/components/temari`. Играбельная сборка лежит в `docs/`.
+Исходники узора — в `src/components/temari`. Сборка для GitHub Pages — в `docs/`.
