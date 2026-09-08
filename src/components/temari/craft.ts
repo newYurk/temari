@@ -119,17 +119,17 @@ function strokeSeg(
   hex: string,
   width: number,
 ) {
-  const aroundPole =
-    Math.abs(a.y) > 0.92 && Math.abs(b.y) > 0.92 && a.x * b.x + a.z * b.z < 0;
-  if (aroundPole) {
-    stampDot(ctx, a, hex, width);
-    stampDot(ctx, b, hex, width);
-    return;
-  }
   let [u0, v0] = toUV(a);
   let [u1, v1] = toUV(b);
   if (u1 - u0 > 0.5) u1 -= 1;
   else if (u0 - u1 > 0.5) u1 += 1;
+  const longUv = Math.abs(u1 - u0) > 0.04 || Math.abs(v1 - v0) > 0.05;
+  const nearPole = Math.abs(a.y) > 0.72 || Math.abs(b.y) > 0.72;
+  if (longUv || nearPole) {
+    stampDot(ctx, a, hex, width);
+    stampDot(ctx, b, hex, width);
+    return;
+  }
   ctx.strokeStyle = hex;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -146,7 +146,7 @@ function strokeSeg(
       line(alpha, w, u0 + shift, v0, u1 + shift, v1);
     }
   };
-  paint(0.72, width * 1.28);
+  paint(0.85, width * 1.22);
   paint(1, width);
 }
 
@@ -159,7 +159,7 @@ function stroke(
 ) {
   const theta = Math.acos(clamp(a.dot(b), -1, 1));
   const poleish = Math.max(Math.abs(a.y), Math.abs(b.y));
-  const step = poleish > 0.8 ? 0.014 : 0.032;
+  const step = poleish > 0.65 ? 0.01 : 0.028;
   const steps = Math.max(1, Math.ceil(theta / step));
   _slerpA.copy(a);
   for (let i = 1; i <= steps; i++) {

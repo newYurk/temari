@@ -21,6 +21,7 @@ import * as feel from "./feel";
 import { DEFAULT_KIND, threadMetalness, threadRoughness } from "./thread";
 
 const pointer = { x: 0, y: 0, down: false, dragged: false };
+const gesture = { aimed: false };
 const _right = new THREE.Vector3();
 const _up = new THREE.Vector3();
 const _axis = new THREE.Vector3();
@@ -28,6 +29,7 @@ const _q = new THREE.Quaternion();
 const _feed = new THREE.Vector3();
 const _inv = new THREE.Quaternion();
 const _local = new THREE.Vector3();
+const _binormal = new THREE.Vector3();
 const Y_UP = new THREE.Vector3(0, 1, 0);
 
 const DAMP = 0.46;
@@ -130,6 +132,9 @@ function LiveThread() {
       _right.crossVectors(_local, _feed);
       if (_right.lengthSq() < 1e-10) _right.set(1, 0, 0).cross(_local);
       _right.normalize();
+      if (i === 0) _binormal.copy(_right);
+      else if (_right.dot(_binormal) < 0) _right.negate();
+      _binormal.copy(_right);
       const px = p.x * lift;
       const py = p.y * lift;
       const pz = p.z * lift;
@@ -322,6 +327,7 @@ export function Ball() {
       if (useTemari.getState().mode === "title") return;
       if (e.button !== 0) return;
       spinning.current = true;
+      gesture.aimed = false;
       lastPtr.current = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
       omega.current.set(0, 0, 0);
       pointer.x = e.clientX;
@@ -360,7 +366,10 @@ export function Ball() {
             _inv.copy(g.quaternion).invert();
             _local.copy(_axis).applyQuaternion(_inv).normalize();
             const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
-            mari.current.aim(_local);
+            if (!gesture.aimed) {
+              mari.current.aim(_local);
+              gesture.aimed = true;
+            }
             mari.current.spin(ang, wrap, st.selectedColor, hex);
           }
         }
@@ -418,6 +427,7 @@ export function Ball() {
         progress: useTemari.getState().wrapProgress,
         color: useTemari.getState().selectedColor,
         pin: useTemari.getState().startPin,
+        livePts: wrap.live.length,
         ...wrap.snapshot(),
       }),
     };
