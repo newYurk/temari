@@ -21,7 +21,8 @@ import * as feel from "./feel";
 import { DEFAULT_KIND, threadMetalness, threadRoughness } from "./thread";
 
 const pointer = { x: 0, y: 0, down: false, dragged: false };
-const gesture = { aimed: false };
+const ptrs = new Map<number, { x: number; y: number }>();
+const tilt = { mx: 0, my: 0 };
 const _right = new THREE.Vector3();
 const _up = new THREE.Vector3();
 const _axis = new THREE.Vector3();
@@ -379,15 +380,25 @@ export function Ball() {
     const el = gl.domElement;
     const onDown = (e: PointerEvent) => {
       if (useTemari.getState().mode === "title") return;
-      if (e.button !== 0) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
       spinning.current = true;
-      gesture.aimed = false;
       lastPtr.current = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
-      omega.current.set(0, 0, 0);
       pointer.x = e.clientX;
       pointer.y = e.clientY;
       pointer.down = true;
       pointer.dragged = false;
+      if (ptrs.size === 1) omega.current.set(0, 0, 0);
+      if (ptrs.size === 2) {
+        let mx = 0;
+        let my = 0;
+        ptrs.forEach((p) => {
+          mx += p.x;
+          my += p.y;
+        });
+        tilt.mx = mx / 2;
+        tilt.my = my / 2;
+      }
       try {
         el.setPointerCapture(e.pointerId);
       } catch {
@@ -395,49 +406,107 @@ export function Ball() {
       }
     };
     const onMove = (e: PointerEvent) => {
-      if (!spinning.current || lastPtr.current.id !== e.pointerId) return;
-      const dx = e.clientX - lastPtr.current.x;
-      const dy = e.clientY - lastPtr.current.y;
+      if (!ptrs.has(e.pointerId)) return;
+      const prev = ptrs.get(e.pointerId);
+      if (!prev) return;
+      const dx = e.clientX - prev.x;
+      const dy = e.clientY - prev.y;
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (Math.hypot(dx, dy) > 7) pointer.dragged = true;
       const now = performance.now();
       const dt = Math.max(0.008, (now - lastPtr.current.t) / 1000);
+      lastPtr.current = { x: e.clientX, y: e.clientY, t: now, id: e.pointerId };
       const k = 2.7 / Math.max(size.height, 1);
       const rx = dx * k;
       const ry = dy * k;
       const g = group.current;
-      if (g && (rx !== 0 || ry !== 0)) {
-        _right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
-        _up.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
-        _axis.copy(_up).multiplyScalar(rx).addScaledVector(_right, ry);
-        const ang = Math.min(_axis.length(), 0.22);
-        if (ang > 1e-6) {
-          _axis.normalize();
-          const st = useTemari.getState();
-          const winding = st.mode === "studio" && st.craft === "wind" && !st.layerDone;
-          if (winding) {
+      if (!g || (rx === 0 && ry === 0)) return;
+      const st = useTemari.getState();
+      const winding = st.mode === "studio" && st.craft === "wind" && !st.layerDone;
+      _right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+      _up.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+
+      if (winding && ptrs.size >= 2) {
+        let mx = 0;
+        let my = 0;
+        ptrs.forEach((p) => {
+          mx += p.x;
+          my += p.y;
+        });
+        mx /= ptrs.size;
+        my /= ptrs.size;
+        const tx = (mx - tilt.mx) * k;
+        const ty = (my - tilt.my) * k;
+        tilt.mx = mx;
+        tilt.my = my;
+        if (Math.hypot(tx, ty) < 1e-6) return;
+        _axis.copy(_up).multiplyScalar(tx).addScaledVector(_right, ty);
+        if (_axis.lengthSq() < 1e-8) return;
+        _axis.normalize();
+        _inv.copy(g.quaternion).invert();
+        _local.copy(_axis).applyQuaternion(_inv).normalize();
+        mari.current.copyAxis(_feed);
+        _tPrev.copy(_feed).applyQuaternion(g.quaternion).normalize();
+        mari.current.aim(_local);
+        mari.current.copyAxis(_local);
+        _axis.copy(_local).applyQuaternion(g.quaternion).normalize();
+        _q.setFromUnitVectors(_tPrev, _axis);
+        g.quaternion.premultiply(_q);
+        return;
+      }
+
+      if (winding) {
+        if (!mari.current.hasPlane) {
+          _axis.copy(_up).multiplyScalar(rx).addScaledVector(_right, ry);
+          if (_axis.lengthSq() > 1e-8) {
+            _axis.normalize();
             _inv.copy(g.quaternion).invert();
             _local.copy(_axis).applyQuaternion(_inv).normalize();
-            mari.current.aim(_local);
-            mari.current.copyAxis(_local);
-            _axis.copy(_local).applyQuaternion(g.quaternion).normalize();
-            _q.setFromAxisAngle(_axis, ang);
-            g.quaternion.premultiply(_q);
-            omega.current.copy(_axis).multiplyScalar(ang / dt);
-            const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
-            mari.current.spin(ang, wrap, st.selectedColor, hex);
-          } else {
-            _q.setFromAxisAngle(_axis, ang);
-            g.quaternion.premultiply(_q);
-            omega.current.copy(_axis).multiplyScalar(ang / dt);
+            mari.current.forceAxis(_local.x, _local.y, _local.z);
           }
         }
+        mari.current.copyAxis(_local);
+        _axis.copy(_local).applyQuaternion(g.quaternion).normalize();
+        const sx = _axis.dot(_right);
+        const sy = _axis.dot(_up);
+        const tlen = Math.hypot(sx, sy);
+        let ang = 0;
+        if (tlen < 0.12) {
+          ang = Math.hypot(rx, ry);
+          if (rx + ry < 0) ang = -ang;
+        } else {
+          ang = (rx * -sy + ry * sx) / tlen;
+        }
+        ang = Math.max(-0.22, Math.min(0.22, ang));
+        if (Math.abs(ang) < 1e-6) return;
+        _q.setFromAxisAngle(_axis, ang);
+        g.quaternion.premultiply(_q);
+        omega.current.copy(_axis).multiplyScalar(ang / dt);
+        const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
+        mari.current.spin(Math.abs(ang), wrap, st.selectedColor, hex);
+        return;
       }
-      lastPtr.current = { x: e.clientX, y: e.clientY, t: now, id: e.pointerId };
+
+      _axis.copy(_up).multiplyScalar(rx).addScaledVector(_right, ry);
+      const ang = Math.min(_axis.length(), 0.22);
+      if (ang > 1e-6) {
+        _axis.normalize();
+        _q.setFromAxisAngle(_axis, ang);
+        g.quaternion.premultiply(_q);
+        omega.current.copy(_axis).multiplyScalar(ang / dt);
+      }
     };
     const onUp = (e: PointerEvent) => {
-      if (lastPtr.current.id !== e.pointerId) return;
-      spinning.current = false;
-      pointer.down = false;
+      ptrs.delete(e.pointerId);
+      if (ptrs.size === 0) {
+        spinning.current = false;
+        pointer.down = false;
+      } else {
+        const rest = ptrs.entries().next().value;
+        if (rest) {
+          lastPtr.current = { x: rest[1].x, y: rest[1].y, t: performance.now(), id: rest[0] };
+        }
+      }
       try {
         el.releasePointerCapture(e.pointerId);
       } catch {
