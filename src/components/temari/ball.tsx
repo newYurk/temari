@@ -38,7 +38,7 @@ const _rgt = new THREE.Vector3();
 const Y_UP = new THREE.Vector3(0, 1, 0);
 
 const DAMP = 0.46;
-const YARN_MAX = 20000;
+const YARN_MAX = 800;
 
 function ThreadLayer({
   stitches,
@@ -92,7 +92,7 @@ function LiveThread() {
     const idx = new Uint32Array(Math.max(1, n - 1) * 6);
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.setDrawRange(0, 0);
-    const mat = new THREE.MeshBasicMaterial({
+    const mat = new THREE.MeshLambertMaterial({
       vertexColors: true,
       side: THREE.DoubleSide,
       polygonOffset: true,
@@ -109,12 +109,13 @@ function LiveThread() {
   useEffect(() => {
     return () => {
       obj.geometry.dispose();
-      (obj.material as THREE.MeshBasicMaterial).dispose();
+      (obj.material as THREE.MeshLambertMaterial).dispose();
     };
   }, [obj]);
 
   useFrame(() => {
-    const strands = wrap.yarn();
+    const live = wrap.live;
+    const strands = live.length > 1 ? [{ points: live, hex: wrap.liveColor }] : [];
     const geo = obj.geometry;
     const pos = geo.getAttribute("position") as THREE.BufferAttribute;
     const nrm = geo.getAttribute("normal") as THREE.BufferAttribute;
@@ -611,10 +612,8 @@ export function Ball() {
       if (Math.abs(next - state.wrapProgress) > 0.002) setWrapProgress(next);
     } else if (state.layerDone && mari.current.progress < 0.999) {
       const hex = PALETTES[state.paletteId].colors[state.selectedColor] ?? "#8f3d32";
-      mari.current.advance(wrap, Math.max(14, 240 * d), state.selectedColor, hex);
-      if (wrap.strandCount !== state.wrapCount) setWrapCount(wrap.strandCount);
-      const next = mari.current.progress;
-      if (Math.abs(next - state.wrapProgress) > 0.01) setWrapProgress(next);
+      mari.current.fill(wrap, state.selectedColor, hex);
+      setWrapProgress(1);
     }
 
     const tip = needle.current;
@@ -644,7 +643,7 @@ export function Ball() {
       camera: camera.position,
       wrap: wrap.texture,
       wrapOn: mode === "title",
-      felt: layerDone ? 1 : 0,
+      felt: layerDone ? 1 : wrap.covered,
       feltColor: palette.colors[selectedColor] ?? palette.thread,
     });
     if (guidesMat.current) guidesMat.current.color.set(palette.thread);
@@ -717,12 +716,20 @@ export function Ball() {
         <primitive object={material} attach="material" />
       </mesh>
 
-      <mesh geometry={guideGeo} visible={mode !== "studio" || layerDone}>
+      <mesh
+        geometry={guideGeo}
+        visible={mode !== "studio" || layerDone}
+        scale={1.045}
+        renderOrder={8}
+      >
         <meshStandardMaterial
           ref={guidesMat}
           color={palette.thread}
           roughness={0.48}
           metalness={0.12}
+          polygonOffset
+          polygonOffsetFactor={-6}
+          polygonOffsetUnits={-6}
         />
       </mesh>
 
