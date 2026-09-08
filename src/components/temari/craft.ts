@@ -31,7 +31,7 @@ const W = 1536;
 const H = 768;
 const MIN_DOT = 0.9994;
 const MAX_LIVE = 400;
-const MAX_STRANDS = 48;
+const MAX_STRANDS = 64;
 const MAX_JOINS = 16;
 const TWO_PI = Math.PI * 2;
 
@@ -207,6 +207,10 @@ export class WrapBuffer {
 
   get strandCount() {
     return this.strands.length;
+  }
+
+  yarn(): Strand[] {
+    return this.strands;
   }
 
   snapshot() {
