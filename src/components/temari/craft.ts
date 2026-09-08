@@ -8,7 +8,7 @@ export const CRAFT_LIST: Craft[] = ["wind", "pin", "stitch"];
 export const CRAFT_META: Record<Craft, { label: string; hint: string }> = {
   wind: {
     label: "Намотка",
-    hint: "крутите шар — каждый оборот чуть сдвигает нить",
+    hint: "шар крутится вокруг нити — ведите плавно",
   },
   pin: {
     label: "Метки",
@@ -422,6 +422,22 @@ export class MariWinder {
     return this.locked;
   }
 
+  copyAxis(out: THREE.Vector3) {
+    return out.copy(this.axis);
+  }
+
+  /** Test helper: set the plane at once. Hands never do this. */
+  forceAxis(x: number, y: number, z: number) {
+    this.tmp.set(x, y, z).normalize();
+    if (this.tmp.lengthSq() < 0.2) return;
+    this.q.setFromUnitVectors(this.axis, this.tmp);
+    this.axis.copy(this.tmp);
+    this.dir.applyQuaternion(this.q);
+    this.keepOnEquator();
+    this.locked = true;
+    this.lastAimT = performance.now();
+  }
+
   reorigin(point: THREE.Vector3, from?: THREE.Vector3 | null) {
     this.tmp.copy(point).normalize();
     this.arc = 0;
@@ -442,58 +458,47 @@ export class MariWinder {
   }
 
   /**
-   * Turn the wrap plane toward how the mari is being spun.
-   * First grab snaps to that equator. After that the plane only
-   * eases if the hands clearly change direction — the yarn itself
-   * rotates with the plane, so the path never jumps.
+   * Turn the wrap plane toward the hands. Never snaps — the mari
+   * only rolls as fast as a ball that size can turn.
    */
   aim(spinAxis: THREE.Vector3) {
     this.tmp.copy(spinAxis).normalize();
     if (this.tmp.lengthSq() < 0.2) return;
     if (this.tmp.dot(this.axis) < 0) this.tmp.negate();
-    if (!this.locked) {
-      this.q.setFromUnitVectors(this.axis, this.tmp);
-      this.axis.copy(this.tmp);
-      this.dir.applyQuaternion(this.q);
-      this.keepOnEquator();
+    const now = performance.now();
+    const dt = this.lastAimT ? Math.min(0.048, (now - this.lastAimT) / 1000) : 0.016;
+    this.lastAimT = now;
+    this.qTo.setFromUnitVectors(this.axis, this.tmp);
+    const turn = 2 * Math.acos(clamp(this.qTo.w, -1, 1));
+    if (turn < 1e-4) {
       this.locked = true;
       return;
     }
-    const align = this.axis.dot(this.tmp);
-    if (align > 0.94) return;
-    this.qTo.setFromUnitVectors(this.axis, this.tmp);
-    const turn = 2 * Math.acos(clamp(this.qTo.w, -1, 1));
-    if (turn < 1e-4) return;
-    const now = performance.now();
-    const dt = this.lastAimT ? Math.min(0.05, (now - this.lastAimT) / 1000) : 0.016;
-    this.lastAimT = now;
-    const t = Math.min(1, (1.15 * dt) / turn);
+    const maxTurn = this.locked ? 0.85 * dt : 2.2 * dt;
+    const t = Math.min(1, maxTurn / turn);
     this.q.identity().slerp(this.qTo, t);
     this.axis.applyQuaternion(this.q).normalize();
     this.dir.applyQuaternion(this.q);
     this.keepOnEquator();
+    this.locked = true;
   }
 
-  /** Lay yarn around the current equator. After each lap the plane
-   *  nudges by about one thread — the mari turning in the hands —
-   *  so a long spin covers the ball instead of painting one belt. */
+  /** Yarn around the current equator. The plane precesses continuously
+   *  by about one thread per lap — no corner at the join. */
   spin(dAngle: number, buffer: WrapBuffer, color: number, hex: string) {
     if (dAngle <= 1e-6) return;
     let left = dAngle;
     const h0 = 0.032;
     const band = (buffer.strokeWidth * Math.PI) / H;
-    const nudge = Math.max(0.045, band * 0.92);
+    const nudge = Math.max(0.04, band * 0.9);
     while (left > 1e-6) {
       const h = Math.min(h0, left);
       this.q.setFromAxisAngle(this.axis, h);
       this.dir.applyQuaternion(this.q);
-      this.arc += h;
-      if (this.arc >= TWO_PI) {
-        this.arc -= TWO_PI;
-        this.perp.crossVectors(this.axis, this.dir);
-        if (this.perp.lengthSq() < 1e-8) this.perp.set(0, 1, 0);
+      this.perp.crossVectors(this.axis, this.dir);
+      if (this.perp.lengthSq() > 1e-8) {
         this.perp.normalize();
-        this.q.setFromAxisAngle(this.perp, nudge);
+        this.q.setFromAxisAngle(this.perp, (nudge / TWO_PI) * h);
         this.axis.applyQuaternion(this.q).normalize();
         this.dir.applyQuaternion(this.q);
         this.keepOnEquator();
@@ -501,6 +506,7 @@ export class MariWinder {
       buffer.addPoint(this.dir, color, hex, true);
       this.s += h;
       this.sinceCover += h;
+      this.arc += h;
       left -= h;
       this.wrapCount = Math.floor(this.s / TWO_PI);
     }

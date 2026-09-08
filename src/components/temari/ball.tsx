@@ -91,7 +91,7 @@ function LiveThread() {
     const idx = new Uint32Array(Math.max(1, n - 1) * 6);
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.setDrawRange(0, 0);
-    const mat = new THREE.MeshLambertMaterial({
+    const mat = new THREE.MeshBasicMaterial({
       vertexColors: true,
       side: THREE.DoubleSide,
       polygonOffset: true,
@@ -108,7 +108,7 @@ function LiveThread() {
   useEffect(() => {
     return () => {
       obj.geometry.dispose();
-      (obj.material as THREE.MeshLambertMaterial).dispose();
+      (obj.material as THREE.MeshBasicMaterial).dispose();
     };
   }, [obj]);
 
@@ -409,22 +409,26 @@ export function Ball() {
         _right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
         _up.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
         _axis.copy(_up).multiplyScalar(rx).addScaledVector(_right, ry);
-        const ang = _axis.length();
+        const ang = Math.min(_axis.length(), 0.22);
         if (ang > 1e-6) {
           _axis.normalize();
-          _q.setFromAxisAngle(_axis, ang);
-          g.quaternion.premultiply(_q);
-          omega.current.copy(_axis).multiplyScalar(ang / dt);
           const st = useTemari.getState();
-          if (st.mode === "studio" && st.craft === "wind" && !st.layerDone) {
+          const winding = st.mode === "studio" && st.craft === "wind" && !st.layerDone;
+          if (winding) {
             _inv.copy(g.quaternion).invert();
             _local.copy(_axis).applyQuaternion(_inv).normalize();
+            mari.current.aim(_local);
+            mari.current.copyAxis(_local);
+            _axis.copy(_local).applyQuaternion(g.quaternion).normalize();
+            _q.setFromAxisAngle(_axis, ang);
+            g.quaternion.premultiply(_q);
+            omega.current.copy(_axis).multiplyScalar(ang / dt);
             const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
-            if (!gesture.aimed) {
-              mari.current.aim(_local);
-              gesture.aimed = true;
-            }
             mari.current.spin(ang, wrap, st.selectedColor, hex);
+          } else {
+            _q.setFromAxisAngle(_axis, ang);
+            g.quaternion.premultiply(_q);
+            omega.current.copy(_axis).multiplyScalar(ang / dt);
           }
         }
       }
@@ -472,6 +476,9 @@ export function Ball() {
         _feed.set(x, y, z);
         mari.current.aim(_feed);
       },
+      force: (x: number, y: number, z: number) => {
+        mari.current.forceAxis(x, y, z);
+      },
       feed: (rad: number) => {
         const st = useTemari.getState();
         const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
@@ -494,10 +501,17 @@ export function Ball() {
     const g = group.current;
     const spd = omega.current.length();
     if (g && !spinning.current && spd > 0.0007) {
-      _axis.copy(omega.current).normalize();
+      const st = useTemari.getState();
+      const winding = st.mode === "studio" && st.craft === "wind" && !st.layerDone;
+      if (winding) {
+        mari.current.copyAxis(_local);
+        _axis.copy(_local).applyQuaternion(g.quaternion).normalize();
+      } else {
+        _axis.copy(omega.current).normalize();
+      }
       _q.setFromAxisAngle(_axis, spd * d);
       g.quaternion.premultiply(_q);
-      omega.current.multiplyScalar(Math.exp(-DAMP * d));
+      omega.current.copy(_axis).multiplyScalar(spd * Math.exp(-DAMP * d));
     } else if (!spinning.current && spd <= 0.0007) {
       omega.current.set(0, 0, 0);
     }
@@ -508,11 +522,6 @@ export function Ball() {
     if (state.mode === "studio" && state.craft === "wind" && !state.layerDone) {
       if (!spinning.current && spd > 0.12 && g) {
         const hex = PALETTES[state.paletteId].colors[state.selectedColor] ?? "#8f3d32";
-        if (!mari.current.hasPlane) {
-          _inv.copy(g.quaternion).invert();
-          _local.copy(omega.current).normalize().applyQuaternion(_inv);
-          mari.current.aim(_local);
-        }
         mari.current.spin(spd * d, wrap, state.selectedColor, hex);
         feel.wrapTurn(mari.current.wrapCount);
       }
