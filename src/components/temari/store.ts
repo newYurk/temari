@@ -603,7 +603,6 @@ export const useTemari = create<TemariState>((set, get) => ({
     if (get().mode !== "studio") return;
     feel.layer();
     set({
-      wrapProgress: 1,
       layerDone: true,
       craft: "stitch",
     });
