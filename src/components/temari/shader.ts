@@ -80,12 +80,23 @@ void main() {
   else if (fill >= 2.5) col = uPalette[3];
 
   if (uWrapOn > 0.5) {
-    vec2 wu = vec2(
-      atan(nL.x, nL.z) / 6.28318530718 + 0.5,
-      0.5 - asin(clamp(nL.y, -1.0, 1.0)) / 3.14159265359
-    );
-    vec4 wcol = texture2D(uWrap, wu);
-    col = mix(col, wcol.rgb, wcol.a);
+    float ay = abs(nL.y);
+    float u = atan(nL.x, nL.z) / 6.28318530718 + 0.5;
+    float v = 0.5 - asin(clamp(nL.y, -1.0, 1.0)) / 3.14159265359;
+    v = clamp(v, 0.0015, 0.9985);
+    vec4 wcol;
+    if (ay > 0.972) {
+      // atan is unstable at the geographic poles; implicit derivatives
+      // there pick a huge mip/aniso footprint of the empty canvas → black cap.
+      float pv = nL.y > 0.0 ? 0.002 : 0.998;
+      wcol = texture2DLodEXT(uWrap, vec2(0.00, pv), 0.0) * 0.25
+           + texture2DLodEXT(uWrap, vec2(0.25, pv), 0.0) * 0.25
+           + texture2DLodEXT(uWrap, vec2(0.50, pv), 0.0) * 0.25
+           + texture2DLodEXT(uWrap, vec2(0.75, pv), 0.0) * 0.25;
+    } else {
+      wcol = texture2DLodEXT(uWrap, vec2(u, v), 0.0);
+    }
+    col = mix(col, wcol.rgb / max(wcol.a, 0.001), wcol.a);
   }
 
   float phi = atan(nL.x, nL.z);
