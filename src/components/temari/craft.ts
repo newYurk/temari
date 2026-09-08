@@ -35,7 +35,7 @@ export const WRAP_META: Record<WrapStyle, { label: string; hint: string }> = {
   },
   spiral: {
     label: "Спираль",
-    hint: "спираль от булавки, как удзумаки · тык — переставить",
+    hint: "удзумаки от булавки, нить ложится виток к витку · тык — переставить",
   },
 };
 
@@ -113,16 +113,6 @@ function slerpOnto(
     .normalize();
 }
 
-function stampPole(ctx: CanvasRenderingContext2D, p: THREE.Vector3, hex: string) {
-  const cap = Math.abs(p.y) > 0.88 ? Math.ceil((Math.abs(p.y) - 0.88) * 180) : 0;
-  if (cap <= 0) return;
-  ctx.globalAlpha = 0.9;
-  ctx.fillStyle = hex;
-  const h = Math.min(32, cap);
-  if (p.y > 0) ctx.fillRect(0, 0, W, h);
-  else ctx.fillRect(0, H - h, W, h);
-}
-
 function stampDot(
   ctx: CanvasRenderingContext2D,
   p: THREE.Vector3,
@@ -131,14 +121,14 @@ function stampDot(
 ) {
   const [u, v] = toUV(p);
   ctx.fillStyle = hex;
-  ctx.globalAlpha = 0.82;
-  const r = Math.max(2.2, width * 0.52);
+  ctx.globalAlpha = 0.88;
+  const pole = Math.abs(p.y);
+  const r = Math.max(2.4, width * 0.55) * (1 + Math.max(0, pole - 0.8) * 4);
   for (const shift of [-1, 0, 1]) {
     ctx.beginPath();
     ctx.arc((u + shift) * W, v * H, r, 0, Math.PI * 2);
     ctx.fill();
   }
-  stampPole(ctx, p, hex);
 }
 
 function strokeSeg(
@@ -148,6 +138,10 @@ function strokeSeg(
   hex: string,
   width: number,
 ) {
+  if (Math.abs(a.y) > 0.84 || Math.abs(b.y) > 0.84) {
+    stampDot(ctx, b, hex, width);
+    return;
+  }
   let [u0, v0] = toUV(a);
   let [u1, v1] = toUV(b);
   if (u1 - u0 > 0.5) u1 -= 1;
@@ -168,7 +162,7 @@ function strokeSeg(
       line(alpha, w, u0 + shift, v0, u1 + shift, v1);
     }
   };
-  paint(0.45, width * 1.55);
+  paint(0.5, width * 1.45);
   paint(0.96, width);
 }
 
@@ -180,14 +174,16 @@ function stroke(
   width: number,
 ) {
   const theta = Math.acos(clamp(a.dot(b), -1, 1));
-  const steps = Math.max(1, Math.ceil(theta / 0.032));
+  const poleish = Math.max(Math.abs(a.y), Math.abs(b.y));
+  const step = poleish > 0.8 ? 0.014 : 0.032;
+  const steps = Math.max(1, Math.ceil(theta / step));
   _slerpA.copy(a);
   for (let i = 1; i <= steps; i++) {
     slerpOnto(a, b, i / steps, _slerpB);
     strokeSeg(ctx, _slerpA, _slerpB, hex, width);
+    stampDot(ctx, _slerpB, hex, width);
     _slerpA.copy(_slerpB);
   }
-  stampDot(ctx, b, hex, width);
 }
 
 type Strand = { color: number; hex: string; points: THREE.Vector3[] };
@@ -207,7 +203,7 @@ export class WrapBuffer {
     this.canvas = document.createElement("canvas");
     this.canvas.width = W;
     this.canvas.height = H;
-    const ctx = this.canvas.getContext("2d");
+    const ctx = this.canvas.getContext("2d", { alpha: true });
     if (!ctx) throw new Error("wrap canvas");
     this.ctx = ctx;
     this.texture = new THREE.CanvasTexture(this.canvas);
@@ -216,6 +212,8 @@ export class WrapBuffer {
     this.texture.minFilter = THREE.LinearFilter;
     this.texture.magFilter = THREE.LinearFilter;
     this.texture.generateMipmaps = false;
+    this.texture.anisotropy = 1;
+    this.texture.premultiplyAlpha = true;
     this.texture.colorSpace = THREE.SRGBColorSpace;
     this.texture.needsUpdate = true;
   }
@@ -225,12 +223,16 @@ export class WrapBuffer {
   }
 
   snapshot() {
+    const poleN = this.ctx.getImageData(W / 2, 1, 1, 1).data;
+    const poleS = this.ctx.getImageData(W / 2, H - 2, 1, 1).data;
     return {
       wraps: this.strands.length,
       joins: this.joins.length,
       live: this.live.length,
       hex: this.liveColor,
       colors: this.strands.map((s) => s.color),
+      poleN: [poleN[0], poleN[1], poleN[2], poleN[3]],
+      poleS: [poleS[0], poleS[1], poleS[2], poleS[3]],
     };
   }
 
@@ -352,7 +354,9 @@ export function strokePx(thickness: number) {
  * Two real ways to lay the base:
  *  - around (maki): full-circumference wraps, heading changes each lap
  *    so no two successive wraps are parallel and they don't share a pole
- *  - spiral (uzumaki): spherical spiral whose pole is the start pin
+ *  - spiral (uzumaki): spherical spiral whose pole is the start pin;
+ *    at the antipode it turns around with a half-turn offset so the
+ *    return pass sits in the grooves (no vinyl rings, no polar pit)
  * A new colour may continue from the last point, or begin at a moved start pin.
  */
 export class MariWinder {
@@ -369,6 +373,8 @@ export class MariWinder {
   private tmp = new THREE.Vector3();
   private q = new THREE.Quaternion();
   private spiralT = 0.02;
+  private spiralPhi = 0;
+  private spiralSign = 1;
   private arc = 0;
 
   reset(thickness: number) {
@@ -377,13 +383,16 @@ export class MariWinder {
     this.wrapCount = 0;
     this.arc = 0;
     this.sNeeded = Math.PI * 2 * (36 + (1 - t) * 40);
-    this.pitch = (strokePx(t) * Math.PI) / 768 * 0.72;
+    const ang = (strokePx(t) * Math.PI) / 768;
+    this.pitch = ang * 0.55;
     this.axis.set(0.24, 0.95, 0.18).normalize();
     this.dir.crossVectors(this.axis, new THREE.Vector3(1, 0, 0));
     if (this.dir.lengthSq() < 0.05) this.dir.crossVectors(this.axis, new THREE.Vector3(0, 0, 1));
     this.dir.normalize();
     this.pole.set(0, 1, 0);
     this.spiralT = 0.02;
+    this.spiralPhi = 0;
+    this.spiralSign = 1;
     this.framePole();
   }
 
@@ -398,12 +407,17 @@ export class MariWinder {
     if (style === "spiral") {
       this.pole.copy(this.tmp);
       this.framePole();
+      this.spiralPhi = 0;
+      this.spiralSign = 1;
+      // Never inherit a far `from` — that parked the uzumaki at the antipode
+      // (the black cap opposite the pin). A new spiral always starts at the pin.
+      this.spiralT = 0.02;
       if (from) {
         const f = from.clone().normalize();
-        const theta = Math.acos(clamp(this.pole.dot(f), -1, 1));
-        this.spiralT = Math.max(0.015, Math.min(0.98, theta / Math.PI));
-      } else {
-        this.spiralT = 0.02;
+        const near = this.pole.dot(f);
+        if (near > 0.92) {
+          this.spiralT = Math.max(0.015, Math.min(0.12, Math.acos(clamp(near, -1, 1)) / Math.PI));
+        }
       }
     } else {
       const at = from ? from.clone().normalize() : this.tmp.clone();
@@ -422,12 +436,10 @@ export class MariWinder {
 
   private spiralPoint(out: THREE.Vector3) {
     const theta = this.spiralT * Math.PI;
-    const turns = Math.PI / Math.max(0.02, this.pitch);
-    const phi = this.spiralT * turns * 2 * Math.PI;
     const ct = Math.cos(theta);
     const st = Math.sin(theta);
-    const cp = Math.cos(phi);
-    const sp = Math.sin(phi);
+    const cp = Math.cos(this.spiralPhi);
+    const sp = Math.sin(this.spiralPhi);
     out.set(
       this.pole.x * ct + (this.u.x * cp + this.v.x * sp) * st,
       this.pole.y * ct + (this.u.y * cp + this.v.y * sp) * st,
@@ -436,21 +448,31 @@ export class MariWinder {
   }
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
-    this.advance(buffer, this.sNeeded, color, hex, 0.12);
+    this.advance(buffer, this.sNeeded, color, hex, 0.1);
   }
 
-  advance(buffer: WrapBuffer, ds: number, color: number, hex: string, step = 0.085) {
+  advance(buffer: WrapBuffer, ds: number, color: number, hex: string, step = 0.07) {
     if (ds <= 0 || this.progress >= 1) return;
     let left = Math.min(ds, this.sNeeded - this.s);
-    const h0 = Math.max(0.04, step);
+    const h0 = Math.max(0.035, step);
     while (left > 1e-6) {
       const h = Math.min(h0, left);
       if (this.style === "spiral") {
-        const turns = Math.PI / Math.max(0.02, this.pitch);
-        this.spiralT += h / (Math.PI * turns);
-        if (this.spiralT >= 1) {
-          this.spiralT = 0.02;
-          this.q.setFromAxisAngle(this.u, 0.38);
+        const k = this.pitch / (Math.PI * 2);
+        const theta = this.spiralT * Math.PI;
+        const sinT = Math.max(0.06, Math.sin(theta));
+        const dphi = h / Math.sqrt(k * k + sinT * sinT);
+        this.spiralPhi += this.spiralSign * dphi;
+        this.spiralT += (this.spiralSign * k * dphi) / Math.PI;
+        if (this.spiralT >= 0.975) {
+          this.spiralT = 0.975;
+          this.spiralSign = -1;
+          this.spiralPhi += Math.PI;
+        } else if (this.spiralT <= 0.022 && this.spiralSign < 0) {
+          this.spiralT = 0.022;
+          this.spiralSign = 1;
+          this.spiralPhi += Math.PI;
+          this.q.setFromAxisAngle(this.u, 0.09);
           this.pole.applyQuaternion(this.q).normalize();
           this.framePole();
         }

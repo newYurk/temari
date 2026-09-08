@@ -77,39 +77,71 @@ function ThreadLayer({
 
 function LiveThread() {
   const obj = useMemo(() => {
+    const n = LIVE_MAX;
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(LIVE_MAX * 3), 3));
+    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
+    geo.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
+    const idx = new Uint32Array((n - 1) * 6);
+    for (let i = 0; i < n - 1; i++) {
+      const a = i * 2;
+      idx[i * 6] = a;
+      idx[i * 6 + 1] = a + 1;
+      idx[i * 6 + 2] = a + 2;
+      idx[i * 6 + 3] = a + 1;
+      idx[i * 6 + 4] = a + 3;
+      idx[i * 6 + 5] = a + 2;
+    }
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.setDrawRange(0, 0);
-    const mat = new THREE.LineBasicMaterial({
+    const mat = new THREE.MeshStandardMaterial({
       color: "#8f3d32",
-      transparent: true,
-      opacity: 0.92,
+      roughness: 0.58,
+      metalness: 0.07,
+      side: THREE.DoubleSide,
     });
-    const line = new THREE.Line(geo, mat);
-    line.frustumCulled = false;
-    return line;
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false;
+    return mesh;
   }, []);
   const wrap = getWrapBuffer();
 
   useEffect(() => {
     return () => {
       obj.geometry.dispose();
-      (obj.material as THREE.LineBasicMaterial).dispose();
+      (obj.material as THREE.MeshStandardMaterial).dispose();
     };
   }, [obj]);
 
   useFrame(() => {
     const pts = wrap.live;
     const geo = obj.geometry;
-    const attr = geo.getAttribute("position") as THREE.BufferAttribute;
+    const pos = geo.getAttribute("position") as THREE.BufferAttribute;
+    const nrm = geo.getAttribute("normal") as THREE.BufferAttribute;
     const n = Math.min(pts.length, LIVE_MAX);
+    const half = Math.max(0.01, (wrap.strokeWidth / 768) * Math.PI * 0.42);
+    const lift = 1.018;
     for (let i = 0; i < n; i++) {
       const p = pts[i];
-      attr.setXYZ(i, p.x * 1.02, p.y * 1.02, p.z * 1.02);
+      if (!p) continue;
+      const prev = pts[i === 0 ? 0 : i - 1] ?? p;
+      const next = pts[i === n - 1 ? n - 1 : i + 1] ?? p;
+      _feed.copy(next).sub(prev);
+      _local.copy(p).normalize();
+      _right.crossVectors(_local, _feed);
+      if (_right.lengthSq() < 1e-10) _right.set(1, 0, 0).cross(_local);
+      _right.normalize();
+      const px = p.x * lift;
+      const py = p.y * lift;
+      const pz = p.z * lift;
+      pos.setXYZ(i * 2, px + _right.x * half, py + _right.y * half, pz + _right.z * half);
+      pos.setXYZ(i * 2 + 1, px - _right.x * half, py - _right.y * half, pz - _right.z * half);
+      nrm.setXYZ(i * 2, _local.x, _local.y, _local.z);
+      nrm.setXYZ(i * 2 + 1, _local.x, _local.y, _local.z);
     }
-    attr.needsUpdate = true;
-    geo.setDrawRange(0, n);
-    (obj.material as THREE.LineBasicMaterial).color.set(wrap.liveColor);
+    pos.needsUpdate = true;
+    nrm.needsUpdate = true;
+    geo.setDrawRange(0, Math.max(0, (n - 1) * 6));
+    (obj.material as THREE.MeshStandardMaterial).color.set(wrap.liveColor);
   });
 
   return <primitive object={obj} />;
@@ -275,7 +307,7 @@ export function Ball() {
     const src = pin
       ? new THREE.Vector3(pin[0], pin[1], pin[2])
       : last ?? new THREE.Vector3(DEFAULT_START[0], DEFAULT_START[1], DEFAULT_START[2]);
-    mari.current.reorigin(src, wrapStyle, last);
+    mari.current.reorigin(src, wrapStyle, wrapStyle === "spiral" ? null : last);
   }, [wrap, wrapStyle]);
 
   useEffect(() => {
