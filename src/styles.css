@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0c0b09;
+  --color-elevated: #161412;
+  --color-linen: #ece8e1;
+  --color-paper: #d4cfc5;
+  --color-stone: #8a847c;
+  --color-cinnabar: #8f3d32;
+  --color-border: color-mix(in oklab, #ece8e1 14%, transparent);
+  --color-border-strong: color-mix(in oklab, #ece8e1 24%, transparent);
+
+  --font-display: "Cormorant Garamond", "Times New Roman", serif;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+    background: var(--color-linen);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior: none;
+  }
+
+  body {
+    overflow: hidden;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+}
+
+@keyframes temari-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+.temari-rise {
+  animation: temari-rise 420ms var(--ease-smooth-out) both;
+}
+
+.temari-rise-2 {
+  animation-delay: 70ms;
+}
+
+.temari-rise-3 {
+  animation-delay: 140ms;
+}
+
+.temari-rise-4 {
+  animation-delay: 210ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .temari-rise,
+  .temari-rise-2,
+  .temari-rise-3,
+  .temari-rise-4 {
+    animation: none;
+  }
+}

@@ -18,7 +18,7 @@ export function TemariApp() {
   return (
     <main
       className={cn(
-        "relative h-dvh overflow-hidden bg-ink text-linen",
+        "relative h-dvh overflow-hidden bg-linen text-ink",
         stage && "flex flex-col",
       )}
       onPointerDownCapture={() => unlock()}
@@ -31,7 +31,7 @@ export function TemariApp() {
         {on ? (
           <TemariScene />
         ) : (
-          <canvas className="absolute inset-0 z-0 size-full bg-ink" aria-hidden />
+          <canvas className="absolute inset-0 z-0 size-full bg-linen" aria-hidden />
         )}
       </div>
       <Overlay />
