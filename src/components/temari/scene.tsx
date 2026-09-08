@@ -16,9 +16,9 @@ function framingDistance(width: number, height: number) {
 }
 
 function viewLift(width: number, height: number, mode: Mode) {
+  if (mode !== "title") return 0;
   const portrait = height > width * 1.15;
-  if (!portrait) return height * 0.05;
-  return height * (mode === "title" ? 0.1 : 0.18);
+  return height * (portrait ? 0.06 : 0.03);
 }
 
 function CameraRig() {
@@ -45,7 +45,11 @@ function CameraRig() {
     camera.near = 0.1;
     camera.far = Math.max(40, dist * 4);
     const lift = viewLift(size.width, size.height, mode);
-    camera.setViewOffset(size.width, size.height, 0, lift, size.width, size.height);
+    if (lift === 0) {
+      camera.clearViewOffset();
+    } else {
+      camera.setViewOffset(size.width, size.height, 0, lift, size.width, size.height);
+    }
     camera.updateProjectionMatrix();
   }, [camera, dist, mode, size.height, size.width]);
 
@@ -66,12 +70,14 @@ function CameraRig() {
       ref={controlsRef as never}
       makeDefault
       enablePan={false}
+      enableRotate={autoRotate}
+      enableZoom={!autoRotate}
       enableDamping
       dampingFactor={0.08}
       minDistance={Math.min(2.15, dist * 0.55)}
       maxDistance={dist}
-      minPolarAngle={0.28}
-      maxPolarAngle={Math.PI - 0.28}
+      minPolarAngle={0}
+      maxPolarAngle={Math.PI}
       autoRotate={autoRotate && !reduce}
       autoRotateSpeed={0.42}
       rotateSpeed={0.72}

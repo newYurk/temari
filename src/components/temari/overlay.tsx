@@ -1,6 +1,7 @@
 import { Eye, LocateFixed, RotateCcw, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { CRAFT_LIST, CRAFT_META, type Craft } from "./craft";
 import { DIVISION_META, fillsMatch, type Division } from "./division";
 import { PALETTE_LIST, PALETTES } from "./palettes";
 import { MOTIF_LIST, MOTIF_META } from "./patterns";
@@ -12,11 +13,15 @@ const DIVISIONS: Division[] = ["simple", "c8", "c10"];
 export function Overlay() {
   const mode = useTemari((s) => s.mode);
 
-  return (
-    <div className="pointer-events-none absolute inset-0 z-20">
-      {mode === "title" ? <TitleLayer /> : <Workbench />}
-    </div>
-  );
+  if (mode === "title") {
+    return (
+      <div className="pointer-events-none absolute inset-0 z-20">
+        <TitleLayer />
+      </div>
+    );
+  }
+
+  return <Workbench />;
 }
 
 function RecenterButton({ className }: { className?: string }) {
@@ -53,8 +58,8 @@ function TitleLayer() {
           Темари
         </h1>
         <p className="temari-rise temari-rise-3 mt-3 max-w-sm text-sm leading-relaxed text-stone">
-          Кику, хоси, хиси, оби — готовые узоры. В студии кладёте стежок за
-          стежком по сетке деления.
+          Крутите шар — он идёт по инерции. Первый слой наматывается без
+          ограничения. Булавки, и нить между ними.
         </p>
         <div className="temari-rise temari-rise-4 pointer-events-auto mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
           <Button onClick={enterStudio}>Начать</Button>
@@ -72,16 +77,20 @@ function Workbench() {
   const division = useTemari((s) => s.division);
   const paletteId = useTemari((s) => s.paletteId);
   const motif = useTemari((s) => s.motif);
+  const craft = useTemari((s) => s.craft);
   const selectedColor = useTemari((s) => s.selectedColor);
   const fills = useTemari((s) => s.fills);
   const puzzleIndex = useTemari((s) => s.puzzleIndex);
   const solved = useTemari((s) => s.solved);
   const history = useTemari((s) => s.history);
   const sewnHistory = useTemari((s) => s.sewnHistory);
+  const pinHistory = useTemari((s) => s.pinHistory);
+  const wrapCount = useTemari((s) => s.wrapCount);
   const toTitle = useTemari((s) => s.toTitle);
   const setDivision = useTemari((s) => s.setDivision);
   const setPalette = useTemari((s) => s.setPalette);
   const setMotif = useTemari((s) => s.setMotif);
+  const setCraft = useTemari((s) => s.setCraft);
   const setColor = useTemari((s) => s.setColor);
   const undo = useTemari((s) => s.undo);
   const reset = useTemari((s) => s.reset);
@@ -94,9 +103,25 @@ function Workbench() {
   const complete =
     mode === "kata" && puzzle ? fillsMatch(fills, puzzle.target) : false;
 
+  const undoDisabled =
+    mode === "kata"
+      ? history.length === 0
+      : craft === "wind"
+        ? wrapCount === 0
+        : craft === "pin"
+          ? pinHistory.length === 0
+          : sewnHistory.length === 0;
+
+  const hint =
+    mode === "studio"
+      ? CRAFT_META[craft].hint
+      : puzzle
+        ? puzzle.hint
+        : "";
+
   return (
-    <div className="flex h-full flex-col justify-between">
-      <header className="flex items-start justify-between gap-4 px-5 pt-5 md:px-8 md:pt-8">
+    <>
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-5 pt-5 md:px-8 md:pt-8">
         <div className="pt-[env(safe-area-inset-top)]">
           <button
             type="button"
@@ -105,13 +130,7 @@ function Workbench() {
           >
             Темари
           </button>
-          <p className="mt-1 text-xs tracking-wide text-stone">
-            {mode === "studio"
-              ? MOTIF_META[motif].hint
-              : puzzle
-                ? puzzle.hint
-                : ""}
-          </p>
+          <p className="mt-1 max-w-[16rem] text-xs tracking-wide text-stone">{hint}</p>
         </div>
         <div className="flex items-start gap-2 pt-[env(safe-area-inset-top)]">
           {mode === "kata" && puzzle ? (
@@ -126,42 +145,79 @@ function Workbench() {
         </div>
       </header>
 
-      <div className="pointer-events-auto px-3 pb-[max(0.6rem,env(safe-area-inset-bottom))] md:px-8">
+      <div className="pointer-events-auto relative z-20 shrink-0 px-3 pb-[max(0.6rem,env(safe-area-inset-bottom))] md:px-8">
         <div className="mx-auto max-w-xl rounded-xl bg-elevated/95 p-2 ring-1 ring-linen/10 md:p-3">
           {mode === "studio" ? (
             <>
               <div className="mb-1.5 flex gap-1 rounded-md bg-ink p-0.5">
-                {DIVISIONS.map((id) => (
+                {CRAFT_LIST.map((id: Craft) => (
                   <button
                     key={id}
                     type="button"
-                    onClick={() => setDivision(id)}
-                    className={cn(
-                      "min-h-9 flex-1 rounded-sm px-2 text-sm transition-colors duration-150",
-                      division === id
-                        ? "bg-linen/10 text-linen"
-                        : "text-stone hover:text-linen",
-                    )}
-                  >
-                    {DIVISION_META[id].label}
-                  </button>
-                ))}
-              </div>
-              <div className="mb-1.5 flex gap-1 rounded-md bg-ink p-0.5">
-                {MOTIF_LIST.map((id) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setMotif(id)}
+                    onClick={() => setCraft(id)}
                     className={cn(
                       "min-h-9 flex-1 rounded-sm px-1 text-xs tracking-wide transition-colors duration-150",
-                      motif === id ? "bg-linen/10 text-linen" : "text-stone hover:text-linen",
+                      craft === id ? "bg-linen/10 text-linen" : "text-stone hover:text-linen",
                     )}
                   >
-                    {MOTIF_META[id].label}
+                    {CRAFT_META[id].label}
                   </button>
                 ))}
               </div>
+              {craft === "stitch" ? (
+                <>
+                  <div className="mb-1.5 flex gap-1 rounded-md bg-ink p-0.5">
+                    {DIVISIONS.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setDivision(id)}
+                        className={cn(
+                          "min-h-9 flex-1 rounded-sm px-2 text-sm transition-colors duration-150",
+                          division === id
+                            ? "bg-linen/10 text-linen"
+                            : "text-stone hover:text-linen",
+                        )}
+                      >
+                        {DIVISION_META[id].label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mb-1.5 flex gap-1 rounded-md bg-ink p-0.5">
+                    {MOTIF_LIST.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setMotif(id)}
+                        className={cn(
+                          "min-h-9 flex-1 rounded-sm px-1 text-xs tracking-wide transition-colors duration-150",
+                          motif === id ? "bg-linen/10 text-linen" : "text-stone hover:text-linen",
+                        )}
+                      >
+                        {MOTIF_META[id].label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="mb-1.5 flex gap-1 rounded-md bg-ink p-0.5">
+                  {DIVISIONS.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setDivision(id)}
+                      className={cn(
+                        "min-h-9 flex-1 rounded-sm px-2 text-sm transition-colors duration-150",
+                        division === id
+                          ? "bg-linen/10 text-linen"
+                          : "text-stone hover:text-linen",
+                      )}
+                    >
+                      {DIVISION_META[id].label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="mb-1.5 flex gap-1">
                 {PALETTE_LIST.map((item) => (
                   <button
@@ -236,7 +292,7 @@ function Workbench() {
                 variant="ghost"
                 className="min-h-9 px-2.5"
                 aria-label="Отменить"
-                disabled={mode === "kata" ? history.length === 0 : sewnHistory.length === 0}
+                disabled={undoDisabled}
                 onClick={undo}
               >
                 <Undo2 className="size-4" />
@@ -262,6 +318,6 @@ function Workbench() {
           ) : null}
         </div>
       </div>
-    </div>
+    </>
   );
 }

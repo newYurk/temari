@@ -5,11 +5,13 @@ import { PALETTES, type PaletteId } from "./palettes";
 const vertexShader = /* glsl */ `
 varying vec3 vN;
 varying vec3 vW;
+varying vec3 vL;
 
 void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
   vW = world.xyz;
   vN = normalize(mat3(modelMatrix) * normal);
+  vL = normalize(position);
   gl_Position = projectionMatrix * viewMatrix * world;
 }
 `;
@@ -24,9 +26,12 @@ uniform vec3 uFaceNormals[20];
 uniform int uDivision;
 uniform int uHover;
 uniform float uPeek;
+uniform sampler2D uWrap;
+uniform float uWrapOn;
 
 varying vec3 vN;
 varying vec3 vW;
+varying vec3 vL;
 
 int regionSimple(vec3 n) {
   float phi = atan(n.x, n.z);
@@ -59,11 +64,11 @@ int regionC10(vec3 n) {
 }
 
 void main() {
-  vec3 n = normalize(vN);
+  vec3 nL = normalize(vL);
   int region = 0;
-  if (uDivision == 0) region = regionSimple(n);
-  else if (uDivision == 1) region = regionC8(n);
-  else region = regionC10(n);
+  if (uDivision == 0) region = regionSimple(nL);
+  else if (uDivision == 1) region = regionC8(nL);
+  else region = regionC10(nL);
 
   float fill = uFills[region];
   if (uPeek > 0.5) fill = uTarget[region];
@@ -74,15 +79,25 @@ void main() {
   else if (fill >= 1.5 && fill < 2.5) col = uPalette[2];
   else if (fill >= 2.5) col = uPalette[3];
 
-  float phi = atan(n.x, n.z);
-  float wrap = sin(n.y * 148.0) * 0.028;
-  float stitch = sin(phi * 86.0 + n.y * 10.0) * 0.018;
+  if (uWrapOn > 0.5) {
+    vec2 wu = vec2(
+      atan(nL.x, nL.z) / 6.28318530718 + 0.5,
+      0.5 - asin(clamp(nL.y, -1.0, 1.0)) / 3.14159265359
+    );
+    vec4 wcol = texture2D(uWrap, wu);
+    col = mix(col, wcol.rgb, wcol.a);
+  }
+
+  float phi = atan(nL.x, nL.z);
+  float wrap = sin(nL.y * 148.0) * 0.028;
+  float stitch = sin(phi * 86.0 + nL.y * 10.0) * 0.018;
   col *= 0.97 + wrap + stitch;
 
   if (region == uHover && uHover >= 0) {
     col *= 1.09;
   }
 
+  vec3 n = normalize(vN);
   vec3 L = normalize(vec3(0.42, 0.78, 0.48));
   vec3 V = normalize(uCamPos - vW);
   vec3 H = normalize(L + V);
@@ -100,6 +115,8 @@ function colorList(hexes: string[]) {
   return hexes.map((hex) => new THREE.Color(hex));
 }
 
+const emptyWrap = new THREE.Texture();
+
 export function createTemariMaterial() {
   const palette = PALETTES.beni;
   return new THREE.ShaderMaterial({
@@ -115,6 +132,8 @@ export function createTemariMaterial() {
       uDivision: { value: DIV_INDEX.c8 },
       uHover: { value: -1 },
       uPeek: { value: 0 },
+      uWrap: { value: emptyWrap },
+      uWrapOn: { value: 0 },
     },
     vertexShader,
     fragmentShader,
@@ -132,6 +151,8 @@ export function syncTemariMaterial(
     hover: number;
     peeking: boolean;
     camera: THREE.Vector3;
+    wrap?: THREE.Texture | null;
+    wrapOn?: boolean;
   },
 ) {
   const palette = PALETTES[opts.paletteId];
@@ -148,4 +169,6 @@ export function syncTemariMaterial(
     target[i] = opts.target[i] ?? -1;
   }
   (material.uniforms.uCamPos.value as THREE.Vector3).copy(opts.camera);
+  material.uniforms.uWrap.value = opts.wrap ?? emptyWrap;
+  material.uniforms.uWrapOn.value = opts.wrapOn ? 1 : 0;
 }

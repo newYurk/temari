@@ -5,6 +5,13 @@ import {
   padFills,
   type Division,
 } from "./division";
+import {
+  isCraft,
+  pinHit,
+  type Craft,
+  type Pin,
+  type PinArc,
+} from "./craft";
 import { isPaletteId, type PaletteId } from "./palettes";
 import {
   fillKikuSewn,
@@ -13,13 +20,14 @@ import {
   type KikuSlot,
   type MotifId,
   type SewnEntry,
+  type Vec3,
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 
 export type Mode = "title" | "studio" | "kata";
 
 type Save = {
-  v: 1;
+  v: 2;
   division: Division;
   paletteId: PaletteId;
   selectedColor: number;
@@ -27,9 +35,13 @@ type Save = {
   solved: string[];
   motif?: MotifId;
   sewn?: SewnEntry[];
+  craft?: Craft;
+  pins?: Pin[];
+  pinArcs?: PinArc[];
 };
 
 const SAVE_KEY = "temari-v1";
+const MAX_PINS = 48;
 
 function isDivision(value: unknown): value is Division {
   return value === "simple" || value === "c8" || value === "c10";
@@ -46,14 +58,45 @@ function isSewn(value: unknown): value is SewnEntry[] {
   );
 }
 
+function isVec3(value: unknown): value is Vec3 {
+  return (
+    Array.isArray(value) &&
+    value.length === 3 &&
+    value.every((n) => typeof n === "number" && Number.isFinite(n))
+  );
+}
+
+function isPins(value: unknown): value is Pin[] {
+  if (!Array.isArray(value)) return false;
+  return value.every(
+    (item) =>
+      item &&
+      typeof item === "object" &&
+      typeof (item as Pin).id === "string" &&
+      isVec3((item as Pin).p),
+  );
+}
+
+function isArcs(value: unknown): value is PinArc[] {
+  if (!Array.isArray(value)) return false;
+  return value.every(
+    (item) =>
+      item &&
+      typeof item === "object" &&
+      isVec3((item as PinArc).a) &&
+      isVec3((item as PinArc).b) &&
+      typeof (item as PinArc).color === "number",
+  );
+}
+
 function loadSave(): Partial<Save> {
   if (typeof window === "undefined") return {};
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return {};
-    const data = JSON.parse(raw) as Save;
-    if (data.v !== 1) return {};
-    return data;
+    const data = JSON.parse(raw) as { v?: number };
+    if (data.v !== 1 && data.v !== 2) return {};
+    return data as Partial<Save>;
   } catch {
     return {};
   }
@@ -79,20 +122,29 @@ let studioDraft: Omit<Save, "v" | "solved"> = {
   fills: Array.isArray(initial.fills) ? initial.fills : emptyFills("c8"),
   motif: isMotifId(initial.motif) ? initial.motif : "none",
   sewn: isSewn(initial.sewn) ? initial.sewn : [],
+  craft: isCraft(initial.craft) ? initial.craft : "wind",
+  pins: isPins(initial.pins) ? initial.pins : [],
+  pinArcs: isArcs(initial.pinArcs) ? initial.pinArcs : [],
 };
 
 function persist(solved: string[]) {
-  writeSave({ v: 1, ...studioDraft, solved });
+  writeSave({ v: 2, ...studioDraft, solved });
 }
+
+type PinSnap = { pins: Pin[]; pinArcs: PinArc[]; activePin: number | null };
 
 type TemariState = {
   mode: Mode;
   division: Division;
   paletteId: PaletteId;
   motif: MotifId;
+  craft: Craft;
   selectedColor: number;
   fills: number[];
   sewn: SewnEntry[];
+  pins: Pin[];
+  pinArcs: PinArc[];
+  activePin: number | null;
   hover: number;
   hoverSlot: KikuSlot | null;
   peeking: boolean;
@@ -100,6 +152,10 @@ type TemariState = {
   solved: string[];
   history: number[][];
   sewnHistory: SewnEntry[][];
+  pinHistory: PinSnap[];
+  wrapCount: number;
+  wrapUndoNonce: number;
+  wrapResetNonce: number;
   viewNonce: number;
   enterStudio: () => void;
   enterKata: (index?: number) => void;
@@ -107,9 +163,11 @@ type TemariState = {
   setDivision: (division: Division) => void;
   setPalette: (id: PaletteId) => void;
   setMotif: (id: MotifId) => void;
+  setCraft: (craft: Craft) => void;
   setColor: (index: number) => void;
   paint: (region: number) => void;
   sew: (slot: KikuSlot) => void;
+  placePin: (local: Vec3) => void;
   undo: () => void;
   reset: () => void;
   setHover: (region: number) => void;
@@ -118,6 +176,7 @@ type TemariState = {
   setPuzzle: (index: number) => void;
   nextPuzzle: () => void;
   resetView: () => void;
+  setWrapCount: (n: number) => void;
 };
 
 function rememberStudio(state: TemariState) {
@@ -129,6 +188,9 @@ function rememberStudio(state: TemariState) {
     fills: state.fills,
     motif: state.motif,
     sewn: state.sewn,
+    craft: state.craft,
+    pins: state.pins,
+    pinArcs: state.pinArcs,
   };
   persist(state.solved);
 }
@@ -144,9 +206,13 @@ export const useTemari = create<TemariState>((set, get) => ({
   division: "c8",
   paletteId: "beni",
   motif: "kiku",
+  craft: "wind",
   selectedColor: 0,
   fills: emptyFills("c8"),
   sewn: [],
+  pins: [],
+  pinArcs: [],
+  activePin: null,
   hover: -1,
   hoverSlot: null,
   peeking: false,
@@ -154,22 +220,34 @@ export const useTemari = create<TemariState>((set, get) => ({
   solved: Array.isArray(initial.solved) ? initial.solved : [],
   history: [],
   sewnHistory: [],
+  pinHistory: [],
+  wrapCount: 0,
+  wrapUndoNonce: 0,
+  wrapResetNonce: 0,
   viewNonce: 0,
 
   enterStudio: () => {
     const division = studioDraft.division;
     const hasPaint = studioDraft.fills.some((v) => v >= 0);
-    const motif = studioDraft.motif === "kiku" && !studioDraft.sewn?.length ? "none" : (studioDraft.motif ?? "none");
+    const motif =
+      studioDraft.motif === "kiku" && !studioDraft.sewn?.length
+        ? "none"
+        : (studioDraft.motif ?? "none");
     set({
       mode: "studio",
       division,
       paletteId: studioDraft.paletteId,
       motif,
+      craft: studioDraft.craft ?? "wind",
       selectedColor: studioDraft.selectedColor,
       fills: hasPaint ? padFills(studioDraft.fills, division) : emptyFills(division),
       sewn: isSewn(studioDraft.sewn) ? studioDraft.sewn : [],
+      pins: isPins(studioDraft.pins) ? studioDraft.pins : [],
+      pinArcs: isArcs(studioDraft.pinArcs) ? studioDraft.pinArcs : [],
+      activePin: null,
       history: [],
       sewnHistory: [],
+      pinHistory: [],
       peeking: false,
       hover: -1,
       hoverSlot: null,
@@ -193,11 +271,16 @@ export const useTemari = create<TemariState>((set, get) => ({
       division: puzzle.division,
       paletteId: puzzle.paletteId,
       motif: "none",
+      craft: "stitch",
       fills: emptyFills(puzzle.division),
       sewn: [],
+      pins: [],
+      pinArcs: [],
+      activePin: null,
       selectedColor: 0,
       history: [],
       sewnHistory: [],
+      pinHistory: [],
       peeking: false,
       hover: -1,
       hoverSlot: null,
@@ -210,13 +293,20 @@ export const useTemari = create<TemariState>((set, get) => ({
       division: "c8",
       paletteId: "beni",
       motif: "kiku",
+      craft: "wind",
       fills: emptyFills("c8"),
       sewn: [],
+      pins: [],
+      pinArcs: [],
+      activePin: null,
       peeking: false,
       hover: -1,
       hoverSlot: null,
       history: [],
       sewnHistory: [],
+      pinHistory: [],
+      wrapResetNonce: get().wrapResetNonce + 1,
+      wrapCount: 0,
     });
   },
 
@@ -253,6 +343,12 @@ export const useTemari = create<TemariState>((set, get) => ({
     rememberStudio(get());
   },
 
+  setCraft: (craft) => {
+    if (get().mode === "kata") return;
+    set({ craft, hoverSlot: null, activePin: null });
+    rememberStudio(get());
+  },
+
   setColor: (index) => {
     set({ selectedColor: Math.min(3, Math.max(0, index)) });
     rememberStudio(get());
@@ -276,7 +372,7 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   sew: (slot) => {
     const state = get();
-    if (state.mode !== "studio") return;
+    if (state.mode !== "studio" || state.craft !== "stitch") return;
     const key = slotKey(slot);
     const color = state.selectedColor;
     const prev = state.sewn;
@@ -299,6 +395,53 @@ export const useTemari = create<TemariState>((set, get) => ({
     rememberStudio(get());
   },
 
+  placePin: (local) => {
+    const state = get();
+    if (state.mode !== "studio" || state.craft !== "pin") return;
+    const p: Vec3 = (() => {
+      const len = Math.hypot(local[0], local[1], local[2]) || 1;
+      return [local[0] / len, local[1] / len, local[2] / len];
+    })();
+    const hit = pinHit(p, state.pins);
+    const snap: PinSnap = {
+      pins: state.pins,
+      pinArcs: state.pinArcs,
+      activePin: state.activePin,
+    };
+    if (hit >= 0) {
+      if (state.activePin !== null && state.activePin !== hit) {
+        const from = state.pins[state.activePin];
+        const to = state.pins[hit];
+        if (from && to) {
+          set({
+            pinArcs: [...state.pinArcs, { a: from.p, b: to.p, color: state.selectedColor }],
+            activePin: hit,
+            pinHistory: [...state.pinHistory, snap].slice(-40),
+          });
+          rememberStudio(get());
+        }
+        return;
+      }
+      set({ activePin: hit });
+      return;
+    }
+    if (state.pins.length >= MAX_PINS) return;
+    const pin: Pin = { id: `p-${Date.now().toString(36)}-${state.pins.length}`, p };
+    const pins = [...state.pins, pin];
+    let pinArcs = state.pinArcs;
+    if (state.activePin !== null) {
+      const from = state.pins[state.activePin];
+      if (from) pinArcs = [...pinArcs, { a: from.p, b: pin.p, color: state.selectedColor }];
+    }
+    set({
+      pins,
+      pinArcs,
+      activePin: pins.length - 1,
+      pinHistory: [...state.pinHistory, snap].slice(-40),
+    });
+    rememberStudio(get());
+  },
+
   undo: () => {
     const state = get();
     if (state.mode === "kata") {
@@ -308,6 +451,23 @@ export const useTemari = create<TemariState>((set, get) => ({
         fills: prev,
         history: state.history.slice(0, -1),
       });
+      return;
+    }
+    if (state.craft === "wind") {
+      if (state.wrapCount <= 0) return;
+      set({ wrapUndoNonce: state.wrapUndoNonce + 1 });
+      return;
+    }
+    if (state.craft === "pin") {
+      const prev = state.pinHistory[state.pinHistory.length - 1];
+      if (!prev) return;
+      set({
+        pins: prev.pins,
+        pinArcs: prev.pinArcs,
+        activePin: prev.activePin,
+        pinHistory: state.pinHistory.slice(0, -1),
+      });
+      rememberStudio(get());
       return;
     }
     const prev = state.sewnHistory[state.sewnHistory.length - 1];
@@ -334,6 +494,12 @@ export const useTemari = create<TemariState>((set, get) => ({
       motif: "none",
       sewnHistory: [...state.sewnHistory, state.sewn].slice(-40),
       fills: emptyFills(state.division),
+      pins: [],
+      pinArcs: [],
+      activePin: null,
+      pinHistory: [...state.pinHistory, { pins: state.pins, pinArcs: state.pinArcs, activePin: state.activePin }].slice(-40),
+      wrapResetNonce: state.wrapResetNonce + 1,
+      wrapCount: 0,
     });
     rememberStudio(get());
   },
@@ -359,11 +525,16 @@ export const useTemari = create<TemariState>((set, get) => ({
       division: puzzle.division,
       paletteId: puzzle.paletteId,
       motif: "none",
+      craft: "stitch",
       fills: emptyFills(puzzle.division),
       sewn: [],
+      pins: [],
+      pinArcs: [],
+      activePin: null,
       selectedColor: 0,
       history: [],
       sewnHistory: [],
+      pinHistory: [],
       peeking: false,
       hover: -1,
       hoverSlot: null,
@@ -376,4 +547,5 @@ export const useTemari = create<TemariState>((set, get) => ({
   },
 
   resetView: () => set({ viewNonce: get().viewNonce + 1 }),
+  setWrapCount: (n) => set({ wrapCount: n }),
 }));
