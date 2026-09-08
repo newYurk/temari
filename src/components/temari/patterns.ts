@@ -328,3 +328,53 @@ export function generateMotif(division: Division, motif: MotifId): Stitch[] {
   if (motif === "obi") return obi(division);
   return [];
 }
+
+function midPhi(a: number, b: number) {
+  let d = b - a;
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  let m = a + d / 2;
+  if (m < 0) m += Math.PI * 2;
+  if (m >= Math.PI * 2) m -= Math.PI * 2;
+  return m;
+}
+
+/** Chrysanthemum fill around the spherical centroid of 3+ pins. */
+export function kikuArcsFromPins(
+  pins: Vec3[],
+  layers: number,
+  color: number,
+): { a: Vec3; b: Vec3; color: number }[] {
+  if (pins.length < 3) return [];
+  const pole = normalize([
+    pins.reduce((s, p) => s + p[0], 0),
+    pins.reduce((s, p) => s + p[1], 0),
+    pins.reduce((s, p) => s + p[2], 0),
+  ]);
+  const sorted = pins
+    .map((p) => ({ p, ...polarAround(pole, p) }))
+    .sort((a, b) => a.phi - b.phi);
+  const meanTheta =
+    sorted.reduce((s, p) => s + p.theta, 0) / Math.max(1, sorted.length);
+  const span = Math.max(0.22, meanTheta);
+  const n = sorted.length;
+  const L = Math.max(1, Math.min(8, Math.round(layers)));
+  const arcs: { a: Vec3; b: Vec3; color: number }[] = [];
+  for (let r = 0; r < L; r++) {
+    const inner = span * (0.22 + r * 0.16);
+    const outer = inner + span * 0.14;
+    const c = r % 2 === 0 ? color : (color + 2) % 4;
+    for (let i = 0; i < n; i++) {
+      const a = sorted[i];
+      const b = sorted[(i + 1) % n];
+      if (!a || !b) continue;
+      const A = around(pole, inner, a.phi);
+      const C = around(pole, inner, b.phi);
+      const T = around(pole, outer, midPhi(a.phi, b.phi));
+      arcs.push({ a: A, b: T, color: c });
+      arcs.push({ a: T, b: C, color: c });
+    }
+  }
+  return arcs;
+}
+

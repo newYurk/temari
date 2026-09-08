@@ -2,10 +2,15 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Stitch } from "./patterns";
 
-const ARC_SEGS = 10;
-const TUBE = 0.0095;
-const LOOP_TUBE = 0.011;
+const ARC_SEGS = 12;
+const RIBBON = 0.018;
+const LOOP_RIBBON = 0.02;
 const LIFT = 1.018;
+
+const _a = new THREE.Vector3();
+const _t = new THREE.Vector3();
+const _side = new THREE.Vector3();
+const _radial = new THREE.Vector3();
 
 function slerp(
   a: THREE.Vector3,
@@ -27,19 +32,110 @@ function vec(p: [number, number, number]) {
   return new THREE.Vector3(p[0], p[1], p[2]).normalize().multiplyScalar(LIFT);
 }
 
-function arcTube(a: THREE.Vector3, b: THREE.Vector3, radius: number) {
-  const pts: THREE.Vector3[] = [];
-  const tmp = new THREE.Vector3();
-  for (let i = 0; i <= ARC_SEGS; i++) {
-    pts.push(slerp(a, b, i / ARC_SEGS, tmp).clone());
+function ribbonFromPoints(pts: THREE.Vector3[], width: number, closed: boolean) {
+  const n = pts.length;
+  if (n < 2) return new THREE.BufferGeometry();
+  const half = width / 2;
+  const pos = new Float32Array(n * 2 * 3);
+  const nrm = new Float32Array(n * 2 * 3);
+  const uv = new Float32Array(n * 2 * 2);
+  const idx: number[] = [];
+
+  for (let i = 0; i < n; i++) {
+    const p = pts[i];
+    const prev = pts[i === 0 ? (closed ? n - 1 : 0) : i - 1];
+    const next = pts[i === n - 1 ? (closed ? 0 : n - 1) : i + 1];
+    if (!p || !prev || !next) continue;
+    if (i === 0 && !closed) _t.copy(next).sub(p);
+    else if (i === n - 1 && !closed) _t.copy(p).sub(prev);
+    else _t.copy(next).sub(prev);
+    _radial.copy(p).normalize();
+    _side.crossVectors(_radial, _t);
+    if (_side.lengthSq() < 1e-10) {
+      _side.set(1, 0, 0).cross(_radial);
+    }
+    _side.normalize();
+    const o = i * 6;
+    pos[o] = p.x + _side.x * half;
+    pos[o + 1] = p.y + _side.y * half;
+    pos[o + 2] = p.z + _side.z * half;
+    pos[o + 3] = p.x - _side.x * half;
+    pos[o + 4] = p.y - _side.y * half;
+    pos[o + 5] = p.z - _side.z * half;
+    nrm[o] = _radial.x;
+    nrm[o + 1] = _radial.y;
+    nrm[o + 2] = _radial.z;
+    nrm[o + 3] = _radial.x;
+    nrm[o + 4] = _radial.y;
+    nrm[o + 5] = _radial.z;
+    const v = i / Math.max(1, n - 1);
+    uv[i * 4] = v;
+    uv[i * 4 + 1] = 0;
+    uv[i * 4 + 2] = v;
+    uv[i * 4 + 3] = 1;
   }
-  const curve = new THREE.CatmullRomCurve3(pts, false, "centripetal");
-  return new THREE.TubeGeometry(curve, ARC_SEGS, radius, 5, false);
+
+  const segs = closed ? n : n - 1;
+  for (let i = 0; i < segs; i++) {
+    const a = i * 2;
+    const b = ((i + 1) % n) * 2;
+    idx.push(a, a + 1, b, b, a + 1, b + 1);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute("normal", new THREE.BufferAttribute(nrm, 3));
+  geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  return geo;
 }
 
-function loopTube(points: THREE.Vector3[], radius: number) {
-  const curve = new THREE.CatmullRomCurve3(points, true, "centripetal");
-  return new THREE.TubeGeometry(curve, Math.max(64, points.length), radius, 5, true);
+function arcRibbon(a: THREE.Vector3, b: THREE.Vector3, width: number) {
+  const pts: THREE.Vector3[] = [];
+  for (let i = 0; i <= ARC_SEGS; i++) {
+    pts.push(slerp(a, b, i / ARC_SEGS, _a).clone());
+  }
+  return ribbonFromPoints(pts, width, false);
+}
+
+let yarn: THREE.CanvasTexture | null = null;
+
+export function getYarnTexture() {
+  if (yarn) return yarn;
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 16;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    yarn = new THREE.CanvasTexture(canvas);
+    return yarn;
+  }
+  ctx.fillStyle = "#f4efe6";
+  ctx.fillRect(0, 0, 64, 16);
+  ctx.strokeStyle = "#2a2420";
+  ctx.globalAlpha = 0.16;
+  ctx.lineWidth = 0.8;
+  for (let y = 1; y < 16; y += 2) {
+    ctx.beginPath();
+    ctx.moveTo(0, y + 0.4);
+    ctx.lineTo(64, y - 0.3);
+    ctx.stroke();
+  }
+  const fade = ctx.createLinearGradient(0, 0, 0, 16);
+  fade.addColorStop(0, "rgba(255,255,255,0)");
+  fade.addColorStop(0.2, "rgba(255,255,255,1)");
+  fade.addColorStop(0.8, "rgba(255,255,255,1)");
+  fade.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "destination-in";
+  ctx.fillStyle = fade;
+  ctx.fillRect(0, 0, 64, 16);
+  yarn = new THREE.CanvasTexture(canvas);
+  yarn.wrapS = THREE.RepeatWrapping;
+  yarn.wrapT = THREE.ClampToEdgeWrapping;
+  yarn.colorSpace = THREE.SRGBColorSpace;
+  yarn.needsUpdate = true;
+  return yarn;
 }
 
 export function createMotifGeometry(
@@ -50,9 +146,9 @@ export function createMotifGeometry(
   for (const stitch of stitches) {
     if (stitch.color !== colorIndex) continue;
     if (stitch.kind === "arc") {
-      parts.push(arcTube(vec(stitch.a), vec(stitch.b), TUBE));
+      parts.push(arcRibbon(vec(stitch.a), vec(stitch.b), RIBBON));
     } else {
-      parts.push(loopTube(stitch.points.map(vec), LOOP_TUBE));
+      parts.push(ribbonFromPoints(stitch.points.map(vec), LOOP_RIBBON, true));
     }
   }
   if (parts.length === 0) return null;
