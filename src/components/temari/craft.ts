@@ -8,7 +8,7 @@ export const CRAFT_LIST: Craft[] = ["wind", "pin", "stitch"];
 export const CRAFT_META: Record<Craft, { label: string; hint: string }> = {
   wind: {
     label: "Намотка",
-    hint: "тык — булавка-начало; крутите — нить от неё",
+    hint: "тык — начало; крутите — нить по большой окружности",
   },
   pin: {
     label: "Метки",
@@ -22,25 +22,6 @@ export const CRAFT_META: Record<Craft, { label: string; hint: string }> = {
 
 export function isCraft(value: unknown): value is Craft {
   return value === "wind" || value === "pin" || value === "stitch";
-}
-
-export type WrapStyle = "around" | "spiral";
-
-export const WRAP_STYLES: WrapStyle[] = ["around", "spiral"];
-
-export const WRAP_META: Record<WrapStyle, { label: string; hint: string }> = {
-  around: {
-    label: "Вокруг",
-    hint: "по большому кругу, шар всё время чуть поворачивается",
-  },
-  spiral: {
-    label: "Спираль",
-    hint: "удзумаки от булавки, нить ложится виток к витку · тык — переставить",
-  },
-};
-
-export function isWrapStyle(value: unknown): value is WrapStyle {
-  return value === "around" || value === "spiral";
 }
 
 /** Ivory marking pin — slightly off-axis so the first wraps read on the facing side. */
@@ -351,30 +332,19 @@ export function strokePx(thickness: number) {
 }
 
 /**
- * Two real ways to lay the base:
- *  - around (maki): full-circumference wraps, heading changes each lap
- *    so no two successive wraps are parallel and they don't share a pole
- *  - spiral (uzumaki): spherical spiral whose pole is the start pin;
- *    at the antipode it turns around with a half-turn offset so the
- *    return pass sits in the grooves (no vinyl rings, no polar pit)
+ * Base wrap (maki): full-circumference great circles.
+ * Heading changes each lap so no two successive wraps are parallel
+ * and they don't share a pole — the ball keeps moving, as on a real mari.
  * A new colour may continue from the last point, or begin at a moved start pin.
  */
 export class MariWinder {
   s = 0;
   sNeeded = 420;
   wrapCount = 0;
-  style: WrapStyle = "around";
-  pitch = 0.04;
   private axis = new THREE.Vector3(0.22, 0.96, 0.16);
   private dir = new THREE.Vector3();
-  private pole = new THREE.Vector3(0, 1, 0);
-  private u = new THREE.Vector3();
-  private v = new THREE.Vector3();
   private tmp = new THREE.Vector3();
   private q = new THREE.Quaternion();
-  private spiralT = 0.02;
-  private spiralPhi = 0;
-  private spiralSign = 1;
   private arc = 0;
 
   reset(thickness: number) {
@@ -383,68 +353,24 @@ export class MariWinder {
     this.wrapCount = 0;
     this.arc = 0;
     this.sNeeded = Math.PI * 2 * (36 + (1 - t) * 40);
-    const ang = (strokePx(t) * Math.PI) / 768;
-    this.pitch = ang * 0.55;
     this.axis.set(0.24, 0.95, 0.18).normalize();
     this.dir.crossVectors(this.axis, new THREE.Vector3(1, 0, 0));
     if (this.dir.lengthSq() < 0.05) this.dir.crossVectors(this.axis, new THREE.Vector3(0, 0, 1));
     this.dir.normalize();
-    this.pole.set(0, 1, 0);
-    this.spiralT = 0.02;
-    this.spiralPhi = 0;
-    this.spiralSign = 1;
-    this.framePole();
   }
 
   get progress() {
     return Math.max(0, Math.min(1, this.s / this.sNeeded));
   }
 
-  reorigin(point: THREE.Vector3, style: WrapStyle, from?: THREE.Vector3 | null) {
-    this.style = style;
+  reorigin(point: THREE.Vector3, from?: THREE.Vector3 | null) {
     this.tmp.copy(point).normalize();
     this.arc = 0;
-    if (style === "spiral") {
-      this.pole.copy(this.tmp);
-      this.framePole();
-      this.spiralPhi = 0;
-      this.spiralSign = 1;
-      // Never inherit a far `from` — that parked the uzumaki at the antipode
-      // (the black cap opposite the pin). A new spiral always starts at the pin.
-      this.spiralT = 0.02;
-      if (from) {
-        const f = from.clone().normalize();
-        const near = this.pole.dot(f);
-        if (near > 0.92) {
-          this.spiralT = Math.max(0.015, Math.min(0.12, Math.acos(clamp(near, -1, 1)) / Math.PI));
-        }
-      }
-    } else {
-      const at = from ? from.clone().normalize() : this.tmp.clone();
-      this.dir.copy(at);
-      const ref = Math.abs(at.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-      this.axis.crossVectors(at, ref).normalize();
-      if (this.axis.lengthSq() < 0.05) this.axis.set(1, 0, 0);
-    }
-  }
-
-  private framePole() {
-    const ref = Math.abs(this.pole.y) < 0.88 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-    this.u.crossVectors(this.pole, ref).normalize();
-    this.v.crossVectors(this.pole, this.u).normalize();
-  }
-
-  private spiralPoint(out: THREE.Vector3) {
-    const theta = this.spiralT * Math.PI;
-    const ct = Math.cos(theta);
-    const st = Math.sin(theta);
-    const cp = Math.cos(this.spiralPhi);
-    const sp = Math.sin(this.spiralPhi);
-    out.set(
-      this.pole.x * ct + (this.u.x * cp + this.v.x * sp) * st,
-      this.pole.y * ct + (this.u.y * cp + this.v.y * sp) * st,
-      this.pole.z * ct + (this.u.z * cp + this.v.z * sp) * st,
-    ).normalize();
+    const at = from ? from.clone().normalize() : this.tmp.clone();
+    this.dir.copy(at);
+    const ref = Math.abs(at.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    this.axis.crossVectors(at, ref).normalize();
+    if (this.axis.lengthSq() < 0.05) this.axis.set(1, 0, 0);
   }
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
@@ -457,41 +383,18 @@ export class MariWinder {
     const h0 = Math.max(0.035, step);
     while (left > 1e-6) {
       const h = Math.min(h0, left);
-      if (this.style === "spiral") {
-        const k = this.pitch / (Math.PI * 2);
-        const theta = this.spiralT * Math.PI;
-        const sinT = Math.max(0.06, Math.sin(theta));
-        const dphi = h / Math.sqrt(k * k + sinT * sinT);
-        this.spiralPhi += this.spiralSign * dphi;
-        this.spiralT += (this.spiralSign * k * dphi) / Math.PI;
-        if (this.spiralT >= 0.975) {
-          this.spiralT = 0.975;
-          this.spiralSign = -1;
-          this.spiralPhi += Math.PI;
-        } else if (this.spiralT <= 0.022 && this.spiralSign < 0) {
-          this.spiralT = 0.022;
-          this.spiralSign = 1;
-          this.spiralPhi += Math.PI;
-          this.q.setFromAxisAngle(this.u, 0.09);
-          this.pole.applyQuaternion(this.q).normalize();
-          this.framePole();
-        }
-        this.spiralPoint(this.dir);
-        buffer.addPoint(this.dir, color, hex, true);
-      } else {
-        this.q.setFromAxisAngle(this.axis, h);
-        this.dir.applyQuaternion(this.q);
-        this.arc += h;
-        if (this.arc >= LAP) {
-          this.arc -= LAP;
-          const kick = TURN + 0.28 * Math.sin(this.s * 0.37);
-          this.q.setFromAxisAngle(this.dir, kick);
-          this.axis.applyQuaternion(this.q).normalize();
-          this.tmp.copy(this.axis).multiplyScalar(this.dir.dot(this.axis));
-          this.dir.sub(this.tmp).normalize();
-        }
-        buffer.addPoint(this.dir, color, hex, true);
+      this.q.setFromAxisAngle(this.axis, h);
+      this.dir.applyQuaternion(this.q);
+      this.arc += h;
+      if (this.arc >= LAP) {
+        this.arc -= LAP;
+        const kick = TURN + 0.28 * Math.sin(this.s * 0.37);
+        this.q.setFromAxisAngle(this.dir, kick);
+        this.axis.applyQuaternion(this.q).normalize();
+        this.tmp.copy(this.axis).multiplyScalar(this.dir.dot(this.axis));
+        this.dir.sub(this.tmp).normalize();
       }
+      buffer.addPoint(this.dir, color, hex, true);
       this.s += h;
       left -= h;
       this.wrapCount = Math.floor(this.s / (Math.PI * 2));

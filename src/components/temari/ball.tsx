@@ -188,7 +188,6 @@ export function Ball() {
   const wrapUndoNonce = useTemari((s) => s.wrapUndoNonce);
   const wrapResetNonce = useTemari((s) => s.wrapResetNonce);
   const layerDone = useTemari((s) => s.layerDone);
-  const wrapStyle = useTemari((s) => s.wrapStyle);
   const startPin = useTemari((s) => s.startPin);
   const originNonce = useTemari((s) => s.originNonce);
   const wrapSeed = useTemari((s) => s.wrapSeed);
@@ -273,7 +272,6 @@ export function Ball() {
     wrap.strokeWidth = strokePx(useTemari.getState().threadWidth);
     const st = useTemari.getState();
     mari.current.reset(st.threadWidth);
-    mari.current.style = st.wrapStyle;
     if (st.wrapSeed === "full") {
       wrap.strokeWidth = strokePx(0.55);
       const hex = PALETTES[st.paletteId].colors[0] ?? "#8f3d32";
@@ -286,7 +284,6 @@ export function Ball() {
     if (st.startPin) {
       mari.current.reorigin(
         new THREE.Vector3(st.startPin[0], st.startPin[1], st.startPin[2]),
-        st.wrapStyle,
       );
     }
     feel.resetTurns();
@@ -302,22 +299,13 @@ export function Ball() {
   }, [setWrapCount, setWrapProgress, wrap, wrapUndoNonce]);
 
   useEffect(() => {
-    const pin = useTemari.getState().startPin;
-    const last = wrap.live[wrap.live.length - 1] ?? null;
-    const src = pin
-      ? new THREE.Vector3(pin[0], pin[1], pin[2])
-      : last ?? new THREE.Vector3(DEFAULT_START[0], DEFAULT_START[1], DEFAULT_START[2]);
-    mari.current.reorigin(src, wrapStyle, wrapStyle === "spiral" ? null : last);
-  }, [wrap, wrapStyle]);
-
-  useEffect(() => {
     if (originNonce === 0) return;
     const pin = useTemari.getState().startPin;
     if (!pin) return;
     const v = new THREE.Vector3(pin[0], pin[1], pin[2]);
     const st = useTemari.getState();
     const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
-    mari.current.reorigin(v, st.wrapStyle);
+    mari.current.reorigin(v);
     wrap.relocate(v, st.selectedColor, hex);
   }, [originNonce, wrap]);
 
@@ -435,13 +423,10 @@ export function Ball() {
       startAt: (x: number, y: number, z: number) => useTemari.getState().setStartPin([x, y, z]),
       fillKiku: () => useTemari.getState().fillKiku(),
       setCraft: (c: "wind" | "pin" | "stitch") => useTemari.getState().setCraft(c),
-      wrapStyle: () => useTemari.getState().wrapStyle,
-      setWrapStyle: (s: "around" | "spiral") => useTemari.getState().setWrapStyle(s),
       setColor: (i: number) => useTemari.getState().setColor(i),
       spin: (x: number, y: number, z: number) => omega.current.set(x, y, z),
       dump: () => ({
         progress: useTemari.getState().wrapProgress,
-        style: useTemari.getState().wrapStyle,
         color: useTemari.getState().selectedColor,
         pin: useTemari.getState().startPin,
         ...wrap.snapshot(),

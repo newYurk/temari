@@ -13,7 +13,6 @@ import {
   type Craft,
   type Pin,
   type PinArc,
-  type WrapStyle,
 } from "./craft";
 import { isPaletteId, type PaletteId } from "./palettes";
 import {
@@ -169,7 +168,6 @@ type TemariState = {
   layerDone: boolean;
   kikuLayers: number;
   kagariDir: KagariDir;
-  wrapStyle: WrapStyle;
   startPin: Vec3 | null;
   originNonce: number;
   wrapSeed: "empty" | "full";
@@ -199,7 +197,6 @@ type TemariState = {
   setKikuLayers: (n: number) => void;
   setKagariDir: (dir: KagariDir) => void;
   fillKiku: () => void;
-  setWrapStyle: (style: WrapStyle) => void;
   setStartPin: (local: Vec3) => void;
   showExample: () => void;
 };
@@ -255,7 +252,6 @@ export const useTemari = create<TemariState>((set, get) => ({
   layerDone: false,
   kikuLayers: 8,
   kagariDir: "in",
-  wrapStyle: "around",
   startPin: null,
   originNonce: 0,
   wrapSeed: "full",
@@ -290,7 +286,6 @@ export const useTemari = create<TemariState>((set, get) => ({
       layerDone: false,
       wrapResetNonce: get().wrapResetNonce + 1,
       wrapCount: 0,
-      wrapStyle: "around",
       startPin: [DEFAULT_START[0], DEFAULT_START[1], DEFAULT_START[2]],
       originNonce: get().originNonce + 1,
       wrapSeed: "empty",
@@ -552,7 +547,6 @@ export const useTemari = create<TemariState>((set, get) => ({
       wrapProgress: 0,
       layerDone: false,
       craft: "wind",
-      wrapStyle: "around",
       startPin: [DEFAULT_START[0], DEFAULT_START[1], DEFAULT_START[2]],
       originNonce: state.originNonce + 1,
       wrapSeed: "empty",
@@ -638,10 +632,6 @@ export const useTemari = create<TemariState>((set, get) => ({
       pinHistory: [...state.pinHistory, snap].slice(-40),
     });
     rememberStudio(get());
-  },
-  setWrapStyle: (style) => {
-    if (get().mode === "kata") return;
-    set({ wrapStyle: style });
   },
   setStartPin: (local) => {
     const state = get();
