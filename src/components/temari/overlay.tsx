@@ -34,7 +34,7 @@ function RecenterButton({ className }: { className?: string }) {
       aria-label="Вернуть шар в исходный вид"
       onClick={resetView}
       className={cn(
-        "pointer-events-auto flex size-11 items-center justify-center rounded-full bg-elevated/90 text-linen ring-1 ring-ink/10",
+        "pointer-events-auto flex size-10 items-center justify-center rounded-full bg-linen/80 text-ink ring-1 ring-line",
         className,
       )}
     >
@@ -48,7 +48,7 @@ function TitleLayer() {
   const enterKata = useTemari((s) => s.enterKata);
 
   return (
-    <div className="flex h-full flex-col justify-between px-6 py-8 md:px-10 md:py-10">
+    <div className="flex h-full flex-col justify-between px-5 py-6 md:px-10 md:py-10">
       <div className="flex items-start justify-between pt-[env(safe-area-inset-top)]">
         <p className="temari-rise font-display text-sm italic tracking-wide text-stone">
           нить на сфере
@@ -63,24 +63,24 @@ function TitleLayer() {
           Сначала тонкая намотка. Потом кагари: ряды ёлочки от полюса, или
           фигура по меткам — от большого края внутрь. Булавки только метят углы.
         </p>
-        <div className="temari-rise temari-rise-4 pointer-events-auto mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="temari-rise temari-rise-4 pointer-events-auto mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
           <Button
             onPointerDown={() => unlock()}
             onClick={enterStudio}
             className="bg-ink text-linen"
           >
-            Начать
+            Намотать базу
           </Button>
           <Button
             variant="ghost"
-            className="text-ink ring-ink/20 hover:bg-ink/5"
+            className="text-ink ring-line hover:bg-ink/5"
             onClick={() => useTemari.getState().showExample()}
           >
             Пример кику
           </Button>
           <Button
             variant="ghost"
-            className="text-ink ring-ink/20 hover:bg-ink/5"
+            className="text-ink ring-line hover:bg-ink/5"
             onClick={() => enterKata()}
           >
             По образцу
@@ -108,10 +108,36 @@ function Seg({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "min-h-11 flex-1 rounded-sm px-2 text-xs tracking-wide transition-colors duration-150",
-        active ? "bg-linen/10 text-linen" : "text-stone hover:text-linen",
+        "min-h-10 flex-1 rounded-full px-2 text-xs tracking-wide ring-1 transition-colors duration-150",
+        active
+          ? "bg-ink/8 text-ink ring-line-strong"
+          : "text-stone ring-line hover:text-ink",
         disabled && "opacity-35",
       )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function IconBtn({
+  label,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="flex size-10 items-center justify-center rounded-full text-ink ring-1 ring-line disabled:opacity-35"
     >
       {children}
     </button>
@@ -160,7 +186,6 @@ function Workbench() {
   const puzzle = PUZZLES[puzzleIndex];
   const complete =
     mode === "kata" && puzzle ? fillsMatch(fills, puzzle.target) : false;
-  const embroidering = mode === "studio" && layerDone;
 
   const undoDisabled =
     mode === "kata"
@@ -176,11 +201,11 @@ function Workbench() {
       ? !layerDone
         ? wrapProgress >= 0.9
           ? "можно ещё мотать, или завершите слой"
-          : "шар двигают: полный круг, следующий — не рядом"
+          : "Намотка базы — ведите шар по большому кругу"
         : craft === "pin"
           ? pins.length >= 3
             ? "три метки — залейте рядами внутрь или наружу"
-            : "тык на узел — угол фигуры (треугольник, кику…)"
+            : "тык на узел — угол фигуры"
           : motif === "kiku"
             ? MOTIF_META.kiku.hint
             : CRAFT_META[craft].hint
@@ -190,7 +215,7 @@ function Workbench() {
 
   return (
     <>
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-5 pt-5 md:px-8 md:pt-8">
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-4 pt-4 md:px-8 md:pt-8">
         <div className="pt-[env(safe-area-inset-top)]">
           <button
             type="button"
@@ -199,7 +224,7 @@ function Workbench() {
           >
             Темари
           </button>
-          <p className="mt-1 max-w-[16rem] text-xs tracking-wide text-stone">{hint}</p>
+          <p className="mt-0.5 max-w-[16rem] text-xs tracking-wide text-stone">{hint}</p>
         </div>
         <div className="flex items-start gap-2 pt-[env(safe-area-inset-top)]">
           {mode === "kata" && puzzle ? (
@@ -214,171 +239,159 @@ function Workbench() {
         </div>
       </header>
 
-      <div className="pointer-events-auto relative z-20 shrink-0 px-3 pb-[max(0.6rem,env(safe-area-inset-bottom))] md:px-8">
-        <div className="mx-auto max-w-xl rounded-xl bg-elevated/95 p-2 ring-1 ring-linen/10 md:p-3">
-          {mode === "studio" ? (
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
+        <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-linen from-55% via-linen/95 to-transparent" />
+        <div className="pointer-events-auto relative px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:px-8">
+        <div className="mx-auto flex max-w-lg flex-col gap-1.5">
+          {mode === "studio" && !layerDone ? (
             <>
-              <div className="mb-1.5 flex gap-1 rounded-md bg-ink p-0.5">
-                <Seg
-                  active={craft === "wind"}
-                  disabled={layerDone}
-                  onClick={() => setCraft("wind")}
+              <div className="flex items-center gap-2">
+                <div className="h-px flex-1 bg-line" />
+                <div
+                  className="h-1 w-16 overflow-hidden rounded-full bg-paper"
+                  aria-hidden
                 >
-                  Намотка
-                </Seg>
-                <Seg
-                  active={embroidering}
-                  disabled={!layerDone}
-                  onClick={() => setCraft(craft === "stitch" ? "stitch" : "pin")}
-                >
-                  Вышивка
-                </Seg>
-              </div>
-
-              {!layerDone ? (
-                <div className="mb-1.5 px-0.5">
-                  <div className="h-1 overflow-hidden rounded-full bg-ink">
-                    <div
-                      className="h-full bg-linen/55 transition-[width] duration-150"
-                      style={{ width: `${Math.round(wrapProgress * 100)}%` }}
-                    />
-                  </div>
-                  <label className="mt-2 flex items-center gap-3">
-                    <span className="block h-px w-4 shrink-0 bg-stone/70" aria-hidden />
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={threadWidth}
-                      aria-label="Толщина нити"
-                      onChange={(e) => setThreadWidth(Number(e.target.value))}
-                      className="h-11 w-full accent-linen"
-                    />
-                    <span className="block h-1 w-5 shrink-0 rounded-full bg-stone" aria-hidden />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={finishLayer}
-                    className="mt-1.5 min-h-11 w-full rounded-md bg-ink px-2 text-xs tracking-wide text-linen ring-1 ring-linen/10"
-                  >
-                    Завершить слой
-                  </button>
+                  <div
+                    className="h-full bg-cinnabar/70 transition-[width] duration-150"
+                    style={{ width: `${Math.round(wrapProgress * 100)}%` }}
+                  />
                 </div>
-              ) : (
-                <>
-                  <div className="mb-1.5 flex gap-1 rounded-md bg-ink p-0.5">
-                    {(["pin", "stitch"] as Craft[]).map((id) => (
-                      <Seg key={id} active={craft === id} onClick={() => setCraft(id)}>
-                        {CRAFT_META[id].label}
-                      </Seg>
-                    ))}
-                  </div>
-                  <div className="mb-1.5 flex gap-1 rounded-md bg-ink p-0.5">
-                    {DIVISIONS.map((id) => (
-                      <Seg
-                        key={id}
-                        active={division === id}
-                        onClick={() => setDivision(id)}
-                      >
-                        {DIVISION_META[id].label}
-                      </Seg>
-                    ))}
-                  </div>
-                  {craft === "pin" && pins.length >= 3 ? (
-                    <div className="mb-1.5">
-                      <div className="mb-1.5 flex gap-1 rounded-md bg-ink p-0.5">
-                        {(["in", "out"] as KagariDir[]).map((id) => (
-                          <Seg
-                            key={id}
-                            active={kagariDir === id}
-                            onClick={() => setKagariDir(id)}
-                          >
-                            {KAGARI_DIR_META[id].label}
-                          </Seg>
-                        ))}
-                      </div>
-                      <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={fillKiku}
-                        className="min-h-11 flex-1 rounded-md bg-ink px-2 text-xs tracking-wide text-linen ring-1 ring-linen/10"
-                      >
-                        Залить рядами
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="Меньше слоёв"
-                        onClick={() => setKikuLayers(kikuLayers - 1)}
-                        className="flex size-11 items-center justify-center rounded-md text-stone ring-1 ring-linen/10"
-                      >
-                        −
-                      </button>
-                      <span className="min-w-10 text-center text-xs tabular-nums text-linen">
-                        {kikuLayers}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label="Больше слоёв"
-                        onClick={() => setKikuLayers(kikuLayers + 1)}
-                        className="flex size-11 items-center justify-center rounded-md text-stone ring-1 ring-linen/10"
-                      >
-                        +
-                      </button>
-                      </div>
-                    </div>
-                  ) : null}
-                  {craft === "stitch" ? (
-                    <div className="mb-1.5 flex gap-1 rounded-md bg-ink p-0.5">
-                      {MOTIF_LIST.map((id) => (
-                        <Seg
-                          key={id}
-                          active={motif === id}
-                          onClick={() => setMotif(id)}
-                        >
-                          {MOTIF_META[id].label}
-                        </Seg>
-                      ))}
-                    </div>
-                  ) : null}
-                </>
-              )}
-
-              <div className="mb-1.5 flex gap-1">
-                {PALETTE_LIST.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setPalette(item.id)}
-                    className={cn(
-                      "min-h-11 flex-1 rounded-sm px-1 text-xs tracking-wide transition-colors duration-150",
-                      paletteId === item.id ? "text-linen" : "text-stone hover:text-linen",
-                    )}
-                  >
-                    {item.name}
-                  </button>
-                ))}
+                <div className="h-px flex-1 bg-line" />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={threadWidth}
+                  aria-label="Толщина нити"
+                  onChange={(e) => setThreadWidth(Number(e.target.value))}
+                  className="h-10 min-w-0 flex-1 accent-ink"
+                />
+                <button
+                  type="button"
+                  onClick={finishLayer}
+                  className="min-h-10 shrink-0 rounded-full px-4 text-xs tracking-wide text-ink ring-1 ring-line"
+                >
+                  Завершить
+                </button>
               </div>
             </>
-          ) : (
-            <div className="mb-1.5 flex gap-1 overflow-x-auto rounded-md bg-ink p-0.5">
+          ) : null}
+
+          {mode === "studio" && layerDone ? (
+            <>
+              <div className="flex gap-1">
+                {(["pin", "stitch"] as Craft[]).map((id) => (
+                  <Seg key={id} active={craft === id} onClick={() => setCraft(id)}>
+                    {CRAFT_META[id].label}
+                  </Seg>
+                ))}
+              </div>
+              <div className="flex gap-1">
+                {DIVISIONS.map((id) => (
+                  <Seg
+                    key={id}
+                    active={division === id}
+                    onClick={() => setDivision(id)}
+                  >
+                    {DIVISION_META[id].label}
+                  </Seg>
+                ))}
+              </div>
+              {craft === "pin" && pins.length >= 3 ? (
+                <div className="flex items-center gap-1">
+                  {(["in", "out"] as KagariDir[]).map((id) => (
+                    <Seg
+                      key={id}
+                      active={kagariDir === id}
+                      onClick={() => setKagariDir(id)}
+                    >
+                      {KAGARI_DIR_META[id].label}
+                    </Seg>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={fillKiku}
+                    className="min-h-10 flex-[1.4] rounded-full px-3 text-xs tracking-wide text-ink ring-1 ring-line"
+                  >
+                    Залить
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Меньше слоёв"
+                    onClick={() => setKikuLayers(kikuLayers - 1)}
+                    className="flex size-10 items-center justify-center rounded-full text-stone ring-1 ring-line"
+                  >
+                    −
+                  </button>
+                  <span className="min-w-6 text-center text-xs tabular-nums text-ink">
+                    {kikuLayers}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Больше слоёв"
+                    onClick={() => setKikuLayers(kikuLayers + 1)}
+                    className="flex size-10 items-center justify-center rounded-full text-stone ring-1 ring-line"
+                  >
+                    +
+                  </button>
+                </div>
+              ) : null}
+              {craft === "stitch" ? (
+                <div className="flex gap-1">
+                  {MOTIF_LIST.map((id) => (
+                    <Seg
+                      key={id}
+                      active={motif === id}
+                      onClick={() => setMotif(id)}
+                    >
+                      {MOTIF_META[id].label}
+                    </Seg>
+                  ))}
+                </div>
+              ) : null}
+            </>
+          ) : null}
+
+          {mode === "kata" ? (
+            <div className="flex gap-1 overflow-x-auto">
               {PUZZLES.map((item, i) => (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => setPuzzle(i)}
                   className={cn(
-                    "min-h-11 shrink-0 rounded-sm px-3 text-xs tracking-wide transition-colors duration-150",
+                    "min-h-10 shrink-0 rounded-full px-3 text-xs tracking-wide ring-1",
                     i === puzzleIndex
-                      ? "bg-linen/10 text-linen"
-                      : "text-stone hover:text-linen",
+                      ? "bg-ink/8 text-ink ring-line-strong"
+                      : "text-stone ring-line",
                   )}
                 >
                   {item.name}
                 </button>
               ))}
             </div>
-          )}
+          ) : null}
+
+          <div className="flex items-center gap-1.5">
+            <div className="flex min-w-0 flex-1 gap-1">
+              {PALETTE_LIST.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setPalette(item.id)}
+                  className={cn(
+                    "min-h-8 flex-1 rounded-full px-1 text-xs tracking-wide",
+                    paletteId === item.id ? "text-ink" : "text-stone",
+                  )}
+                >
+                  {item.name}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="flex items-center gap-2">
             <div className="flex flex-1 gap-2">
@@ -389,10 +402,8 @@ function Workbench() {
                   aria-label={`Нить ${i + 1}`}
                   onClick={() => setColor(i)}
                   className={cn(
-                    "size-11 rounded-full transition-transform duration-150 active:scale-[0.96]",
-                    selectedColor === i
-                      ? "ring-2 ring-linen ring-offset-2 ring-offset-elevated"
-                      : "ring-1 ring-linen/15",
+                    "size-8 rounded-full transition-transform duration-150 active:scale-[0.96]",
+                    selectedColor === i ? "ring-2 ring-ink ring-offset-2 ring-offset-linen" : "ring-1 ring-line",
                   )}
                   style={{ backgroundColor: color }}
                 />
@@ -400,9 +411,9 @@ function Workbench() {
             </div>
             <div className="flex gap-1">
               {mode === "kata" ? (
-                <Button
-                  variant="ghost"
-                  className="size-11 px-0"
+                <button
+                  type="button"
+                  className="flex size-10 items-center justify-center rounded-full text-ink ring-1 ring-line"
                   aria-label="Показать образец"
                   onPointerDown={(e) => {
                     e.currentTarget.setPointerCapture(e.pointerId);
@@ -412,45 +423,35 @@ function Workbench() {
                   onPointerCancel={() => setPeeking(false)}
                 >
                   <Eye className="size-4" />
-                </Button>
+                </button>
               ) : (
-                <Button
-                  variant="ghost"
-                  className="min-h-11 px-2.5 text-xs"
+                <button
+                  type="button"
+                  className="min-h-10 rounded-full px-3 text-xs tracking-wide text-ink ring-1 ring-line"
                   aria-label="Пример кику"
                   onClick={showExample}
                 >
                   Пример
-                </Button>
+                </button>
               )}
-              <Button
-                variant="ghost"
-                className="size-11 px-0"
-                aria-label="Отменить"
-                disabled={undoDisabled}
-                onClick={undo}
-              >
+              <IconBtn label="Отменить" disabled={undoDisabled} onClick={undo}>
                 <Undo2 className="size-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                className="size-11 px-0"
-                aria-label="Сбросить слой"
-                onClick={reset}
-              >
+              </IconBtn>
+              <IconBtn label="Сбросить слой" onClick={reset}>
                 <RotateCcw className="size-4" />
-              </Button>
+              </IconBtn>
             </div>
           </div>
 
           {complete ? (
-            <div className="mt-2 flex items-center justify-between gap-3 rounded-md bg-ink px-3 py-2">
-              <p className="font-display text-base text-linen">Собрано</p>
-              <Button size="compact" onClick={nextPuzzle}>
+            <div className="flex items-center justify-between gap-3 rounded-full px-3 py-1.5 ring-1 ring-line">
+              <p className="font-display text-base text-ink">Собрано</p>
+              <Button size="compact" className="bg-ink text-linen" onClick={nextPuzzle}>
                 Далее
               </Button>
             </div>
           ) : null}
+        </div>
         </div>
       </div>
     </>

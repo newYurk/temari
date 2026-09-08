@@ -1,13 +1,13 @@
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { Component, type ReactNode, useLayoutEffect, useMemo, useRef } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { Ball } from "./ball";
 import { useTemari, type Mode } from "./store";
 
-const FOV = 36;
-const BALL_R = 1.08;
-const FIT_MARGIN = 1.14;
+const FOV = 32;
+const BALL_R = 1.05;
+const FIT_MARGIN = 1.16;
 
 function framingDistance(width: number, height: number) {
   const halfH = Math.tan(THREE.MathUtils.degToRad(FOV) / 2);
@@ -15,10 +15,10 @@ function framingDistance(width: number, height: number) {
   return (BALL_R * FIT_MARGIN) / Math.min(halfW, halfH);
 }
 
-function viewLift(width: number, height: number, mode: Mode) {
-  if (mode !== "title") return 0;
+function aimY(width: number, height: number, mode: Mode) {
   const portrait = height > width * 1.15;
-  return height * (portrait ? 0.06 : 0.03);
+  if (mode === "title") return portrait ? -0.22 : -0.08;
+  return portrait ? -0.38 : -0.16;
 }
 
 function CameraRig() {
@@ -44,26 +44,23 @@ function CameraRig() {
     camera.fov = FOV;
     camera.near = 0.1;
     camera.far = Math.max(40, dist * 4);
-    const lift = viewLift(size.width, size.height, mode);
-    if (lift === 0) {
-      camera.clearViewOffset();
-    } else {
-      camera.setViewOffset(size.width, size.height, 0, lift, size.width, size.height);
-    }
+    camera.clearViewOffset();
     camera.updateProjectionMatrix();
-  }, [camera, dist, mode, size.height, size.width]);
+  }, [camera, dist, size.height, size.width]);
 
   useLayoutEffect(() => {
-    const dir = new THREE.Vector3(0, 0.06, 1).normalize();
+    const y = aimY(size.width, size.height, mode);
+    const dir = new THREE.Vector3(0, 0.08, 1).normalize();
     camera.position.copy(dir.multiplyScalar(dist));
+    camera.position.y += 0.12;
     camera.up.set(0, 1, 0);
-    camera.lookAt(0, 0, 0);
+    camera.lookAt(0, y, 0);
     const controls = controlsRef.current;
     if (controls) {
-      controls.target.set(0, 0, 0);
+      controls.target.set(0, y, 0);
       controls.update();
     }
-  }, [camera, dist, viewNonce]);
+  }, [camera, dist, mode, size.height, size.width, viewNonce]);
 
   return (
     <OrbitControls
@@ -74,26 +71,39 @@ function CameraRig() {
       enableZoom={!autoRotate}
       enableDamping
       dampingFactor={0.08}
-      minDistance={Math.min(2.15, dist * 0.55)}
-      maxDistance={dist}
+      minDistance={dist * 0.42}
+      maxDistance={dist * 2.35}
       minPolarAngle={0}
       maxPolarAngle={Math.PI}
       autoRotate={autoRotate && !reduce}
       autoRotateSpeed={0.42}
       rotateSpeed={0.72}
-      zoomSpeed={0.7}
+      zoomSpeed={1.05}
     />
   );
 }
 
+class SceneGuard extends Component<{ children: ReactNode }, { dead: boolean }> {
+  state = { dead: false };
+  static getDerivedStateFromError() {
+    return { dead: true };
+  }
+  render() {
+    if (this.state.dead) return null;
+    return this.props.children;
+  }
+}
+
 export function TemariScene() {
   return (
+    <SceneGuard>
     <Canvas
       className="absolute inset-0 z-0 touch-none"
       camera={{ position: [0, 0.2, 3.6], fov: FOV, near: 0.1, far: 60 }}
-      dpr={[1, 2]}
+      dpr={[1, 1.5]}
       gl={{
         antialias: true,
+        powerPreference: "high-performance",
         toneMapping: THREE.ACESFilmicToneMapping,
         toneMappingExposure: 1.05,
       }}
@@ -109,5 +119,6 @@ export function TemariScene() {
       <Ball />
       <CameraRig />
     </Canvas>
+    </SceneGuard>
   );
 }

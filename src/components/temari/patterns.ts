@@ -194,14 +194,14 @@ function starSkip(division: Division) {
 }
 
 function kikuSpec(division: Division) {
-  if (division === "simple") return { inner: 0.055, chord: 0.1, pitch: 0.066, rounds: 10 };
-  if (division === "c8") return { inner: 0.05, chord: 0.086, pitch: 0.056, rounds: 8 };
-  return { inner: 0.05, chord: 0.08, pitch: 0.05, rounds: 7 };
+  if (division === "simple") return { inner: 0.32, chord: 0.05, pitch: 0.038, rounds: 6 };
+  if (division === "c8") return { inner: 0.18, chord: 0.05, pitch: 0.036, rounds: 6 };
+  return { inner: 0.16, chord: 0.048, pitch: 0.034, rounds: 6 };
 }
 
 function kikuColor(ring: number) {
-  const cycle = [2, 1, 2, 1, 2, 1, 3, 1];
-  return cycle[ring % cycle.length] ?? 2;
+  const cycle = [1, 2, 1, 3, 1, 2, 1];
+  return cycle[ring % cycle.length] ?? 1;
 }
 
 function kikuPetal(
@@ -216,7 +216,7 @@ function kikuPetal(
   const outer = inner + spec.chord;
   const a = (2 * Math.PI * sector) / n;
   const b = (2 * Math.PI * (sector + 1)) / n;
-  const lift = ring * 0.0022;
+  const lift = ring * 0.00035;
   return [
     { kind: "arc", a: around(pole, inner, a), b: around(pole, outer, b), color, lift },
     {
@@ -224,7 +224,7 @@ function kikuPetal(
       a: around(pole, outer, a),
       b: around(pole, inner, b),
       color,
-      lift: lift + 0.0012,
+      lift: lift + 0.00025,
     },
   ];
 }

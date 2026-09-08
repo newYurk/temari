@@ -8,7 +8,7 @@ export const CRAFT_LIST: Craft[] = ["wind", "pin", "stitch"];
 export const CRAFT_META: Record<Craft, { label: string; hint: string }> = {
   wind: {
     label: "Намотка",
-    hint: "шар двигают: полный круг, следующий — не рядом",
+    hint: "Намотка базы — ведите шар по большому кругу",
   },
   pin: {
     label: "Метки",

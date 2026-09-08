@@ -3,8 +3,8 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Stitch } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth } from "./thread";
 
-const ARC_SEGS = 14;
-const LIFT = 1.02;
+const ARC_SEGS = 16;
+const LIFT = 1.006;
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -55,12 +55,16 @@ function ribbonFromPoints(pts: THREE.Vector3[], width: number, closed: boolean) 
     }
     _side.normalize();
     const o = i * 6;
-    pos[o] = p.x + _side.x * half;
-    pos[o + 1] = p.y + _side.y * half;
-    pos[o + 2] = p.z + _side.z * half;
-    pos[o + 3] = p.x - _side.x * half;
-    pos[o + 4] = p.y - _side.y * half;
-    pos[o + 5] = p.z - _side.z * half;
+    // Keep the ribbon on the sphere so stitches lie on the mari, not as chords.
+    const r = p.length();
+    _a.copy(p).addScaledVector(_side, half).normalize().multiplyScalar(r);
+    pos[o] = _a.x;
+    pos[o + 1] = _a.y;
+    pos[o + 2] = _a.z;
+    _a.copy(p).addScaledVector(_side, -half).normalize().multiplyScalar(r);
+    pos[o + 3] = _a.x;
+    pos[o + 4] = _a.y;
+    pos[o + 5] = _a.z;
     nrm[o] = _radial.x;
     nrm[o + 1] = _radial.y;
     nrm[o + 2] = _radial.z;

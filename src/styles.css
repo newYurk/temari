@@ -9,6 +9,8 @@
   --color-cinnabar: #8f3d32;
   --color-border: color-mix(in oklab, #ece8e1 14%, transparent);
   --color-border-strong: color-mix(in oklab, #ece8e1 24%, transparent);
+  --color-line: color-mix(in oklab, #0c0b09 14%, transparent);
+  --color-line-strong: color-mix(in oklab, #0c0b09 28%, transparent);
 
   --font-display: "Cormorant Garamond", "Times New Roman", serif;
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;

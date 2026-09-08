@@ -30,6 +30,8 @@ uniform sampler2D uWrap;
 uniform float uWrapOn;
 uniform float uFelt;
 uniform vec3 uFeltColor;
+uniform sampler2D uThread;
+uniform float uWidth;
 
 varying vec3 vN;
 varying vec3 vW;
@@ -105,17 +107,43 @@ void main() {
     col = mix(col, uFeltColor, clamp(uFelt, 0.0, 1.0));
   }
 
-  float phi = atan(nL.x, nL.z);
-  float wrap = sin(nL.y * 148.0) * (0.014 + 0.02 * uFelt);
-  float stitch = sin(phi * 86.0 + nL.y * 10.0) * (0.01 + 0.018 * uFelt);
-  float twist = sin(nL.x * 90.0 + nL.z * 70.0) * 0.012 * uFelt;
-  col *= 0.97 + wrap + stitch + twist;
+  float dens = clamp(0.15 + 0.85 * uFelt, 0.0, 1.0);
+  float thick = clamp(uWidth, 0.0, 1.0);
+  float freq = mix(14.0, 8.0, thick);
+  float halfW = mix(0.5, 0.72, thick);
+
+  // Local wrap axis precesses slowly — parallel threads in a patch, not a 4-way lattice.
+  vec3 ax = normalize(vec3(
+    sin(nL.y * 1.7 + nL.z * 0.9) * 0.85,
+    0.72 + 0.18 * sin(nL.x * 1.3),
+    cos(nL.x * 1.6 + nL.y * 0.8) * 0.85
+  ));
+  float wander = sin(nL.x * 2.8 + nL.z * 2.1) * 0.22 + sin(nL.y * 3.4 + nL.x * 1.6) * 0.14;
+  float phase = dot(nL, ax) * freq + wander;
+  float t = abs(fract(phase) - 0.5) * 2.0;
+  float main = 1.0 - smoothstep(0.0, halfW, t);
+
+  vec3 ax2 = normalize(ax + vec3(0.22, -0.08, 0.18));
+  float t2 = abs(fract(dot(nL, ax2) * (freq * 0.97) + wander * 0.5 + 0.18) - 0.5) * 2.0;
+  float under = 1.0 - smoothstep(0.0, halfW * 1.05, t2);
+
+  vec3 an = abs(nL);
+  vec3 tw = an / max(an.x + an.y + an.z, 0.001);
+  float hair = texture2D(uThread, nL.xz * mix(2.6, 1.7, thick) + 0.5).r * tw.y
+             + texture2D(uThread, nL.xy * mix(2.4, 1.6, thick) + 0.5).r * tw.z
+             + texture2D(uThread, nL.yz * mix(2.5, 1.65, thick) + 0.5).r * tw.x;
+  float fuzz = sin(nL.x * 37.0 + nL.y * 29.0 + nL.z * 21.0) * 0.04;
+
+  float fiber = clamp(0.55 * main + 0.22 * under + 0.2 * hair + fuzz, 0.0, 1.0);
+  col *= mix(1.0, 0.84 + 0.22 * fiber, dens);
+  col += uFeltColor * (0.05 * main * dens);
 
   if (region == uHover && uHover >= 0) {
     col *= 1.09;
   }
 
   vec3 n = normalize(vN);
+  n = normalize(n + nL * ((fiber - 0.45) * 0.7 * dens));
   vec3 L = normalize(vec3(0.46, 0.82, 0.52));
   vec3 L2 = normalize(vec3(-0.55, 0.22, -0.28));
   vec3 V = normalize(uCamPos - vW);
@@ -137,6 +165,48 @@ function colorList(hexes: string[]) {
 
 const emptyWrap = new THREE.Texture();
 
+function makeThreadTex() {
+  const c = document.createElement("canvas");
+  c.width = 128;
+  c.height = 128;
+  const ctx = c.getContext("2d");
+  if (!ctx) return emptyWrap;
+  const img = ctx.createImageData(128, 128);
+  const pitch = 18;
+  for (let y = 0; y < 128; y++) {
+    for (let x = 0; x < 128; x++) {
+      const along = x + Math.sin(y * 0.11) * 4;
+      const t = ((y + Math.sin(along * 0.07) * 2.2) % pitch) / pitch;
+      const r = Math.abs(t - 0.5) * 2;
+      const crown = Math.max(0, 1 - r * r * r);
+      const nap = 0.08 * Math.sin(x * 0.9 + y * 1.7) + 0.05 * Math.sin(x * 2.3 - y * 0.6);
+      const shade = 0.22 + 0.78 * crown + nap * crown;
+      const v = Math.max(0, Math.min(255, Math.round(shade * 255)));
+      const i = (y * 128 + x) * 4;
+      img.data[i] = v;
+      img.data[i + 1] = v;
+      img.data[i + 2] = v;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+let threadTex: THREE.Texture | null = null;
+function getThreadTex() {
+  if (threadTex) return threadTex;
+  threadTex = typeof document === "undefined" ? emptyWrap : makeThreadTex();
+  return threadTex;
+}
+
 export function createTemariMaterial() {
   const palette = PALETTES.beni;
   return new THREE.ShaderMaterial({
@@ -156,6 +226,8 @@ export function createTemariMaterial() {
       uWrapOn: { value: 0 },
       uFelt: { value: 0 },
       uFeltColor: { value: new THREE.Color("#8f3d32") },
+      uThread: { value: getThreadTex() },
+      uWidth: { value: 0.55 },
     },
     vertexShader,
     fragmentShader,
@@ -177,6 +249,7 @@ export function syncTemariMaterial(
     wrapOn?: boolean;
     felt?: number;
     feltColor?: string;
+    threadWidth?: number;
   },
 ) {
   const palette = PALETTES[opts.paletteId];
@@ -197,4 +270,5 @@ export function syncTemariMaterial(
   material.uniforms.uWrapOn.value = opts.wrapOn ? 1 : 0;
   material.uniforms.uFelt.value = opts.felt ?? 0;
   (material.uniforms.uFeltColor.value as THREE.Color).set(opts.feltColor ?? palette.colors[0]);
+  material.uniforms.uWidth.value = opts.threadWidth ?? 0.55;
 }

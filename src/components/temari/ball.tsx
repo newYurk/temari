@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { arcsToStitches, getWrapBuffer, pinHit, MariWinder, strokePx, toVec3 } from "./craft";
@@ -36,6 +36,7 @@ const _axisT = new THREE.Vector3();
 const _left = new THREE.Vector3();
 const _rgt = new THREE.Vector3();
 const Y_UP = new THREE.Vector3(0, 1, 0);
+const Z_FWD = new THREE.Vector3(0, 0, 1);
 
 const DAMP = 0.46;
 const YARN_MAX = 800;
@@ -74,6 +75,9 @@ function ThreadLayer({
               opacity={opacity}
               depthWrite={opacity >= 1}
               side={THREE.DoubleSide}
+              polygonOffset
+              polygonOffsetFactor={-2}
+              polygonOffsetUnits={-2}
             />
           </mesh>
         ) : null,
@@ -114,6 +118,10 @@ function LiveThread() {
   }, [obj]);
 
   useFrame(() => {
+    if (useTemari.getState().layerDone) {
+      obj.geometry.setDrawRange(0, 0);
+      return;
+    }
     const live = wrap.live;
     const strands = live.length > 1 ? [{ points: live, hex: wrap.liveColor }] : [];
     const geo = obj.geometry;
@@ -224,6 +232,7 @@ export function Ball() {
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const mari = useRef(new MariWinder());
   const snapGhost = useRef<THREE.Mesh>(null);
+  const wrapRail = useRef<THREE.Mesh>(null);
   const nodesMesh = useRef<THREE.InstancedMesh>(null);
 
   const gl = useThree((s) => s.gl);
@@ -250,6 +259,7 @@ export function Ball() {
   const wrapResetNonce = useTemari((s) => s.wrapResetNonce);
   const layerDone = useTemari((s) => s.layerDone);
   const wrapSeed = useTemari((s) => s.wrapSeed);
+  const threadWidth = useTemari((s) => s.threadWidth);
   const paint = useTemari((s) => s.paint);
   const sew = useTemari((s) => s.sew);
   const placePin = useTemari((s) => s.placePin);
@@ -269,9 +279,17 @@ export function Ball() {
 
   const preset: MotifId =
     mode === "title" ? "kiku" : mode === "studio" && motif !== "kiku" && motif !== "none" ? motif : "none";
+  const [stitchesOn, setStitchesOn] = useState(mode !== "title");
+  useEffect(() => {
+    const id = window.setTimeout(() => setStitchesOn(true), 40);
+    return () => window.clearTimeout(id);
+  }, [mode, preset, division]);
   const presetStitches = useMemo(
-    () => generateMotif(mode === "title" ? "simple" : division, preset),
-    [division, mode, preset],
+    () =>
+      !stitchesOn
+        ? []
+        : generateMotif(mode === "title" ? "simple" : division, preset),
+    [division, mode, preset, stitchesOn],
   );
   const sewnStitches = useMemo(
     () => (mode === "studio" ? stitchesFromSewn(division, sewn) : []),
@@ -325,6 +343,12 @@ export function Ball() {
     const st = useTemari.getState();
     mari.current.reset(st.threadWidth);
     if (st.wrapSeed === "full") {
+      if (st.mode === "title") {
+        feel.resetTurns();
+        setWrapCount(1);
+        setWrapProgress(1);
+        return;
+      }
       wrap.strokeWidth = strokePx(0.55);
       const hex = PALETTES[st.paletteId].colors[0] ?? "#8f3d32";
       mari.current.fill(wrap, 0, hex);
@@ -648,9 +672,22 @@ export function Ball() {
       wrapOn: false,
       felt: mode === "title" || layerDone ? 1 : wrap.covered,
       feltColor: palette.colors[selectedColor] ?? palette.thread,
+      threadWidth,
     });
     if (guidesMat.current) guidesMat.current.color.set(palette.thread);
     if (beadMat.current) beadMat.current.color.set(palette.thread);
+
+    const rail = wrapRail.current;
+    if (rail) {
+      const winding = state.mode === "studio" && state.craft === "wind" && !state.layerDone;
+      rail.visible = winding;
+      if (winding) {
+        mari.current.copyAxis(_local);
+        if (_local.lengthSq() > 1e-8) {
+          rail.quaternion.setFromUnitVectors(Z_FWD, _local);
+        }
+      }
+    }
   });
 
   const canWork = mode !== "title";
@@ -721,8 +758,8 @@ export function Ball() {
 
       <mesh
         geometry={guideGeo}
-        visible={mode === "kata" || (mode === "studio" && layerDone)}
-        scale={1.02}
+        visible={mode === "kata" || (mode === "studio" && layerDone && craft === "pin")}
+        scale={1.008}
         renderOrder={8}
       >
         <meshStandardMaterial
@@ -750,6 +787,16 @@ export function Ball() {
       ) : null}
 
       {mode === "studio" ? <LiveThread /> : null}
+
+      <mesh ref={wrapRail} visible={false} renderOrder={7}>
+        <torusGeometry args={[1.01, 0.007, 8, 96]} />
+        <meshStandardMaterial
+          color={threadHex}
+          roughness={0.42}
+          metalness={0.08}
+          depthWrite={false}
+        />
+      </mesh>
 
       <mesh ref={needle} visible={false}>
         <sphereGeometry args={[0.018, 12, 10]} />
@@ -794,7 +841,7 @@ export function Ball() {
         ref={beads}
         args={[undefined, undefined, 12]}
         frustumCulled={false}
-        visible={mode === "kata" || (mode === "studio" && layerDone)}
+        visible={mode === "kata" || (mode === "studio" && layerDone && craft === "pin")}
       >
         <sphereGeometry args={[0.032, 16, 12]} />
         <meshStandardMaterial
