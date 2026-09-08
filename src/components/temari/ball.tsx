@@ -95,10 +95,8 @@ function LiveThread() {
     }
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.setDrawRange(0, 0);
-    const mat = new THREE.MeshStandardMaterial({
+    const mat = new THREE.MeshBasicMaterial({
       color: "#8f3d32",
-      roughness: 0.58,
-      metalness: 0.07,
       side: THREE.DoubleSide,
     });
     const mesh = new THREE.Mesh(geo, mat);
@@ -110,7 +108,7 @@ function LiveThread() {
   useEffect(() => {
     return () => {
       obj.geometry.dispose();
-      (obj.material as THREE.MeshStandardMaterial).dispose();
+      (obj.material as THREE.MeshBasicMaterial).dispose();
     };
   }, [obj]);
 
@@ -146,7 +144,7 @@ function LiveThread() {
     pos.needsUpdate = true;
     nrm.needsUpdate = true;
     geo.setDrawRange(0, Math.max(0, (n - 1) * 6));
-    (obj.material as THREE.MeshStandardMaterial).color.set(wrap.liveColor);
+    (obj.material as THREE.MeshBasicMaterial).color.set(wrap.liveColor);
   });
 
   return <primitive object={obj} />;
@@ -473,15 +471,7 @@ export function Ball() {
     }
 
     const tip = needle.current;
-    if (tip) {
-      const last = wrap.live[wrap.live.length - 1];
-      tip.visible = state.mode === "studio" && state.craft === "wind" && !!last;
-      if (last) {
-        tip.position.set(last.x * 1.028, last.y * 1.028, last.z * 1.028);
-        const m = tip.material;
-        if (m instanceof THREE.MeshStandardMaterial) m.color.set(wrap.liveColor);
-      }
-    }
+    if (tip) tip.visible = false;
 
     const knotMesh = knots.current;
     if (knotMesh) {

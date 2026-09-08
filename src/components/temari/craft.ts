@@ -8,7 +8,7 @@ export const CRAFT_LIST: Craft[] = ["wind", "pin", "stitch"];
 export const CRAFT_META: Record<Craft, { label: string; hint: string }> = {
   wind: {
     label: "Намотка",
-    hint: "крутите шар — нить по самой широкой окружности",
+    hint: "крутите шар — каждый оборот чуть сдвигает нить",
   },
   pin: {
     label: "Метки",
@@ -97,18 +97,13 @@ function stampDot(
 ) {
   const [u, v] = toUV(p);
   ctx.fillStyle = hex;
-  ctx.globalAlpha = 0.9;
-  const r = Math.max(2.0, width * 0.48);
+  ctx.globalAlpha = 1;
+  const polar = Math.abs(p.y) > 0.82;
+  const r = polar ? Math.max(1.6, width * 0.22) : Math.max(2.0, width * 0.48);
   for (const shift of [-1, 0, 1]) {
     ctx.beginPath();
     ctx.arc((u + shift) * W, v * H, r, 0, Math.PI * 2);
     ctx.fill();
-  }
-  if (Math.abs(p.y) > 0.9) {
-    const hPx = Math.max(r * 1.2, 5);
-    ctx.globalAlpha = 0.92;
-    if (p.y > 0) ctx.fillRect(0, 0, W, hPx);
-    else ctx.fillRect(0, H - hPx, W, hPx);
   }
 }
 
@@ -146,7 +141,7 @@ function strokeSeg(
       line(alpha, w, u0 + shift, v0, u1 + shift, v1);
     }
   };
-  paint(0.85, width * 1.22);
+  paint(1, width * 1.18);
   paint(1, width);
 }
 
@@ -475,15 +470,30 @@ export class MariWinder {
     this.keepOnEquator();
   }
 
-  /** Lay yarn around the current equator. Does not change the plane. */
+  /** Lay yarn around the current equator. After each lap the plane
+   *  nudges by about one thread — the mari turning in the hands —
+   *  so a long spin covers the ball instead of painting one belt. */
   spin(dAngle: number, buffer: WrapBuffer, color: number, hex: string) {
     if (dAngle <= 1e-6) return;
     let left = dAngle;
     const h0 = 0.05;
+    const band = (buffer.strokeWidth * Math.PI) / H;
+    const nudge = Math.max(0.045, band * 0.92);
     while (left > 1e-6) {
       const h = Math.min(h0, left);
       this.q.setFromAxisAngle(this.axis, h);
       this.dir.applyQuaternion(this.q);
+      this.arc += h;
+      if (this.arc >= TWO_PI) {
+        this.arc -= TWO_PI;
+        this.perp.crossVectors(this.axis, this.dir);
+        if (this.perp.lengthSq() < 1e-8) this.perp.set(0, 1, 0);
+        this.perp.normalize();
+        this.q.setFromAxisAngle(this.perp, nudge);
+        this.axis.applyQuaternion(this.q).normalize();
+        this.dir.applyQuaternion(this.q);
+        this.keepOnEquator();
+      }
       buffer.addPoint(this.dir, color, hex, true);
       this.s += h;
       this.sinceCover += h;
