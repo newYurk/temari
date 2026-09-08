@@ -169,6 +169,7 @@ type TemariState = {
   wrapStyle: WrapStyle;
   startPin: Vec3 | null;
   originNonce: number;
+  wrapSeed: "empty" | "full";
   enterStudio: () => void;
   enterKata: (index?: number) => void;
   toTitle: () => void;
@@ -196,6 +197,7 @@ type TemariState = {
   fillKiku: () => void;
   setWrapStyle: (style: WrapStyle) => void;
   setStartPin: (local: Vec3) => void;
+  showExample: () => void;
 };
 
 function rememberStudio(state: TemariState) {
@@ -222,12 +224,12 @@ function sameSlot(a: KikuSlot | null, b: KikuSlot | null) {
 
 export const useTemari = create<TemariState>((set, get) => ({
   mode: "title",
-  division: "c8",
+  division: "simple",
   paletteId: "beni",
   motif: "kiku",
   craft: "wind",
   selectedColor: 0,
-  fills: emptyFills("c8"),
+  fills: emptyFills("simple"),
   sewn: [],
   pins: [],
   pinArcs: [],
@@ -251,6 +253,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   wrapStyle: "around",
   startPin: null,
   originNonce: 0,
+  wrapSeed: "full",
 
   enterStudio: () => {
     feel.unlock();
@@ -285,6 +288,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       wrapStyle: "around",
       startPin: [DEFAULT_START[0], DEFAULT_START[1], DEFAULT_START[2]],
       originNonce: get().originNonce + 1,
+      wrapSeed: "empty",
     });
   },
 
@@ -324,11 +328,11 @@ export const useTemari = create<TemariState>((set, get) => ({
   toTitle: () => {
     set({
       mode: "title",
-      division: "c8",
+      division: "simple",
       paletteId: "beni",
       motif: "kiku",
       craft: "wind",
-      fills: emptyFills("c8"),
+      fills: emptyFills("simple"),
       sewn: [],
       pins: [],
       pinArcs: [],
@@ -341,9 +345,10 @@ export const useTemari = create<TemariState>((set, get) => ({
       pinHistory: [],
       wrapResetNonce: get().wrapResetNonce + 1,
       wrapCount: 0,
-      wrapProgress: 0,
+      wrapProgress: 1,
       layerDone: false,
       startPin: null,
+      wrapSeed: "full",
     });
   },
 
@@ -545,6 +550,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       wrapStyle: "around",
       startPin: [DEFAULT_START[0], DEFAULT_START[1], DEFAULT_START[2]],
       originNonce: state.originNonce + 1,
+      wrapSeed: "empty",
     });
     rememberStudio(get());
   },
@@ -601,7 +607,7 @@ export const useTemari = create<TemariState>((set, get) => ({
     set({
       wrapProgress: 1,
       layerDone: true,
-      craft: "pin",
+      craft: "stitch",
     });
   },
   setKikuLayers: (n) => set({ kikuLayers: Math.max(1, Math.min(8, Math.round(n))) }),
@@ -646,5 +652,30 @@ export const useTemari = create<TemariState>((set, get) => ({
       startPin: p,
       originNonce: state.originNonce + 1,
     });
+  },
+  showExample: () => {
+    feel.unlock();
+    feel.layer();
+    set({
+      mode: "studio",
+      division: "simple",
+      paletteId: "beni",
+      motif: "kiku",
+      sewn: fillKikuSewn("simple"),
+      fills: emptyFills("simple"),
+      pins: [],
+      pinArcs: [],
+      activePin: null,
+      craft: "stitch",
+      layerDone: true,
+      wrapProgress: 1,
+      wrapCount: 1,
+      wrapResetNonce: get().wrapResetNonce + 1,
+      wrapSeed: "full",
+      startPin: null,
+      hoverSlot: null,
+      selectedColor: 0,
+    });
+    rememberStudio(get());
   },
 }));

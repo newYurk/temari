@@ -9,12 +9,12 @@ export type MotifId = "none" | "kiku" | "hoshi" | "hishi" | "obi";
 export type Vec3 = [number, number, number];
 
 export type Stitch =
-  | { kind: "arc"; a: Vec3; b: Vec3; color: number }
-  | { kind: "loop"; points: Vec3[]; color: number };
+  | { kind: "arc"; a: Vec3; b: Vec3; color: number; lift?: number }
+  | { kind: "loop"; points: Vec3[]; color: number; lift?: number };
 
 export const MOTIF_META: Record<MotifId, { label: string; hint: string }> = {
   none: { label: "Нет", hint: "стежок за стежком по сетке деления" },
-  kiku: { label: "Кику", hint: "хризантема: ёлочка от полюса" },
+  kiku: { label: "Кику", hint: "увагакэ: ёлочка от полюса наружу" },
   hoshi: { label: "Хоси", hint: "звезда {n/k} на малом круге" },
   hishi: { label: "Хиси", hint: "вложенные многоугольники у полюсов" },
   obi: { label: "Оби", hint: "пояса — малые круги параллельно экватору" },
@@ -98,21 +98,10 @@ export function stitchesForSlot(
   const pole = poles[slot.pole];
   if (!pole) return [];
   const n = petalCount(division);
-  const { theta0, delta, rounds } = kikuSpec(division);
-  if (slot.ring < 0 || slot.ring >= rounds) return [];
+  const spec = kikuSpec(division);
+  if (slot.ring < 0 || slot.ring >= spec.rounds) return [];
   if (slot.sector < 0 || slot.sector >= n) return [];
-  const inner = theta0 + slot.ring * delta;
-  const outer = inner + delta * 0.9;
-  const a = (2 * Math.PI * slot.sector) / n;
-  const b = (2 * Math.PI * (slot.sector + 1)) / n;
-  const mid = (a + b) / 2;
-  const A = around(pole, inner, a);
-  const T = around(pole, outer, mid);
-  const C = around(pole, inner, b);
-  return [
-    { kind: "arc", a: A, b: T, color },
-    { kind: "arc", a: T, b: C, color },
-  ];
+  return kikuPetal(pole, spec, slot.ring, slot.sector, n, color);
 }
 
 export function hitKikuSlot(
@@ -134,10 +123,10 @@ export function hitKikuSlot(
   }
   const { theta, phi } = polarAround(poles[pole], p);
   const n = petalCount(division);
-  const { theta0, delta, rounds } = kikuSpec(division);
-  if (theta < theta0 * 0.45) return null;
-  const ring = Math.floor((theta - theta0) / delta);
-  if (ring < 0 || ring >= rounds) return null;
+  const spec = kikuSpec(division);
+  if (theta < spec.inner * 0.4) return null;
+  const ring = Math.floor((theta - spec.outer0 + spec.pitch * 0.55) / spec.pitch);
+  if (ring < 0 || ring >= spec.rounds) return null;
   let sector = Math.floor((phi / (Math.PI * 2)) * n);
   if (sector >= n) sector = n - 1;
   if (sector < 0) sector = 0;
@@ -151,7 +140,7 @@ export function fillKikuSewn(division: Division): SewnEntry[] {
   const sewn: SewnEntry[] = [];
   for (let pole = 0; pole < poles; pole++) {
     for (let ring = 0; ring < rounds; ring++) {
-      const color = ring % 2 === 0 ? 0 : 2;
+      const color = kikuColor(ring);
       for (let sector = 0; sector < n; sector++) {
         sewn.push({ key: slotKey({ pole, ring, sector }), color });
       }
@@ -198,29 +187,48 @@ function starSkip(division: Division) {
 }
 
 function kikuSpec(division: Division) {
-  if (division === "simple") return { theta0: 0.16, delta: 0.1, rounds: 7 };
-  if (division === "c8") return { theta0: 0.12, delta: 0.085, rounds: 6 };
-  return { theta0: 0.11, delta: 0.072, rounds: 5 };
+  if (division === "simple") return { inner: 0.08, outer0: 0.22, pitch: 0.08, rounds: 8 };
+  if (division === "c8") return { inner: 0.1, outer0: 0.2, pitch: 0.068, rounds: 7 };
+  return { inner: 0.09, outer0: 0.18, pitch: 0.058, rounds: 6 };
+}
+
+function kikuColor(ring: number) {
+  const cycle = [0, 0, 1, 1, 2, 2, 0, 3];
+  return cycle[ring % cycle.length] ?? 0;
+}
+
+function kikuPetal(
+  pole: Vec3,
+  spec: { inner: number; outer0: number; pitch: number; rounds: number },
+  ring: number,
+  sector: number,
+  n: number,
+  color: number,
+): Stitch[] {
+  const inner = spec.inner + ring * 0.01;
+  const outer = spec.outer0 + ring * spec.pitch;
+  const a = (2 * Math.PI * sector) / n;
+  const b = (2 * Math.PI * (sector + 1)) / n;
+  const mid = (a + b) / 2;
+  const A = around(pole, inner, a);
+  const T = around(pole, outer, mid);
+  const C = around(pole, inner, b);
+  const lift = ring * 0.0024;
+  return [
+    { kind: "arc", a: A, b: T, color, lift },
+    { kind: "arc", a: T, b: C, color, lift },
+  ];
 }
 
 function kiku(division: Division): Stitch[] {
   const n = petalCount(division);
-  const { theta0, delta, rounds } = kikuSpec(division);
+  const spec = kikuSpec(division);
   const stitches: Stitch[] = [];
   for (const pole of polePositions(division)) {
-    for (let r = 0; r < rounds; r++) {
-      const inner = theta0 + r * delta;
-      const outer = inner + delta * 0.9;
-      const color = r % 2 === 0 ? 0 : 2;
+    for (let r = 0; r < spec.rounds; r++) {
+      const color = kikuColor(r);
       for (let i = 0; i < n; i++) {
-        const a = (2 * Math.PI * i) / n;
-        const b = (2 * Math.PI * (i + 1)) / n;
-        const mid = (a + b) / 2;
-        const A = around(pole, inner, a);
-        const T = around(pole, outer, mid);
-        const C = around(pole, inner, b);
-        stitches.push({ kind: "arc", a: A, b: T, color });
-        stitches.push({ kind: "arc", a: T, b: C, color });
+        stitches.push(...kikuPetal(pole, spec, r, i, n, color));
       }
     }
   }

@@ -1,11 +1,10 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { Stitch } from "./patterns";
+import { DEFAULT_KIND, ribbonWidth } from "./thread";
 
-const ARC_SEGS = 12;
-const RIBBON = 0.018;
-const LOOP_RIBBON = 0.02;
-const LIFT = 1.018;
+const ARC_SEGS = 14;
+const LIFT = 1.02;
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -28,8 +27,8 @@ function slerp(
     .addScaledVector(b, Math.sin(t * theta) / s);
 }
 
-function vec(p: [number, number, number]) {
-  return new THREE.Vector3(p[0], p[1], p[2]).normalize().multiplyScalar(LIFT);
+function vec(p: [number, number, number], lift = 0) {
+  return new THREE.Vector3(p[0], p[1], p[2]).normalize().multiplyScalar(LIFT + lift);
 }
 
 function ribbonFromPoints(pts: THREE.Vector3[], width: number, closed: boolean) {
@@ -69,9 +68,9 @@ function ribbonFromPoints(pts: THREE.Vector3[], width: number, closed: boolean) 
     nrm[o + 4] = _radial.y;
     nrm[o + 5] = _radial.z;
     const v = i / Math.max(1, n - 1);
-    uv[i * 4] = v;
+    uv[i * 4] = v * 4;
     uv[i * 4 + 1] = 0;
-    uv[i * 4 + 2] = v;
+    uv[i * 4 + 2] = v * 4;
     uv[i * 4 + 3] = 1;
   }
 
@@ -103,33 +102,32 @@ let yarn: THREE.CanvasTexture | null = null;
 export function getYarnTexture() {
   if (yarn) return yarn;
   const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 16;
+  canvas.width = 128;
+  canvas.height = 24;
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     yarn = new THREE.CanvasTexture(canvas);
     return yarn;
   }
-  ctx.fillStyle = "#f4efe6";
-  ctx.fillRect(0, 0, 64, 16);
-  ctx.strokeStyle = "#2a2420";
-  ctx.globalAlpha = 0.16;
-  ctx.lineWidth = 0.8;
-  for (let y = 1; y < 16; y += 2) {
+  ctx.fillStyle = "#f3ebe0";
+  ctx.fillRect(0, 0, 128, 24);
+  for (let i = 0; i < 18; i++) {
+    const y = 1 + i * 1.25;
+    ctx.strokeStyle = i % 3 === 0 ? "rgba(42,36,32,0.28)" : "rgba(255,255,255,0.35)";
+    ctx.lineWidth = i % 3 === 0 ? 1.1 : 0.7;
     ctx.beginPath();
-    ctx.moveTo(0, y + 0.4);
-    ctx.lineTo(64, y - 0.3);
+    ctx.moveTo(0, y + 2);
+    ctx.lineTo(128, y - 2);
     ctx.stroke();
   }
-  const fade = ctx.createLinearGradient(0, 0, 0, 16);
+  const fade = ctx.createLinearGradient(0, 0, 0, 24);
   fade.addColorStop(0, "rgba(255,255,255,0)");
-  fade.addColorStop(0.2, "rgba(255,255,255,1)");
-  fade.addColorStop(0.8, "rgba(255,255,255,1)");
+  fade.addColorStop(0.18, "rgba(255,255,255,1)");
+  fade.addColorStop(0.82, "rgba(255,255,255,1)");
   fade.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = "destination-in";
   ctx.fillStyle = fade;
-  ctx.fillRect(0, 0, 64, 16);
+  ctx.fillRect(0, 0, 128, 24);
   yarn = new THREE.CanvasTexture(canvas);
   yarn.wrapS = THREE.RepeatWrapping;
   yarn.wrapT = THREE.ClampToEdgeWrapping;
@@ -141,14 +139,17 @@ export function getYarnTexture() {
 export function createMotifGeometry(
   stitches: Stitch[],
   colorIndex: number,
+  kind = DEFAULT_KIND.stitch,
 ): THREE.BufferGeometry | null {
+  const width = ribbonWidth(kind);
   const parts: THREE.BufferGeometry[] = [];
   for (const stitch of stitches) {
     if (stitch.color !== colorIndex) continue;
+    const lift = stitch.lift ?? 0;
     if (stitch.kind === "arc") {
-      parts.push(arcRibbon(vec(stitch.a), vec(stitch.b), RIBBON));
+      parts.push(arcRibbon(vec(stitch.a, lift), vec(stitch.b, lift), width));
     } else {
-      parts.push(ribbonFromPoints(stitch.points.map(vec), LOOP_RIBBON, true));
+      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, lift)), width * 1.08, true));
     }
   }
   if (parts.length === 0) return null;
