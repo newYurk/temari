@@ -8,7 +8,7 @@ export const CRAFT_LIST: Craft[] = ["wind", "pin", "stitch"];
 export const CRAFT_META: Record<Craft, { label: string; hint: string }> = {
   wind: {
     label: "Намотка",
-    hint: "меридианы: один палец мотает, два — поворот",
+    hint: "шар двигают: полный круг, следующий — не рядом",
   },
   pin: {
     label: "Метки",
@@ -302,8 +302,7 @@ export class WrapBuffer {
       }
     }
     const mid = bodyW > 0 ? body / bodyW : 0;
-    const cap = poleN > 0 ? poles / poleN : 1;
-    this.covered = Math.min(1, mid * 0.82 + cap * 0.18);
+    this.covered = Math.min(1, mid);
     return this.covered;
   }
 
@@ -415,15 +414,14 @@ export class MariWinder {
     this.sNeeded = TWO_PI * (52 + (1 - t) * 36);
     const ang = (strokePx(t) * Math.PI) / H;
     this.tilt = ang * 2.2 + 0.1;
-    const offset = Math.max(0.028, ang * 0.8);
-    const perFamily = Math.max(24, Math.ceil(TWO_PI / offset));
-    this.sNeeded = perFamily * TWO_PI * 3;
+    this.sNeeded = TWO_PI * (64 + (1 - t) * 28);
     this.pole.set(0, 1, 0);
+    this.axis.set(0.28, 0.94, 0.18).normalize();
+    this.dir.crossVectors(this.axis, new THREE.Vector3(1, 0, 0));
+    if (this.dir.lengthSq() < 0.05) this.dir.crossVectors(this.axis, new THREE.Vector3(0, 0, 1));
+    this.dir.normalize();
     this.lambda = 0;
-    this.locked = true;
-    this.rebuildAxis(Math.max(0.032, ang * 0.5));
-    this.dir.set(0, 0, 1);
-    this.keepOnEquator();
+    this.locked = false;
   }
 
   get progress() {
@@ -486,7 +484,7 @@ export class MariWinder {
     const now = performance.now();
     const dt = this.lastAimT ? Math.min(0.048, (now - this.lastAimT) / 1000) : 0.016;
     this.lastAimT = now;
-    this.qTo.setFromUnitVectors(this.pole, this.tmp);
+    this.qTo.setFromUnitVectors(this.axis, this.tmp);
     const turn = 2 * Math.acos(clamp(this.qTo.w, -1, 1));
     if (turn < 1e-4) {
       this.locked = true;
@@ -495,53 +493,35 @@ export class MariWinder {
     const maxTurn = this.locked ? 0.85 * dt : 2.2 * dt;
     const t = Math.min(1, maxTurn / turn);
     this.q.identity().slerp(this.qTo, t);
-    this.pole.applyQuaternion(this.q).normalize();
+    this.axis.applyQuaternion(this.q).normalize();
+    this.dir.applyQuaternion(this.q);
+    this.keepOnEquator();
     this.locked = true;
-    this.rebuildAxis(0.02);
   }
 
-  private rebuildAxis(miss: number) {
-    this.east.crossVectors(this.pole, new THREE.Vector3(1, 0, 0));
-    if (this.east.lengthSq() < 0.05) this.east.crossVectors(this.pole, new THREE.Vector3(0, 0, 1));
-    this.east.normalize();
-    this.north.crossVectors(this.east, this.pole).normalize();
-    const ca = Math.cos(miss);
-    const sa = Math.sin(miss);
-    const cl = Math.cos(this.lambda);
-    const sl = Math.sin(this.lambda);
-    this.axis
-      .copy(this.east)
-      .multiplyScalar(ca * cl)
-      .addScaledVector(this.north, ca * sl)
-      .addScaledVector(this.pole, sa)
-      .normalize();
+  /**
+   * Next wrap is not parallel — the mari turns in the hands.
+   * TemariKai: never two successive wraps in the same place.
+   */
+  private nextWrap() {
+    this.perp.crossVectors(this.axis, this.dir);
+    if (this.perp.lengthSq() < 1e-8) this.perp.set(0, 1, 0);
+    this.perp.normalize();
+    const yaw = 0.72 + 0.5 * Math.sin(this.s * 0.13) + 0.38 * Math.sin(this.s * 0.029);
+    this.q.setFromAxisAngle(this.axis, yaw);
+    this.perp.applyQuaternion(this.q);
+    const tilt = 0.5 + 0.28 * Math.sin(this.s * 0.37);
+    this.q.setFromAxisAngle(this.perp, tilt);
+    this.axis.applyQuaternion(this.q).normalize();
     this.keepOnEquator();
   }
 
-  /** Next meridian: one thread-width at the equator. Planes miss
-   *  the pole by half a thread, so they never stack there.
-   *  After a full set, the pole turns 90° and the cap is covered. */
-  private nextMeridian(offset: number) {
-    this.lambda += offset;
-    if (this.lambda >= TWO_PI) {
-      this.lambda -= TWO_PI;
-      this.east.crossVectors(this.pole, new THREE.Vector3(1, 0, 0));
-      if (this.east.lengthSq() < 0.05) this.east.crossVectors(this.pole, new THREE.Vector3(0, 0, 1));
-      this.east.normalize();
-      this.q.setFromAxisAngle(this.east, Math.PI * 0.5);
-      this.pole.applyQuaternion(this.q).normalize();
-    }
-    this.rebuildAxis(offset * 0.5);
-  }
-
-  /** Yarn along the current meridian. After a full lap, offset by
-   *  thread width — solid wrap, poles do not stack. */
+  /** Yarn along the current equator. After a full lap the plane turns
+   *  so the next circle is not beside the last. */
   spin(dAngle: number, buffer: WrapBuffer, color: number, hex: string) {
     if (dAngle <= 1e-6) return;
     let left = dAngle;
     const h0 = 0.032;
-    const band = (buffer.strokeWidth * Math.PI) / H;
-    const offset = Math.max(0.028, band * 0.8);
     while (left > 1e-6) {
       const h = Math.min(h0, left);
       this.q.setFromAxisAngle(this.axis, h);
@@ -549,7 +529,7 @@ export class MariWinder {
       this.arc += h;
       if (this.arc >= TWO_PI) {
         this.arc -= TWO_PI;
-        this.nextMeridian(offset);
+        this.nextWrap();
       }
       buffer.addPoint(this.dir, color, hex, true);
       this.s += h;
@@ -557,7 +537,10 @@ export class MariWinder {
       left -= h;
       this.wrapCount = Math.floor(this.s / TWO_PI);
     }
-    this.cover = Math.min(1, this.s / Math.max(this.sNeeded, 1));
+    if (this.sinceCover > 0.55) {
+      this.sinceCover = 0;
+      this.cover = buffer.sampleCoverage();
+    }
   }
 
   follow(
@@ -573,34 +556,36 @@ export class MariWinder {
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
     this.advance(buffer, this.sNeeded, color, hex, 0.07);
-    this.cover = Math.min(1, this.s / Math.max(this.sNeeded, 1));
+    this.cover = 1;
   }
 
   advance(buffer: WrapBuffer, ds: number, color: number, hex: string, step = 0.07) {
     if (ds <= 0) return;
-    if (this.s >= this.sNeeded) {
+    if (this.cover >= 0.94 && this.wrapCount >= 20) {
       this.cover = 1;
+      return;
+    }
+    if (this.s >= this.sNeeded) {
+      this.cover = Math.max(this.cover, buffer.sampleCoverage());
       return;
     }
     let left = Math.min(ds, this.sNeeded - this.s);
     const h0 = Math.max(0.05, step);
-    const band = (buffer.strokeWidth * Math.PI) / H;
-    const offset = Math.max(0.028, band * 0.8);
     while (left > 1e-6) {
-      if (this.s >= this.sNeeded) break;
+      if (this.cover >= 0.94 && this.wrapCount >= 20) break;
       const h = Math.min(h0, left);
       this.q.setFromAxisAngle(this.axis, h);
       this.dir.applyQuaternion(this.q);
       this.arc += h;
       if (this.arc >= TWO_PI) {
         this.arc -= TWO_PI;
-        this.nextMeridian(offset);
+        this.nextWrap();
+        this.cover = buffer.sampleCoverage();
       }
       buffer.addPoint(this.dir, color, hex, true);
       this.s += h;
       left -= h;
       this.wrapCount = Math.floor(this.s / TWO_PI);
     }
-    this.cover = Math.min(1, this.s / Math.max(this.sNeeded, 1));
   }
 }

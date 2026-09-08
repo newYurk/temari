@@ -102,13 +102,14 @@ void main() {
   }
 
   if (uFelt > 0.01) {
-    col = mix(col, uFeltColor, uFelt);
+    col = mix(col, uFeltColor, clamp(uFelt, 0.0, 1.0));
   }
 
   float phi = atan(nL.x, nL.z);
-  float wrap = sin(nL.y * 148.0) * 0.014;
-  float stitch = sin(phi * 86.0 + nL.y * 10.0) * 0.01;
-  col *= 0.97 + wrap + stitch;
+  float wrap = sin(nL.y * 148.0) * (0.014 + 0.02 * uFelt);
+  float stitch = sin(phi * 86.0 + nL.y * 10.0) * (0.01 + 0.018 * uFelt);
+  float twist = sin(nL.x * 90.0 + nL.z * 70.0) * 0.012 * uFelt;
+  col *= 0.97 + wrap + stitch + twist;
 
   if (region == uHover && uHover >= 0) {
     col *= 1.09;
