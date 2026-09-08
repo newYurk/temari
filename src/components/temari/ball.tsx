@@ -355,6 +355,13 @@ export function Ball() {
           _q.setFromAxisAngle(_axis, ang);
           g.quaternion.premultiply(_q);
           omega.current.copy(_axis).multiplyScalar(ang / dt);
+          const st = useTemari.getState();
+          if (st.mode === "studio" && st.craft === "wind" && !st.layerDone) {
+            _inv.copy(g.quaternion).invert();
+            _local.copy(_axis).applyQuaternion(_inv).normalize();
+            const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
+            mari.current.follow(_local, ang * 1.2, wrap, st.selectedColor, hex);
+          }
         }
       }
       lastPtr.current = { x: e.clientX, y: e.clientY, t: now, id: e.pointerId };
@@ -379,7 +386,7 @@ export function Ball() {
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
     };
-  }, [camera, gl, size.height]);
+  }, [camera, gl, size.height, wrap]);
 
   useEffect(() => {
     const probe = {
@@ -424,14 +431,16 @@ export function Ball() {
     wrap.strokeWidth = strokePx(state.threadWidth);
     feel.setSpin(state.mode === "studio" && state.craft === "wind" ? spd : 0);
     if (state.mode === "studio" && state.craft === "wind" && !state.layerDone) {
-      if (spinning.current || spd > 0.12) {
+      if (!spinning.current && spd > 0.12 && g) {
         const hex = PALETTES[state.paletteId].colors[state.selectedColor] ?? "#8f3d32";
-        mari.current.advance(wrap, spd * 2.6 * d, state.selectedColor, hex);
+        _inv.copy(g.quaternion).invert();
+        _local.copy(omega.current).normalize().applyQuaternion(_inv);
+        mari.current.follow(_local, spd * d * 1.2, wrap, state.selectedColor, hex);
         feel.wrapTurn(mari.current.wrapCount);
-        const next = mari.current.progress;
-        if (wrap.strandCount !== state.wrapCount) setWrapCount(wrap.strandCount);
-        if (Math.abs(next - state.wrapProgress) > 0.002) setWrapProgress(next);
       }
+      const next = mari.current.progress;
+      if (wrap.strandCount !== state.wrapCount) setWrapCount(wrap.strandCount);
+      if (Math.abs(next - state.wrapProgress) > 0.002) setWrapProgress(next);
     } else if (state.layerDone && mari.current.progress < 0.999) {
       const hex = PALETTES[state.paletteId].colors[state.selectedColor] ?? "#8f3d32";
       mari.current.advance(wrap, Math.max(14, 240 * d), state.selectedColor, hex);
