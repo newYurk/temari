@@ -33,7 +33,7 @@ const _binormal = new THREE.Vector3();
 const Y_UP = new THREE.Vector3(0, 1, 0);
 
 const DAMP = 0.46;
-const LIVE_MAX = 400;
+const YARN_MAX = 9000;
 
 function ThreadLayer({
   stitches,
@@ -79,72 +79,110 @@ function ThreadLayer({
 
 function LiveThread() {
   const obj = useMemo(() => {
-    const n = LIVE_MAX;
+    const n = YARN_MAX;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
     geo.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
-    const idx = new Uint32Array((n - 1) * 6);
-    for (let i = 0; i < n - 1; i++) {
-      const a = i * 2;
-      idx[i * 6] = a;
-      idx[i * 6 + 1] = a + 1;
-      idx[i * 6 + 2] = a + 2;
-      idx[i * 6 + 3] = a + 1;
-      idx[i * 6 + 4] = a + 3;
-      idx[i * 6 + 5] = a + 2;
-    }
+    geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
+    const idx = new Uint32Array(Math.max(1, n - 1) * 6);
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.setDrawRange(0, 0);
-    const mat = new THREE.MeshBasicMaterial({
-      color: "#8f3d32",
+    const mat = new THREE.MeshLambertMaterial({
+      vertexColors: true,
       side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.frustumCulled = false;
     return mesh;
   }, []);
   const wrap = getWrapBuffer();
+  const _col = useMemo(() => new THREE.Color(), []);
 
   useEffect(() => {
     return () => {
       obj.geometry.dispose();
-      (obj.material as THREE.MeshBasicMaterial).dispose();
+      (obj.material as THREE.MeshLambertMaterial).dispose();
     };
   }, [obj]);
 
   useFrame(() => {
-    const pts = wrap.live;
+    const strands = wrap.yarn();
     const geo = obj.geometry;
     const pos = geo.getAttribute("position") as THREE.BufferAttribute;
     const nrm = geo.getAttribute("normal") as THREE.BufferAttribute;
-    const n = Math.min(pts.length, LIVE_MAX);
-    const half = Math.max(0.01, (wrap.strokeWidth / 768) * Math.PI * 0.42);
-    const lift = 1.018;
-    for (let i = 0; i < n; i++) {
-      const p = pts[i];
-      if (!p) continue;
-      const prev = pts[i === 0 ? 0 : i - 1] ?? p;
-      const next = pts[i === n - 1 ? n - 1 : i + 1] ?? p;
-      _feed.copy(next).sub(prev);
-      _local.copy(p).normalize();
-      _right.crossVectors(_local, _feed);
-      if (_right.lengthSq() < 1e-10) _right.set(1, 0, 0).cross(_local);
-      _right.normalize();
-      if (i === 0) _binormal.copy(_right);
-      else if (_right.dot(_binormal) < 0) _right.negate();
-      _binormal.copy(_right);
-      const px = p.x * lift;
-      const py = p.y * lift;
-      const pz = p.z * lift;
-      pos.setXYZ(i * 2, px + _right.x * half, py + _right.y * half, pz + _right.z * half);
-      pos.setXYZ(i * 2 + 1, px - _right.x * half, py - _right.y * half, pz - _right.z * half);
-      nrm.setXYZ(i * 2, _local.x, _local.y, _local.z);
-      nrm.setXYZ(i * 2 + 1, _local.x, _local.y, _local.z);
+    const col = geo.getAttribute("color") as THREE.BufferAttribute;
+    const idx = geo.getIndex() as THREE.BufferAttribute;
+    const half = Math.max(0.012, (wrap.strokeWidth / 768) * Math.PI * 0.4);
+    let total = 0;
+    for (const s of strands) total += s.points.length;
+    let skip = 0;
+    if (total > YARN_MAX) {
+      let acc = 0;
+      const extra = total - YARN_MAX;
+      for (const s of strands) {
+        if (acc + s.points.length <= extra) {
+          acc += s.points.length;
+          skip++;
+        } else break;
+      }
+    }
+    let v = 0;
+    let ii = 0;
+    for (let s = skip; s < strands.length; s++) {
+      const pts = strands[s]?.points;
+      if (!pts || pts.length < 2) continue;
+      const room = YARN_MAX - v / 2;
+      if (room < 2) break;
+      const n = Math.min(pts.length, room);
+      const start = pts.length - n;
+      _col.set(strands[s]?.hex ?? "#8f3d32");
+      const v0 = v;
+      for (let i = 0; i < n; i++) {
+        const p = pts[start + i];
+        if (!p) continue;
+        const prev = pts[start + (i === 0 ? 0 : i - 1)] ?? p;
+        const next = pts[start + (i === n - 1 ? n - 1 : i + 1)] ?? p;
+        _feed.copy(next).sub(prev);
+        _local.copy(p).normalize();
+        _right.crossVectors(_local, _feed);
+        if (_right.lengthSq() < 1e-10) _right.set(1, 0, 0).cross(_local);
+        _right.normalize();
+        if (i === 0) _binormal.copy(_right);
+        else if (_right.dot(_binormal) < 0) _right.negate();
+        _binormal.copy(_right);
+        const lift = 1.014 + s * 0.00015;
+        const px = p.x * lift;
+        const py = p.y * lift;
+        const pz = p.z * lift;
+        const vi = v / 2;
+        pos.setXYZ(vi * 2, px + _right.x * half, py + _right.y * half, pz + _right.z * half);
+        pos.setXYZ(vi * 2 + 1, px - _right.x * half, py - _right.y * half, pz - _right.z * half);
+        nrm.setXYZ(vi * 2, _local.x, _local.y, _local.z);
+        nrm.setXYZ(vi * 2 + 1, _local.x, _local.y, _local.z);
+        col.setXYZ(vi * 2, _col.r, _col.g, _col.b);
+        col.setXYZ(vi * 2 + 1, _col.r, _col.g, _col.b);
+        v += 2;
+      }
+      const used = (v - v0) / 2;
+      for (let i = 0; i < used - 1; i++) {
+        const a = v0 + i * 2;
+        idx.setX(ii, a);
+        idx.setX(ii + 1, a + 1);
+        idx.setX(ii + 2, a + 2);
+        idx.setX(ii + 3, a + 1);
+        idx.setX(ii + 4, a + 3);
+        idx.setX(ii + 5, a + 2);
+        ii += 6;
+      }
     }
     pos.needsUpdate = true;
     nrm.needsUpdate = true;
-    geo.setDrawRange(0, Math.max(0, (n - 1) * 6));
-    (obj.material as THREE.MeshBasicMaterial).color.set(wrap.liveColor);
+    col.needsUpdate = true;
+    idx.needsUpdate = true;
+    geo.setDrawRange(0, ii);
   });
 
   return <primitive object={obj} />;
@@ -426,6 +464,7 @@ export function Ball() {
         color: useTemari.getState().selectedColor,
         pin: useTemari.getState().startPin,
         livePts: wrap.live.length,
+        yarnPts: wrap.yarn().reduce((n, s) => n + s.points.length, 0),
         ...wrap.snapshot(),
       }),
     };
@@ -496,7 +535,7 @@ export function Ball() {
       peeking: mode === "kata" && peeking,
       camera: camera.position,
       wrap: wrap.texture,
-      wrapOn: wrap.strandCount > 0 || wrap.live.length > 1,
+      wrapOn: mode === "title" || layerDone,
     });
     if (guidesMat.current) guidesMat.current.color.set(palette.thread);
     if (beadMat.current) beadMat.current.color.set(palette.thread);
