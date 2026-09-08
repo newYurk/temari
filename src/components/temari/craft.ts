@@ -30,7 +30,7 @@ export type PinArc = { a: Vec3; b: Vec3; color: number };
 const W = 1536;
 const H = 768;
 const MIN_DOT = 0.9994;
-const MAX_LIVE = 220;
+const MAX_LIVE = 400;
 const MAX_STRANDS = 48;
 const MAX_JOINS = 16;
 const TWO_PI = Math.PI * 2;
@@ -119,9 +119,9 @@ function strokeSeg(
   hex: string,
   width: number,
 ) {
-  const poleish = Math.max(Math.abs(a.y), Math.abs(b.y));
-  const aroundPole = poleish > 0.7 && a.x * b.x + a.z * b.z < 0;
-  if (poleish > 0.93 || aroundPole) {
+  const aroundPole =
+    Math.abs(a.y) > 0.92 && Math.abs(b.y) > 0.92 && a.x * b.x + a.z * b.z < 0;
+  if (aroundPole) {
     stampDot(ctx, a, hex, width);
     stampDot(ctx, b, hex, width);
     return;
@@ -146,8 +146,8 @@ function strokeSeg(
       line(alpha, w, u0 + shift, v0, u1 + shift, v1);
     }
   };
-  paint(0.5, width * 1.45);
-  paint(0.96, width);
+  paint(0.72, width * 1.28);
+  paint(1, width);
 }
 
 function stroke(
@@ -232,22 +232,20 @@ export class WrapBuffer {
   addPoint(local: THREE.Vector3, color: number, hex: string, dense = false) {
     const p = local.clone().normalize();
     const current = this.strands[this.strands.length - 1];
-    const far = this.last ? this.last.dot(p) < 0.82 : false;
     const colorChange = !current || current.color !== color;
-    if (colorChange || far) {
-      if (this.last && colorChange) {
+    if (colorChange) {
+      if (this.last) {
         if (this.joins.length >= MAX_JOINS) this.joins.shift();
         this.joins.push(this.last.clone());
-        if (!far) {
+        if (this.last.dot(p) > 0.2) {
           stroke(this.ctx, this.last, p, hex, this.strokeWidth);
-          this.texture.needsUpdate = true;
         }
       }
       if (this.strands.length >= MAX_STRANDS) this.strands.shift();
       this.strands.push({
         color,
         hex,
-        points: !far && this.last ? [this.last.clone(), p] : [p],
+        points: this.last && this.last.dot(p) > 0.2 ? [this.last.clone(), p] : [p],
       });
       stampDot(this.ctx, p, hex, this.strokeWidth * 1.35);
       this.last = p;
@@ -269,6 +267,7 @@ export class WrapBuffer {
         this.live.push(q);
         this.last = q;
       }
+      if (current.points.length > 2800) current.points.splice(0, current.points.length - 2400);
       if (this.live.length > MAX_LIVE) this.live.splice(0, this.live.length - MAX_LIVE);
       this.liveColor = hex;
       this.texture.needsUpdate = true;
@@ -395,6 +394,8 @@ export class MariWinder {
   private tilt = 0.18;
   private cover = 0;
   private sinceCover = 0;
+  private locked = false;
+  private lastAimT = 0;
 
   reset(thickness: number) {
     const t = Math.max(0, Math.min(1, thickness));
@@ -403,6 +404,8 @@ export class MariWinder {
     this.arc = 0;
     this.cover = 0;
     this.sinceCover = 0;
+    this.locked = false;
+    this.lastAimT = 0;
     this.sNeeded = TWO_PI * (52 + (1 - t) * 36);
     const ang = (strokePx(t) * Math.PI) / H;
     this.tilt = ang * 2.2 + 0.1;
@@ -414,6 +417,10 @@ export class MariWinder {
 
   get progress() {
     return Math.max(0, Math.min(1, this.cover));
+  }
+
+  get hasPlane() {
+    return this.locked;
   }
 
   reorigin(point: THREE.Vector3, from?: THREE.Vector3 | null) {
@@ -436,31 +443,43 @@ export class MariWinder {
   }
 
   /**
-   * Lay thread on the equator of `spinAxis` (local). Plane eases toward
-   * that axis so a change of hands never folds the yarn.
+   * Turn the wrap plane toward how the mari is being spun.
+   * First grab snaps to that equator. After that the plane only
+   * eases if the hands clearly change direction — the yarn itself
+   * rotates with the plane, so the path never jumps.
    */
-  follow(
-    spinAxis: THREE.Vector3,
-    dAngle: number,
-    buffer: WrapBuffer,
-    color: number,
-    hex: string,
-  ) {
-    if (dAngle <= 1e-6) return;
+  aim(spinAxis: THREE.Vector3) {
     this.tmp.copy(spinAxis).normalize();
     if (this.tmp.lengthSq() < 0.2) return;
     if (this.tmp.dot(this.axis) < 0) this.tmp.negate();
+    if (!this.locked) {
+      this.q.setFromUnitVectors(this.axis, this.tmp);
+      this.axis.copy(this.tmp);
+      this.dir.applyQuaternion(this.q);
+      this.keepOnEquator();
+      this.locked = true;
+      return;
+    }
+    const align = this.axis.dot(this.tmp);
+    if (align > 0.94) return;
     this.qTo.setFromUnitVectors(this.axis, this.tmp);
     const turn = 2 * Math.acos(clamp(this.qTo.w, -1, 1));
-    if (turn > 1e-5) {
-      const maxTilt = Math.min(0.28, dAngle * 0.42 + 0.01);
-      const t = Math.min(1, maxTilt / turn);
-      this.q.identity().slerp(this.qTo, t);
-      this.axis.applyQuaternion(this.q).normalize();
-    }
+    if (turn < 1e-4) return;
+    const now = performance.now();
+    const dt = this.lastAimT ? Math.min(0.05, (now - this.lastAimT) / 1000) : 0.016;
+    this.lastAimT = now;
+    const t = Math.min(1, (1.15 * dt) / turn);
+    this.q.identity().slerp(this.qTo, t);
+    this.axis.applyQuaternion(this.q).normalize();
+    this.dir.applyQuaternion(this.q);
     this.keepOnEquator();
+  }
+
+  /** Lay yarn around the current equator. Does not change the plane. */
+  spin(dAngle: number, buffer: WrapBuffer, color: number, hex: string) {
+    if (dAngle <= 1e-6) return;
     let left = dAngle;
-    const h0 = 0.055;
+    const h0 = 0.05;
     while (left > 1e-6) {
       const h = Math.min(h0, left);
       this.q.setFromAxisAngle(this.axis, h);
@@ -475,6 +494,17 @@ export class MariWinder {
       this.sinceCover = 0;
       this.cover = buffer.sampleCoverage();
     }
+  }
+
+  follow(
+    spinAxis: THREE.Vector3,
+    dAngle: number,
+    buffer: WrapBuffer,
+    color: number,
+    hex: string,
+  ) {
+    this.aim(spinAxis);
+    this.spin(dAngle, buffer, color, hex);
   }
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
