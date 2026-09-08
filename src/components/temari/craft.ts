@@ -31,8 +31,9 @@ const W = 1536;
 const H = 768;
 const MIN_DOT = 0.9994;
 const MAX_LIVE = 400;
-const MAX_STRANDS = 64;
+const MAX_STRANDS = 96;
 const MAX_JOINS = 16;
+const POINTS_PER_STRAND = 6000;
 const TWO_PI = Math.PI * 2;
 
 function clamp(n: number, a: number, b: number) {
@@ -266,7 +267,9 @@ export class WrapBuffer {
         this.live.push(q);
         this.last = q;
       }
-      if (current.points.length > 2800) current.points.splice(0, current.points.length - 2400);
+      if (current.points.length > POINTS_PER_STRAND) {
+        this.strands.push({ color, hex, points: [this.last.clone()] });
+      }
       if (this.live.length > MAX_LIVE) this.live.splice(0, this.live.length - MAX_LIVE);
       this.liveColor = hex;
       this.texture.needsUpdate = true;
@@ -412,6 +415,9 @@ export class MariWinder {
     this.sNeeded = TWO_PI * (52 + (1 - t) * 36);
     const ang = (strokePx(t) * Math.PI) / H;
     this.tilt = ang * 2.2 + 0.1;
+    const offset = Math.max(0.028, ang * 0.8);
+    const perFamily = Math.max(24, Math.ceil(TWO_PI / offset));
+    this.sNeeded = perFamily * TWO_PI * 3;
     this.pole.set(0, 1, 0);
     this.lambda = 0;
     this.locked = true;
@@ -535,7 +541,7 @@ export class MariWinder {
     let left = dAngle;
     const h0 = 0.032;
     const band = (buffer.strokeWidth * Math.PI) / H;
-    const offset = Math.max(0.032, band * 0.96);
+    const offset = Math.max(0.028, band * 0.8);
     while (left > 1e-6) {
       const h = Math.min(h0, left);
       this.q.setFromAxisAngle(this.axis, h);
@@ -551,10 +557,7 @@ export class MariWinder {
       left -= h;
       this.wrapCount = Math.floor(this.s / TWO_PI);
     }
-    if (this.sinceCover > 0.7) {
-      this.sinceCover = 0;
-      this.cover = buffer.sampleCoverage();
-    }
+    this.cover = Math.min(1, this.s / Math.max(this.sNeeded, 1));
   }
 
   follow(
@@ -569,33 +572,35 @@ export class MariWinder {
   }
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
-    this.advance(buffer, this.sNeeded, color, hex, 0.1);
-    buffer.sampleCoverage();
-    this.cover = buffer.covered;
+    this.advance(buffer, this.sNeeded, color, hex, 0.07);
+    this.cover = Math.min(1, this.s / Math.max(this.sNeeded, 1));
   }
 
   advance(buffer: WrapBuffer, ds: number, color: number, hex: string, step = 0.07) {
     if (ds <= 0) return;
-    if (this.cover >= 0.97 && this.wrapCount >= 24) return;
-    if (this.s >= this.sNeeded) return;
+    if (this.s >= this.sNeeded) {
+      this.cover = 1;
+      return;
+    }
     let left = Math.min(ds, this.sNeeded - this.s);
-    const h0 = Math.max(0.035, step);
+    const h0 = Math.max(0.05, step);
+    const band = (buffer.strokeWidth * Math.PI) / H;
+    const offset = Math.max(0.028, band * 0.8);
     while (left > 1e-6) {
-      if (this.cover >= 0.97 && this.wrapCount >= 24) break;
+      if (this.s >= this.sNeeded) break;
       const h = Math.min(h0, left);
       this.q.setFromAxisAngle(this.axis, h);
       this.dir.applyQuaternion(this.q);
       this.arc += h;
       if (this.arc >= TWO_PI) {
         this.arc -= TWO_PI;
-        const band = (buffer.strokeWidth * Math.PI) / H;
-        this.nextMeridian(Math.max(0.032, band * 0.96));
-        this.cover = buffer.sampleCoverage();
+        this.nextMeridian(offset);
       }
       buffer.addPoint(this.dir, color, hex, true);
       this.s += h;
       left -= h;
       this.wrapCount = Math.floor(this.s / TWO_PI);
     }
+    this.cover = Math.min(1, this.s / Math.max(this.sNeeded, 1));
   }
 }

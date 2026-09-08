@@ -28,6 +28,8 @@ uniform int uHover;
 uniform float uPeek;
 uniform sampler2D uWrap;
 uniform float uWrapOn;
+uniform float uFelt;
+uniform vec3 uFeltColor;
 
 varying vec3 vN;
 varying vec3 vW;
@@ -99,6 +101,10 @@ void main() {
     col = mix(col, wcol.rgb / max(wcol.a, 0.001), wcol.a);
   }
 
+  if (uFelt > 0.01) {
+    col = mix(col, uFeltColor, uFelt);
+  }
+
   float phi = atan(nL.x, nL.z);
   float wrap = sin(nL.y * 148.0) * 0.014;
   float stitch = sin(phi * 86.0 + nL.y * 10.0) * 0.01;
@@ -145,6 +151,8 @@ export function createTemariMaterial() {
       uPeek: { value: 0 },
       uWrap: { value: emptyWrap },
       uWrapOn: { value: 0 },
+      uFelt: { value: 0 },
+      uFeltColor: { value: new THREE.Color("#8f3d32") },
     },
     vertexShader,
     fragmentShader,
@@ -164,6 +172,8 @@ export function syncTemariMaterial(
     camera: THREE.Vector3;
     wrap?: THREE.Texture | null;
     wrapOn?: boolean;
+    felt?: number;
+    feltColor?: string;
   },
 ) {
   const palette = PALETTES[opts.paletteId];
@@ -182,4 +192,6 @@ export function syncTemariMaterial(
   (material.uniforms.uCamPos.value as THREE.Vector3).copy(opts.camera);
   material.uniforms.uWrap.value = opts.wrap ?? emptyWrap;
   material.uniforms.uWrapOn.value = opts.wrapOn ? 1 : 0;
+  material.uniforms.uFelt.value = opts.felt ?? 0;
+  (material.uniforms.uFeltColor.value as THREE.Color).set(opts.feltColor ?? palette.colors[0]);
 }

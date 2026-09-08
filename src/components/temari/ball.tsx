@@ -38,7 +38,7 @@ const _rgt = new THREE.Vector3();
 const Y_UP = new THREE.Vector3(0, 1, 0);
 
 const DAMP = 0.46;
-const YARN_MAX = 9000;
+const YARN_MAX = 20000;
 
 function ThreadLayer({
   stitches,
@@ -342,6 +342,14 @@ export function Ball() {
   }, [setWrapCount, setWrapProgress, wrap, wrapUndoNonce]);
 
   useLayoutEffect(() => {
+    if (!layerDone) return;
+    const st = useTemari.getState();
+    const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
+    if (mari.current.progress < 0.999) mari.current.fill(wrap, st.selectedColor, hex);
+    setWrapProgress(1);
+  }, [layerDone, setWrapProgress, wrap]);
+
+  useLayoutEffect(() => {
     const shaft = shafts.current;
     const head = heads.current;
     if (!shaft || !head) return;
@@ -636,6 +644,8 @@ export function Ball() {
       camera: camera.position,
       wrap: wrap.texture,
       wrapOn: mode === "title",
+      felt: layerDone ? 1 : 0,
+      feltColor: palette.colors[selectedColor] ?? palette.thread,
     });
     if (guidesMat.current) guidesMat.current.color.set(palette.thread);
     if (beadMat.current) beadMat.current.color.set(palette.thread);
