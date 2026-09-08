@@ -3,19 +3,23 @@ import {
   emptyFills,
   fillsMatch,
   padFills,
+  snapToNode,
   type Division,
 } from "./division";
 import {
+  DEFAULT_START,
   isCraft,
   pinHit,
   type Craft,
   type Pin,
   type PinArc,
+  type WrapStyle,
 } from "./craft";
 import { isPaletteId, type PaletteId } from "./palettes";
 import {
   fillKikuSewn,
   isMotifId,
+  kikuArcsFromPins,
   slotKey,
   type KikuSlot,
   type MotifId,
@@ -23,6 +27,7 @@ import {
   type Vec3,
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
+import * as feel from "./feel";
 
 export type Mode = "title" | "studio" | "kata";
 
@@ -157,6 +162,13 @@ type TemariState = {
   wrapUndoNonce: number;
   wrapResetNonce: number;
   viewNonce: number;
+  wrapProgress: number;
+  threadWidth: number;
+  layerDone: boolean;
+  kikuLayers: number;
+  wrapStyle: WrapStyle;
+  startPin: Vec3 | null;
+  originNonce: number;
   enterStudio: () => void;
   enterKata: (index?: number) => void;
   toTitle: () => void;
@@ -177,6 +189,13 @@ type TemariState = {
   nextPuzzle: () => void;
   resetView: () => void;
   setWrapCount: (n: number) => void;
+  setWrapProgress: (n: number) => void;
+  setThreadWidth: (n: number) => void;
+  finishLayer: () => void;
+  setKikuLayers: (n: number) => void;
+  fillKiku: () => void;
+  setWrapStyle: (style: WrapStyle) => void;
+  setStartPin: (local: Vec3) => void;
 };
 
 function rememberStudio(state: TemariState) {
@@ -225,8 +244,16 @@ export const useTemari = create<TemariState>((set, get) => ({
   wrapUndoNonce: 0,
   wrapResetNonce: 0,
   viewNonce: 0,
+  wrapProgress: 0,
+  threadWidth: 0.42,
+  layerDone: false,
+  kikuLayers: 3,
+  wrapStyle: "around",
+  startPin: null,
+  originNonce: 0,
 
   enterStudio: () => {
+    feel.unlock();
     const division = studioDraft.division;
     const hasPaint = studioDraft.fills.some((v) => v >= 0);
     const motif =
@@ -238,7 +265,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       division,
       paletteId: studioDraft.paletteId,
       motif,
-      craft: studioDraft.craft ?? "wind",
+      craft: "wind",
       selectedColor: studioDraft.selectedColor,
       fills: hasPaint ? padFills(studioDraft.fills, division) : emptyFills(division),
       sewn: isSewn(studioDraft.sewn) ? studioDraft.sewn : [],
@@ -251,6 +278,13 @@ export const useTemari = create<TemariState>((set, get) => ({
       peeking: false,
       hover: -1,
       hoverSlot: null,
+      wrapProgress: 0,
+      layerDone: false,
+      wrapResetNonce: get().wrapResetNonce + 1,
+      wrapCount: 0,
+      wrapStyle: "around",
+      startPin: [DEFAULT_START[0], DEFAULT_START[1], DEFAULT_START[2]],
+      originNonce: get().originNonce + 1,
     });
   },
 
@@ -307,6 +341,9 @@ export const useTemari = create<TemariState>((set, get) => ({
       pinHistory: [],
       wrapResetNonce: get().wrapResetNonce + 1,
       wrapCount: 0,
+      wrapProgress: 0,
+      layerDone: false,
+      startPin: null,
     });
   },
 
@@ -345,6 +382,8 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   setCraft: (craft) => {
     if (get().mode === "kata") return;
+    if (!get().layerDone && craft !== "wind") return;
+    if (get().layerDone && craft === "wind") return;
     set({ craft, hoverSlot: null, activePin: null });
     rememberStudio(get());
   },
@@ -386,6 +425,7 @@ export const useTemari = create<TemariState>((set, get) => ({
     } else {
       next = [...prev, { key, color }];
     }
+    feel.stitch();
     set({
       sewn: next,
       sewnHistory: [...state.sewnHistory, prev].slice(-40),
@@ -398,11 +438,8 @@ export const useTemari = create<TemariState>((set, get) => ({
   placePin: (local) => {
     const state = get();
     if (state.mode !== "studio" || state.craft !== "pin") return;
-    const p: Vec3 = (() => {
-      const len = Math.hypot(local[0], local[1], local[2]) || 1;
-      return [local[0] / len, local[1] / len, local[2] / len];
-    })();
-    const hit = pinHit(p, state.pins);
+    const p: Vec3 = snapToNode(local, state.division);
+    const hit = pinHit(p, state.pins, 0.995);
     const snap: PinSnap = {
       pins: state.pins,
       pinArcs: state.pinArcs,
@@ -413,6 +450,7 @@ export const useTemari = create<TemariState>((set, get) => ({
         const from = state.pins[state.activePin];
         const to = state.pins[hit];
         if (from && to) {
+          feel.stitch();
           set({
             pinArcs: [...state.pinArcs, { a: from.p, b: to.p, color: state.selectedColor }],
             activePin: hit,
@@ -433,6 +471,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       const from = state.pins[state.activePin];
       if (from) pinArcs = [...pinArcs, { a: from.p, b: pin.p, color: state.selectedColor }];
     }
+    feel.pin();
     set({
       pins,
       pinArcs,
@@ -455,7 +494,7 @@ export const useTemari = create<TemariState>((set, get) => ({
     }
     if (state.craft === "wind") {
       if (state.wrapCount <= 0) return;
-      set({ wrapUndoNonce: state.wrapUndoNonce + 1 });
+      set({ wrapUndoNonce: state.wrapUndoNonce + 1, wrapProgress: 0 });
       return;
     }
     if (state.craft === "pin") {
@@ -500,6 +539,12 @@ export const useTemari = create<TemariState>((set, get) => ({
       pinHistory: [...state.pinHistory, { pins: state.pins, pinArcs: state.pinArcs, activePin: state.activePin }].slice(-40),
       wrapResetNonce: state.wrapResetNonce + 1,
       wrapCount: 0,
+      wrapProgress: 0,
+      layerDone: false,
+      craft: "wind",
+      wrapStyle: "around",
+      startPin: [DEFAULT_START[0], DEFAULT_START[1], DEFAULT_START[2]],
+      originNonce: state.originNonce + 1,
     });
     rememberStudio(get());
   },
@@ -548,4 +593,58 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   resetView: () => set({ viewNonce: get().viewNonce + 1 }),
   setWrapCount: (n) => set({ wrapCount: n }),
+  setWrapProgress: (n) => set({ wrapProgress: Math.max(0, Math.min(1, n)) }),
+  setThreadWidth: (n) => set({ threadWidth: Math.max(0, Math.min(1, n)) }),
+  finishLayer: () => {
+    if (get().mode !== "studio") return;
+    feel.layer();
+    set({
+      wrapProgress: 1,
+      layerDone: true,
+      craft: "pin",
+    });
+  },
+  setKikuLayers: (n) => set({ kikuLayers: Math.max(1, Math.min(8, Math.round(n))) }),
+  fillKiku: () => {
+    const state = get();
+    if (state.mode !== "studio" || state.craft !== "pin") return;
+    if (state.pins.length < 3) return;
+    const extra = kikuArcsFromPins(
+      state.pins.map((pin) => pin.p),
+      state.kikuLayers,
+      state.selectedColor,
+    );
+    if (extra.length === 0) return;
+    feel.kikuFill();
+    const snap: PinSnap = {
+      pins: state.pins,
+      pinArcs: state.pinArcs,
+      activePin: state.activePin,
+    };
+    set({
+      pinArcs: [...state.pinArcs, ...extra],
+      pinHistory: [...state.pinHistory, snap].slice(-40),
+    });
+    rememberStudio(get());
+  },
+  setWrapStyle: (style) => {
+    if (get().mode === "kata") return;
+    set({ wrapStyle: style });
+  },
+  setStartPin: (local) => {
+    const state = get();
+    if (state.mode !== "studio" || state.layerDone) return;
+    const len = Math.hypot(local[0], local[1], local[2]) || 1;
+    const p: Vec3 = [local[0] / len, local[1] / len, local[2] / len];
+    const prev = state.startPin;
+    if (prev) {
+      const d = prev[0] * p[0] + prev[1] * p[1] + prev[2] * p[2];
+      if (d > 0.997) return;
+    }
+    feel.pin();
+    set({
+      startPin: p,
+      originNonce: state.originNonce + 1,
+    });
+  },
 }));

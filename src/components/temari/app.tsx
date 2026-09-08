@@ -3,6 +3,7 @@ import { Overlay } from "./overlay";
 import { TemariScene } from "./scene";
 import { useTemari } from "./store";
 import { cn } from "@/lib/utils";
+import { unlock } from "./feel";
 
 export function TemariApp() {
   const [on, setOn] = useState(false);
@@ -20,6 +21,7 @@ export function TemariApp() {
         "relative h-dvh overflow-hidden bg-ink text-linen",
         stage && "flex flex-col",
       )}
+      onPointerDownCapture={() => unlock()}
     >
       <div
         className={

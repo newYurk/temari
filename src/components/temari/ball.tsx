@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { arcsToStitches, getWrapBuffer, pinHit, toVec3 } from "./craft";
-import { polePositions, regionIndex } from "./division";
+import { arcsToStitches, DEFAULT_START, getWrapBuffer, pinHit, MariWinder, strokePx, toVec3 } from "./craft";
+import { gridNodes, polePositions, regionIndex, snapToNode } from "./division";
 import { createGuideGeometry } from "./guides";
 import { PALETTES } from "./palettes";
 import {
@@ -15,8 +15,9 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import { createTemariMaterial, syncTemariMaterial } from "./shader";
-import { createMotifGeometry } from "./stitches";
+import { createMotifGeometry, getYarnTexture } from "./stitches";
 import { useTemari } from "./store";
+import * as feel from "./feel";
 
 const pointer = { x: 0, y: 0, down: false, dragged: false };
 const _right = new THREE.Vector3();
@@ -29,7 +30,6 @@ const _local = new THREE.Vector3();
 const Y_UP = new THREE.Vector3(0, 1, 0);
 
 const DAMP = 0.46;
-const WIND_MIN = 0.55;
 const LIVE_MAX = 360;
 
 function ThreadLayer({
@@ -44,6 +44,7 @@ function ThreadLayer({
   const geos = useMemo(() => {
     return [0, 1, 2, 3].map((i) => createMotifGeometry(stitches, i));
   }, [stitches]);
+  const yarn = useMemo(() => getYarnTexture(), []);
 
   useEffect(() => {
     return () => {
@@ -57,12 +58,14 @@ function ThreadLayer({
         geo ? (
           <mesh key={i} geometry={geo}>
             <meshStandardMaterial
+              map={yarn}
               color={colors[i]}
-              roughness={0.46}
-              metalness={0.08}
-              transparent={opacity < 1}
+              roughness={0.52}
+              metalness={0.05}
+              transparent
               opacity={opacity}
               depthWrite={opacity >= 1}
+              side={THREE.DoubleSide}
             />
           </mesh>
         ) : null,
@@ -120,10 +123,14 @@ export function Ball() {
   const shafts = useRef<THREE.InstancedMesh>(null);
   const heads = useRef<THREE.InstancedMesh>(null);
   const needle = useRef<THREE.Mesh>(null);
+  const knots = useRef<THREE.InstancedMesh>(null);
   const omega = useRef(new THREE.Vector3());
   const spinning = useRef(false);
   const lastPtr = useRef({ x: 0, y: 0, t: 0, id: -1 });
   const dummy = useMemo(() => new THREE.Object3D(), []);
+  const mari = useRef(new MariWinder());
+  const snapGhost = useRef<THREE.Mesh>(null);
+  const nodesMesh = useRef<THREE.InstancedMesh>(null);
 
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
@@ -147,12 +154,18 @@ export function Ball() {
   const viewNonce = useTemari((s) => s.viewNonce);
   const wrapUndoNonce = useTemari((s) => s.wrapUndoNonce);
   const wrapResetNonce = useTemari((s) => s.wrapResetNonce);
+  const layerDone = useTemari((s) => s.layerDone);
+  const wrapStyle = useTemari((s) => s.wrapStyle);
+  const startPin = useTemari((s) => s.startPin);
+  const originNonce = useTemari((s) => s.originNonce);
   const paint = useTemari((s) => s.paint);
   const sew = useTemari((s) => s.sew);
   const placePin = useTemari((s) => s.placePin);
   const setHover = useTemari((s) => s.setHover);
   const setHoverSlot = useTemari((s) => s.setHoverSlot);
   const setWrapCount = useTemari((s) => s.setWrapCount);
+  const setWrapProgress = useTemari((s) => s.setWrapProgress);
+  const setStartPin = useTemari((s) => s.setStartPin);
 
   const material = useMemo(() => createTemariMaterial(), []);
   const guideGeo = useMemo(() => createGuideGeometry(division), [division]);
@@ -161,6 +174,7 @@ export function Ball() {
   const puzzle = PUZZLES[puzzleIndex];
   const target = mode === "kata" && puzzle ? puzzle.target : [];
   const wrap = getWrapBuffer();
+  const nodes = useMemo(() => gridNodes(division), [division]);
 
   const preset: MotifId =
     mode === "title" ? "kiku" : mode === "studio" && motif !== "kiku" && motif !== "none" ? motif : "none";
@@ -177,6 +191,15 @@ export function Ball() {
     if (mode !== "studio" || craft !== "stitch" || !hoverSlot) return [];
     return stitchesForSlot(division, hoverSlot, selectedColor);
   }, [craft, division, hoverSlot, mode, selectedColor]);
+
+  const startQuat = useMemo(() => {
+    if (!startPin) return [0, 0, 0, 1] as [number, number, number, number];
+    const q = new THREE.Quaternion().setFromUnitVectors(
+      Y_UP,
+      new THREE.Vector3(startPin[0], startPin[1], startPin[2]).normalize(),
+    );
+    return [q.x, q.y, q.z, q.w] as [number, number, number, number];
+  }, [startPin]);
 
   useEffect(() => {
     matRef.current = material;
@@ -212,19 +235,48 @@ export function Ball() {
   }, [viewNonce]);
 
   useEffect(() => {
-    if (wrapResetNonce === 0) {
-      wrap.reset();
-      return;
-    }
     wrap.reset();
+    wrap.strokeWidth = strokePx(useTemari.getState().threadWidth);
+    const st = useTemari.getState();
+    mari.current.reset(st.threadWidth);
+    mari.current.style = st.wrapStyle;
+    if (st.startPin) {
+      mari.current.reorigin(
+        new THREE.Vector3(st.startPin[0], st.startPin[1], st.startPin[2]),
+        st.wrapStyle,
+      );
+    }
+    feel.resetTurns();
     setWrapCount(0);
   }, [setWrapCount, wrap, wrapResetNonce]);
 
   useEffect(() => {
     if (wrapUndoNonce === 0) return;
     wrap.undo();
+    mari.current.reset(useTemari.getState().threadWidth);
     setWrapCount(wrap.strandCount);
-  }, [setWrapCount, wrap, wrapUndoNonce]);
+    setWrapProgress(mari.current.progress);
+  }, [setWrapCount, setWrapProgress, wrap, wrapUndoNonce]);
+
+  useEffect(() => {
+    const pin = useTemari.getState().startPin;
+    const last = wrap.live[wrap.live.length - 1] ?? null;
+    const src = pin
+      ? new THREE.Vector3(pin[0], pin[1], pin[2])
+      : last ?? new THREE.Vector3(DEFAULT_START[0], DEFAULT_START[1], DEFAULT_START[2]);
+    mari.current.reorigin(src, wrapStyle, last);
+  }, [wrap, wrapStyle]);
+
+  useEffect(() => {
+    if (originNonce === 0) return;
+    const pin = useTemari.getState().startPin;
+    if (!pin) return;
+    const v = new THREE.Vector3(pin[0], pin[1], pin[2]);
+    const st = useTemari.getState();
+    const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
+    mari.current.reorigin(v, st.wrapStyle);
+    wrap.relocate(v, st.selectedColor, hex);
+  }, [originNonce, wrap]);
 
   useLayoutEffect(() => {
     const shaft = shafts.current;
@@ -247,6 +299,19 @@ export function Ball() {
     shaft.instanceMatrix.needsUpdate = true;
     head.instanceMatrix.needsUpdate = true;
   }, [activePin, dummy, pins]);
+
+  useLayoutEffect(() => {
+    const mesh = nodesMesh.current;
+    if (!mesh) return;
+    nodes.forEach((p, i) => {
+      dummy.position.set(p[0] * 1.012, p[1] * 1.012, p[2] * 1.012);
+      dummy.scale.setScalar(1);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    });
+    mesh.count = nodes.length;
+    mesh.instanceMatrix.needsUpdate = true;
+  }, [dummy, nodes]);
 
   useEffect(() => {
     const el = gl.domElement;
@@ -319,6 +384,25 @@ export function Ball() {
       wraps: () => wrap.strandCount,
       pins: () => useTemari.getState().pins.length,
       qy: () => group.current?.quaternion.y ?? 0,
+      progress: () => useTemari.getState().wrapProgress,
+      nodes: () => gridNodes(useTemari.getState().division).length,
+      layerDone: () => useTemari.getState().layerDone,
+      finish: () => useTemari.getState().finishLayer(),
+      pinAt: (x: number, y: number, z: number) => useTemari.getState().placePin([x, y, z]),
+      startAt: (x: number, y: number, z: number) => useTemari.getState().setStartPin([x, y, z]),
+      fillKiku: () => useTemari.getState().fillKiku(),
+      setCraft: (c: "wind" | "pin" | "stitch") => useTemari.getState().setCraft(c),
+      wrapStyle: () => useTemari.getState().wrapStyle,
+      setWrapStyle: (s: "around" | "spiral") => useTemari.getState().setWrapStyle(s),
+      setColor: (i: number) => useTemari.getState().setColor(i),
+      spin: (x: number, y: number, z: number) => omega.current.set(x, y, z),
+      dump: () => ({
+        progress: useTemari.getState().wrapProgress,
+        style: useTemari.getState().wrapStyle,
+        color: useTemari.getState().selectedColor,
+        pin: useTemari.getState().startPin,
+        ...wrap.snapshot(),
+      }),
     };
     (window as Window & { __temari?: typeof probe }).__temari = probe;
   }, [wrap]);
@@ -337,17 +421,23 @@ export function Ball() {
     }
 
     const state = useTemari.getState();
-    const winding =
-      state.mode === "studio" &&
-      state.craft === "wind" &&
-      (spinning.current || spd > WIND_MIN);
-    if (winding && g) {
-      _feed.copy(camera.position).normalize();
-      _inv.copy(g.quaternion).invert();
-      _feed.applyQuaternion(_inv);
+    wrap.strokeWidth = strokePx(state.threadWidth);
+    feel.setSpin(state.mode === "studio" && state.craft === "wind" ? spd : 0);
+    if (state.mode === "studio" && state.craft === "wind" && !state.layerDone) {
+      if (spinning.current || spd > 0.12) {
+        const hex = PALETTES[state.paletteId].colors[state.selectedColor] ?? "#8f3d32";
+        mari.current.advance(wrap, spd * 2.6 * d, state.selectedColor, hex);
+        feel.wrapTurn(mari.current.wrapCount);
+        const next = mari.current.progress;
+        if (wrap.strandCount !== state.wrapCount) setWrapCount(wrap.strandCount);
+        if (Math.abs(next - state.wrapProgress) > 0.002) setWrapProgress(next);
+      }
+    } else if (state.layerDone && mari.current.progress < 0.999) {
       const hex = PALETTES[state.paletteId].colors[state.selectedColor] ?? "#8f3d32";
-      wrap.addPoint(_feed, state.selectedColor, hex);
+      mari.current.advance(wrap, Math.max(14, 240 * d), state.selectedColor, hex);
       if (wrap.strandCount !== state.wrapCount) setWrapCount(wrap.strandCount);
+      const next = mari.current.progress;
+      if (Math.abs(next - state.wrapProgress) > 0.01) setWrapProgress(next);
     }
 
     const tip = needle.current;
@@ -359,6 +449,20 @@ export function Ball() {
         const m = tip.material;
         if (m instanceof THREE.MeshStandardMaterial) m.color.set(wrap.liveColor);
       }
+    }
+
+    const knotMesh = knots.current;
+    if (knotMesh) {
+      const list = wrap.joins;
+      for (let i = 0; i < list.length; i++) {
+        const p = list[i];
+        dummy.position.set(p.x * 1.02, p.y * 1.02, p.z * 1.02);
+        dummy.scale.setScalar(1);
+        dummy.updateMatrix();
+        knotMesh.setMatrixAt(i, dummy.matrix);
+      }
+      knotMesh.count = list.length;
+      knotMesh.instanceMatrix.needsUpdate = true;
     }
 
     syncTemariMaterial(material, {
@@ -392,6 +496,7 @@ export function Ball() {
           if (!canWork || pointer.dragged) {
             if (hover !== -1) setHover(-1);
             if (hoverSlot) setHoverSlot(null);
+            if (snapGhost.current) snapGhost.current.visible = false;
             return;
           }
           const p = localFromEvent(e);
@@ -404,6 +509,12 @@ export function Ball() {
             const hit = pinHit(p, pins);
             setHoverSlot(null);
             if (hit < 0 && hover !== -1) setHover(-1);
+            const snapped = snapToNode(p, division);
+            const ghost = snapGhost.current;
+            if (ghost) {
+              ghost.visible = true;
+              ghost.position.set(snapped[0] * 1.04, snapped[1] * 1.04, snapped[2] * 1.04);
+            }
           }
         }}
         onPointerUp={(e) => {
@@ -417,6 +528,10 @@ export function Ball() {
             paint(regionIndex(p[0], p[1], p[2], division));
             return;
           }
+          if (craft === "wind" && !layerDone) {
+            setStartPin(p);
+            return;
+          }
           if (craft === "pin") {
             placePin(p);
             return;
@@ -428,13 +543,14 @@ export function Ball() {
         onPointerOut={() => {
           if (hover !== -1) setHover(-1);
           if (hoverSlot) setHoverSlot(null);
+          if (snapGhost.current) snapGhost.current.visible = false;
         }}
       >
         <sphereGeometry args={[0.992, 96, 64]} />
         <primitive object={material} attach="material" />
       </mesh>
 
-      <mesh geometry={guideGeo}>
+      <mesh geometry={guideGeo} visible={mode !== "studio" || layerDone}>
         <meshStandardMaterial
           ref={guidesMat}
           color={palette.thread}
@@ -463,7 +579,61 @@ export function Ball() {
         <meshStandardMaterial color={threadHex} roughness={0.38} metalness={0.14} />
       </mesh>
 
-      <instancedMesh ref={beads} args={[undefined, undefined, 12]} frustumCulled={false}>
+      <group
+        visible={mode === "studio" && !layerDone && !!startPin}
+        position={startPin ? [startPin[0] * 1.018, startPin[1] * 1.018, startPin[2] * 1.018] : [0, 1, 0]}
+        quaternion={startQuat}
+      >
+        <mesh>
+          <cylinderGeometry args={[0.007, 0.007, 0.072, 8]} />
+          <meshStandardMaterial color="#9a958c" roughness={0.42} metalness={0.28} />
+        </mesh>
+        <mesh position={[0, 0.044, 0]}>
+          <sphereGeometry args={[0.022, 12, 10]} />
+          <meshStandardMaterial color="#ece8e1" roughness={0.36} metalness={0.14} />
+        </mesh>
+      </group>
+
+      <instancedMesh
+        ref={knots}
+        args={[undefined, undefined, 16]}
+        frustumCulled={false}
+        visible={mode === "studio"}
+        count={0}
+      >
+        <sphereGeometry args={[0.016, 10, 8]} />
+        <meshStandardMaterial color="#2a2420" roughness={0.55} metalness={0.08} />
+      </instancedMesh>
+
+      <mesh ref={snapGhost} visible={false}>
+        <sphereGeometry args={[0.026, 12, 10]} />
+        <meshStandardMaterial
+          color={threadHex}
+          roughness={0.4}
+          metalness={0.1}
+          transparent
+          opacity={0.55}
+          depthWrite={false}
+        />
+      </mesh>
+
+      <instancedMesh
+        ref={nodesMesh}
+        args={[undefined, undefined, 80]}
+        frustumCulled={false}
+        visible={mode === "studio" && craft === "pin" && layerDone}
+        count={nodes.length}
+      >
+        <sphereGeometry args={[0.012, 10, 8]} />
+        <meshStandardMaterial color={palette.thread} roughness={0.5} metalness={0.08} transparent opacity={0.55} />
+      </instancedMesh>
+
+      <instancedMesh
+        ref={beads}
+        args={[undefined, undefined, 12]}
+        frustumCulled={false}
+        visible={mode !== "studio" || layerDone}
+      >
         <sphereGeometry args={[0.032, 16, 12]} />
         <meshStandardMaterial
           ref={beadMat}

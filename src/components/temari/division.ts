@@ -199,6 +199,92 @@ export function polePositions(division: Division): [number, number, number][] {
   return ICOSA_VERTS;
 }
 
+function pushNode(
+  out: [number, number, number][],
+  p: [number, number, number],
+  minDot = 0.998,
+) {
+  const n = normalize(p);
+  for (const q of out) {
+    if (q[0] * n[0] + q[1] * n[1] + q[2] * n[2] > minDot) return;
+  }
+  out.push(n);
+}
+
+const NODE_CACHE: Partial<Record<Division, [number, number, number][]>> = {};
+
+/** Jiwari nodes: poles, equator / tropic crossings, face and edge centres. */
+export function gridNodes(division: Division): [number, number, number][] {
+  const cached = NODE_CACHE[division];
+  if (cached) return cached;
+  const out: [number, number, number][] = [];
+  if (division === "simple") {
+    pushNode(out, [0, 1, 0]);
+    pushNode(out, [0, -1, 0]);
+    for (const h of [0, 0.5, -0.5, 0.78, -0.78]) {
+      const r = Math.sqrt(Math.max(0, 1 - h * h));
+      for (let i = 0; i < 8; i++) {
+        const a = (Math.PI * 2 * i) / 8;
+        pushNode(out, [r * Math.sin(a), h, r * Math.cos(a)]);
+      }
+    }
+  } else if (division === "c8") {
+    for (const p of polePositions("c8")) pushNode(out, p);
+    const axes = polePositions("c8");
+    for (let i = 0; i < axes.length; i++) {
+      for (let j = i + 1; j < axes.length; j++) {
+        const a = axes[i];
+        const b = axes[j];
+        const sx = a[0] + b[0];
+        const sy = a[1] + b[1];
+        const sz = a[2] + b[2];
+        if (Math.hypot(sx, sy, sz) < 0.5) continue;
+        pushNode(out, [sx, sy, sz]);
+      }
+    }
+    for (const sx of [-1, 1] as const) {
+      for (const sy of [-1, 1] as const) {
+        for (const sz of [-1, 1] as const) {
+          pushNode(out, [sx, sy, sz]);
+        }
+      }
+    }
+  } else {
+    for (const v of ICOSA_VERTS) pushNode(out, v);
+    for (const n of ICOSA_FACE_NORMALS) pushNode(out, n);
+    for (const [i, j] of ICOSA_EDGES) {
+      const a = ICOSA_VERTS[i];
+      const b = ICOSA_VERTS[j];
+      if (!a || !b) continue;
+      pushNode(out, [a[0] + b[0], a[1] + b[1], a[2] + b[2]]);
+    }
+  }
+  NODE_CACHE[division] = out;
+  return out;
+}
+
+export function snapToNode(
+  local: [number, number, number],
+  division: Division,
+): [number, number, number] {
+  const nodes = gridNodes(division);
+  const len = Math.hypot(local[0], local[1], local[2]) || 1;
+  const x = local[0] / len;
+  const y = local[1] / len;
+  const z = local[2] / len;
+  let best = nodes[0] ?? [0, 1, 0];
+  let score = -2;
+  for (const n of nodes) {
+    const d = n[0] * x + n[1] * y + n[2] * z;
+    if (d > score) {
+      score = d;
+      best = n;
+    }
+  }
+  return best;
+}
+
+
 export function showcaseFills(division: Division): number[] {
   const n = REGION_COUNT[division];
   if (division === "simple") {
