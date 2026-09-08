@@ -20,7 +20,9 @@ import {
   fillKikuSewn,
   isMotifId,
   kikuArcsFromPins,
+  sakasaArcsFromPins,
   slotKey,
+  type KagariDir,
   type KikuSlot,
   type MotifId,
   type SewnEntry,
@@ -166,6 +168,7 @@ type TemariState = {
   threadWidth: number;
   layerDone: boolean;
   kikuLayers: number;
+  kagariDir: KagariDir;
   wrapStyle: WrapStyle;
   startPin: Vec3 | null;
   originNonce: number;
@@ -194,6 +197,7 @@ type TemariState = {
   setThreadWidth: (n: number) => void;
   finishLayer: () => void;
   setKikuLayers: (n: number) => void;
+  setKagariDir: (dir: KagariDir) => void;
   fillKiku: () => void;
   setWrapStyle: (style: WrapStyle) => void;
   setStartPin: (local: Vec3) => void;
@@ -249,7 +253,8 @@ export const useTemari = create<TemariState>((set, get) => ({
   wrapProgress: 0,
   threadWidth: 0.42,
   layerDone: false,
-  kikuLayers: 3,
+  kikuLayers: 8,
+  kagariDir: "in",
   wrapStyle: "around",
   startPin: null,
   originNonce: 0,
@@ -610,16 +615,17 @@ export const useTemari = create<TemariState>((set, get) => ({
       craft: "stitch",
     });
   },
-  setKikuLayers: (n) => set({ kikuLayers: Math.max(1, Math.min(8, Math.round(n))) }),
+  setKikuLayers: (n) => set({ kikuLayers: Math.max(3, Math.min(14, Math.round(n))) }),
+  setKagariDir: (dir) => set({ kagariDir: dir }),
   fillKiku: () => {
     const state = get();
-    if (state.mode !== "studio" || state.craft !== "pin") return;
+    if (state.mode !== "studio" || !state.layerDone) return;
     if (state.pins.length < 3) return;
-    const extra = kikuArcsFromPins(
-      state.pins.map((pin) => pin.p),
-      state.kikuLayers,
-      state.selectedColor,
-    );
+    const pts = state.pins.map((pin) => pin.p);
+    const extra =
+      state.pins.length >= 5
+        ? kikuArcsFromPins(pts, state.kikuLayers, state.selectedColor, state.kagariDir)
+        : sakasaArcsFromPins(pts, state.kikuLayers, state.selectedColor, state.kagariDir);
     if (extra.length === 0) return;
     feel.kikuFill();
     const snap: PinSnap = {
