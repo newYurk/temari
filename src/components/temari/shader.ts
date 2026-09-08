@@ -116,15 +116,17 @@ void main() {
   }
 
   vec3 n = normalize(vN);
-  vec3 L = normalize(vec3(0.42, 0.78, 0.48));
+  vec3 L = normalize(vec3(0.46, 0.82, 0.52));
+  vec3 L2 = normalize(vec3(-0.55, 0.22, -0.28));
   vec3 V = normalize(uCamPos - vW);
   vec3 H = normalize(L + V);
   float ndl = max(dot(n, L), 0.0);
-  float spec = pow(max(dot(n, H), 0.0), 40.0) * 0.055;
-  float lit = 0.20 + 0.80 * ndl;
-  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.7) * 0.16;
+  float ndl2 = max(dot(n, L2), 0.0);
+  float spec = pow(max(dot(n, H), 0.0), 48.0) * 0.035;
+  float lit = 0.38 + 0.52 * ndl + 0.18 * ndl2;
+  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.4) * 0.07;
 
-  vec3 litCol = col * lit + vec3(spec) + rim * vec3(0.86, 0.82, 0.76);
+  vec3 litCol = col * lit + vec3(spec) + rim * vec3(0.62, 0.58, 0.5);
   gl_FragColor = vec4(litCol, 1.0);
 }
 `;

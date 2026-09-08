@@ -98,13 +98,14 @@ export function TemariScene() {
         toneMappingExposure: 1.05,
       }}
       onCreated={({ gl, scene }) => {
-        gl.setClearColor("#0c0b09", 1);
-        scene.background = new THREE.Color("#0c0b09");
+        gl.setClearColor("#ece8e1", 1);
+        scene.background = new THREE.Color("#ece8e1");
       }}
     >
-      <ambientLight intensity={0.3} color="#cfc6b8" />
-      <directionalLight position={[3.1, 4.2, 2.1]} intensity={1.42} color="#fff3e4" />
-      <directionalLight position={[-2.6, 0.5, -2.6]} intensity={0.26} color="#8a96a8" />
+      <hemisphereLight color="#f4efe6" groundColor="#c4b8a4" intensity={0.72} />
+      <ambientLight intensity={0.42} color="#f0e6d6" />
+      <directionalLight position={[3.2, 4.4, 2.4]} intensity={1.18} color="#fff6ea" />
+      <directionalLight position={[-2.8, 0.8, -1.8]} intensity={0.34} color="#9aab9c" />
       <Ball />
       <CameraRig />
     </Canvas>

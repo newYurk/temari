@@ -34,7 +34,7 @@ function RecenterButton({ className }: { className?: string }) {
       aria-label="Вернуть шар в исходный вид"
       onClick={resetView}
       className={cn(
-        "pointer-events-auto flex size-11 items-center justify-center rounded-full bg-elevated/90 text-linen ring-1 ring-linen/15",
+        "pointer-events-auto flex size-11 items-center justify-center rounded-full bg-elevated/90 text-linen ring-1 ring-ink/10",
         className,
       )}
     >
@@ -56,7 +56,7 @@ function TitleLayer() {
         <RecenterButton />
       </div>
       <div className="max-w-md pb-[env(safe-area-inset-bottom)]">
-        <h1 className="temari-rise temari-rise-2 font-display text-5xl font-medium tracking-tight text-linen md:text-6xl">
+        <h1 className="temari-rise temari-rise-2 font-display text-5xl font-medium tracking-tight text-ink md:text-6xl">
           Темари
         </h1>
         <p className="temari-rise temari-rise-3 mt-3 max-w-sm text-sm leading-relaxed text-stone">
@@ -67,13 +67,22 @@ function TitleLayer() {
           <Button
             onPointerDown={() => unlock()}
             onClick={enterStudio}
+            className="bg-ink text-linen"
           >
             Начать
           </Button>
-          <Button variant="ghost" onClick={() => useTemari.getState().showExample()}>
+          <Button
+            variant="ghost"
+            className="text-ink ring-ink/20 hover:bg-ink/5"
+            onClick={() => useTemari.getState().showExample()}
+          >
             Пример кику
           </Button>
-          <Button variant="ghost" onClick={() => enterKata()}>
+          <Button
+            variant="ghost"
+            className="text-ink ring-ink/20 hover:bg-ink/5"
+            onClick={() => enterKata()}
+          >
             По образцу
           </Button>
         </div>
@@ -186,7 +195,7 @@ function Workbench() {
           <button
             type="button"
             onClick={toTitle}
-            className="pointer-events-auto font-display text-xl font-medium tracking-tight text-linen"
+            className="pointer-events-auto font-display text-xl font-medium tracking-tight text-ink"
           >
             Темари
           </button>
@@ -195,7 +204,7 @@ function Workbench() {
         <div className="flex items-start gap-2 pt-[env(safe-area-inset-top)]">
           {mode === "kata" && puzzle ? (
             <div className="pointer-events-auto text-right">
-              <p className="font-display text-lg text-linen">{puzzle.name}</p>
+              <p className="font-display text-lg text-ink">{puzzle.name}</p>
               <p className="text-xs tabular-nums text-stone">
                 {solved.length} / {PUZZLES.length}
               </p>

@@ -269,7 +269,10 @@ export function Ball() {
 
   const preset: MotifId =
     mode === "title" ? "kiku" : mode === "studio" && motif !== "kiku" && motif !== "none" ? motif : "none";
-  const presetStitches = useMemo(() => generateMotif(division, preset), [division, preset]);
+  const presetStitches = useMemo(
+    () => generateMotif(mode === "title" ? "simple" : division, preset),
+    [division, mode, preset],
+  );
   const sewnStitches = useMemo(
     () => (mode === "studio" ? stitchesFromSewn(division, sewn) : []),
     [division, mode, sewn],
@@ -642,8 +645,8 @@ export function Ball() {
       peeking: mode === "kata" && peeking,
       camera: camera.position,
       wrap: wrap.texture,
-      wrapOn: mode === "title",
-      felt: layerDone ? 1 : wrap.covered,
+      wrapOn: false,
+      felt: mode === "title" || layerDone ? 1 : wrap.covered,
       feltColor: palette.colors[selectedColor] ?? palette.thread,
     });
     if (guidesMat.current) guidesMat.current.color.set(palette.thread);
@@ -718,8 +721,8 @@ export function Ball() {
 
       <mesh
         geometry={guideGeo}
-        visible={mode !== "studio" || layerDone}
-        scale={1.045}
+        visible={mode === "kata" || (mode === "studio" && layerDone)}
+        scale={1.02}
         renderOrder={8}
       >
         <meshStandardMaterial
@@ -791,7 +794,7 @@ export function Ball() {
         ref={beads}
         args={[undefined, undefined, 12]}
         frustumCulled={false}
-        visible={mode !== "studio" || layerDone}
+        visible={mode === "kata" || (mode === "studio" && layerDone)}
       >
         <sphereGeometry args={[0.032, 16, 12]} />
         <meshStandardMaterial

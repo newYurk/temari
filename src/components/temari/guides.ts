@@ -2,8 +2,8 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { ICOSA_EDGES, ICOSA_VERTS, type Division } from "./division";
 
-const TUBE = 0.015;
-const ARC_TUBE = 0.0135;
+const TUBE = 0.0044;
+const ARC_TUBE = 0.004;
 
 function slerp(
   a: THREE.Vector3,

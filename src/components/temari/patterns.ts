@@ -194,14 +194,14 @@ function starSkip(division: Division) {
 }
 
 function kikuSpec(division: Division) {
-  if (division === "simple") return { inner: 0.1, chord: 0.1, pitch: 0.068, rounds: 9 };
-  if (division === "c8") return { inner: 0.09, chord: 0.086, pitch: 0.058, rounds: 7 };
-  return { inner: 0.09, chord: 0.08, pitch: 0.052, rounds: 6 };
+  if (division === "simple") return { inner: 0.055, chord: 0.1, pitch: 0.066, rounds: 10 };
+  if (division === "c8") return { inner: 0.05, chord: 0.086, pitch: 0.056, rounds: 8 };
+  return { inner: 0.05, chord: 0.08, pitch: 0.05, rounds: 7 };
 }
 
 function kikuColor(ring: number) {
-  const cycle = [0, 0, 1, 1, 2, 2, 0, 3];
-  return cycle[ring % cycle.length] ?? 0;
+  const cycle = [2, 1, 2, 1, 2, 1, 3, 1];
+  return cycle[ring % cycle.length] ?? 2;
 }
 
 function kikuPetal(
