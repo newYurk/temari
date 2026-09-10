@@ -677,12 +677,42 @@ export class MariWinder {
   }
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
-    let guard = 0;
-    while (this.cover < 0.93 && guard < 26) {
-      this.advance(buffer, TWO_PI * 22, color, hex, 0.07);
-      this.cover = buffer.sampleCoverage();
-      guard++;
+    const n = 360;
+    for (let i = 0; i < n; i++) {
+      this.aimAxis(i, n);
+      buffer.relocate(this.dir, color, hex);
+      this.layCircle(buffer, color, hex);
     }
+    this.cover = 1;
+  }
+
+  private aimAxis(i: number, n: number) {
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    const y = 1 - (2 * (i + 0.5)) / n;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const theta = i * golden;
+    this.axis.set(Math.cos(theta) * r, y, Math.sin(theta) * r).normalize();
+    const ref =
+      Math.abs(this.axis.y) < 0.9
+        ? new THREE.Vector3(0, 1, 0)
+        : new THREE.Vector3(1, 0, 0);
+    this.dir.crossVectors(this.axis, ref).normalize();
+    this.arc = 0;
+  }
+
+  /** One closed great circle. Caller relocates first so we don't skip. */
+  private layCircle(buffer: WrapBuffer, color: number, hex: string) {
+    const h0 = 0.07;
+    let left = TWO_PI;
+    while (left > 1e-6) {
+      const h = Math.min(h0, left);
+      this.q.setFromAxisAngle(this.axis, h);
+      this.dir.applyQuaternion(this.q);
+      buffer.addPoint(this.dir, color, hex, true);
+      this.s += h;
+      left -= h;
+    }
+    this.wrapCount += 1;
   }
 
   advance(buffer: WrapBuffer, ds: number, color: number, hex: string, step = 0.07) {
