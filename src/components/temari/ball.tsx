@@ -85,6 +85,31 @@ function ThreadLayer({
   );
 }
 
+function PaperStrip() {
+  const ticks = useMemo(
+    () =>
+      Array.from({ length: 8 }, (_, i) => {
+        const a = (Math.PI * 2 * i) / 8;
+        return [Math.sin(a) * 1.02, 0, Math.cos(a) * 1.02] as const;
+      }),
+    [],
+  );
+  return (
+    <group>
+      <mesh rotation={[Math.PI / 2, 0, 0]} renderOrder={14} raycast={() => {}}>
+        <torusGeometry args={[1.02, 0.011, 5, 96]} />
+        <meshStandardMaterial color="#f3eee4" roughness={0.94} metalness={0} />
+      </mesh>
+      {ticks.map((p, i) => (
+        <mesh key={i} position={p} renderOrder={15} raycast={() => {}}>
+          <boxGeometry args={[0.007, 0.03, 0.01]} />
+          <meshStandardMaterial color={i % 4 === 0 ? "#8f3d32" : "#8a847c"} roughness={0.85} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 function WrapSurface({ color, width }: { color: string; width: number }) {
   const mat = useMemo(() => createWrapCoverMaterial(), []);
   const baker = useMemo(() => createWrapBaker(), []);
@@ -621,6 +646,8 @@ export function Ball() {
       {mode === "title" || layerDone ? (
         <WrapSurface color={wrapHex} width={threadWidth} />
       ) : null}
+
+      {mode === "studio" && layerDone && jiwariOn && division === "simple" ? <PaperStrip /> : null}
 
       {markStitches.length > 0 ? (
         <ThreadLayer
