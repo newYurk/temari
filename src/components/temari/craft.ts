@@ -1,5 +1,8 @@
 import * as THREE from "three";
 import type { Stitch, Vec3 } from "./patterns";
+import { MARI_C_CM, MARI_R_CM, WRAP_OVERLAP, unitFromMm, wrapsToCover } from "./measure";
+
+export { MARI_C_CM, MARI_R_CM };
 
 export type Craft = "wind" | "pin" | "stitch";
 
@@ -37,22 +40,6 @@ const MAX_JOINS = 16;
 const POINTS_PER_STRAND = 6000;
 const TWO_PI = Math.PI * 2;
 
-/**
- * Unit mari = 24 cm circumference (TemariKai 23–24 cm).
- * n = ceil(π / (d / overlap)) wander wraps to cover: each turn
- * offsets by ~thread diameter, a half-turn of the axis covers the ball.
- */
-export const MARI_C_CM = 24;
-export const MARI_R_CM = MARI_C_CM / (2 * Math.PI);
-
-function unitFromMm(mm: number) {
-  return mm / 10 / MARI_R_CM;
-}
-
-function coverWraps(diameter: number, overlap = 1.12) {
-  return Math.ceil(Math.PI / (diameter / overlap));
-}
-
 type WrapLayer = {
   id: "yarn" | "fine" | "sew";
   mm: number;
@@ -70,8 +57,8 @@ function makeLayer(
   visualCap?: number,
 ): WrapLayer {
   const diameter = unitFromMm(mm);
-  const step = diameter / 1.12;
-  const need = coverWraps(diameter);
+  const step = diameter / WRAP_OVERLAP;
+  const need = wrapsToCover(MARI_C_CM, mm);
   const per = visualCap ? Math.min(need, visualCap) : need;
   return {
     id,
