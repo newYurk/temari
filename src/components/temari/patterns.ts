@@ -507,10 +507,12 @@ export function kikuArcsFromPins(
   const n = sorted.length;
   const L = Math.max(1, Math.min(cap.max, Math.round(layers)));
   const chord = cap.pitch * 1.15;
+  const span = Math.max(cap.pitch, (cap.max - 1) * cap.pitch);
   const arcs: { a: Vec3; b: Vec3; color: number }[] = [];
   const order = Array.from({ length: L }, (_, i) => (dir === "in" ? L - 1 - i : i));
   for (const r of order) {
-    const inner = cap.innerMin + r * cap.pitch;
+    const t = L <= 1 ? 0.5 : r / (L - 1);
+    const inner = cap.innerMin + t * span;
     const outer = inner + chord;
     const c = r % 2 === 0 ? color : (color + 1) % 4;
     for (let i = 0; i < n; i++) {
