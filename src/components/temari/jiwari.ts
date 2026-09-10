@@ -1,6 +1,6 @@
-import { ICOSA_EDGES, ICOSA_VERTS, type Division } from "./division";
-import type { Pin } from "./craft";
-import type { Stitch, Vec3 } from "./patterns";
+import { ICOSA_EDGES, ICOSA_VERTS, type Division } from "./division.ts";
+import type { Pin } from "./craft.ts";
+import type { Stitch, Vec3 } from "./patterns.ts";
 
 function norm(v: Vec3): Vec3 {
   const len = Math.hypot(v[0], v[1], v[2]) || 1;
@@ -43,7 +43,71 @@ function uniqueNormals(raw: Vec3[]): Vec3[] {
   return out;
 }
 
-/** Great-circle normals for a standard division (TemariKai). */
+export type JiwariPhase = "off" | "strip" | "poles" | "equator" | "meridians" | "done";
+
+const S = Math.SQRT1_2;
+
+/** Simple 8: four meridians, equator last. TemariKai tanjyun toubun. */
+export const SIMPLE_THREADS: Vec3[] = [
+  [1, 0, 0],
+  [S, 0, S],
+  [0, 0, 1],
+  [S, 0, -S],
+  [0, 1, 0],
+];
+
+export function jiwariPhaseHint(phase: JiwariPhase, laid = 0): string {
+  if (phase === "strip") return "Полоска: полный обхват";
+  if (phase === "poles") return "Сгиб пополам — север и юг";
+  if (phase === "equator") return "Четверть — экватор на восемь";
+  if (phase === "meridians") {
+    return laid < 4 ? "Нить: полюс — экватор — полюс" : "Нить по экватору";
+  }
+  return "";
+}
+
+export function simplePins(phase: JiwariPhase): Pin[] {
+  const np: Vec3 = [0, 1, 0];
+  const sp: Vec3 = [0, -1, 0];
+  const eq: Vec3[] = Array.from({ length: 8 }, (_, i) => {
+    const a = (Math.PI * 2 * i) / 8;
+    return [Math.sin(a), 0, Math.cos(a)];
+  });
+  if (phase === "poles") {
+    return [np, sp].map((p, i) => ({ id: `j${i}`, p: norm(p) }));
+  }
+  if (phase === "equator" || phase === "meridians" || phase === "done") {
+    return [np, sp, ...eq].map((p, i) => ({ id: `j${i}`, p: norm(p) }));
+  }
+  return [];
+}
+
+export function simpleStitches(laid: number, color: number): Stitch[] {
+  return SIMPLE_THREADS.slice(0, Math.max(0, Math.min(5, laid))).map((n) => ({
+    kind: "loop" as const,
+    points: circle(n),
+    color,
+    lift: 0.006,
+  }));
+}
+
+export function jiwariVisibleStitches(
+  division: Division,
+  color: number,
+  phase: JiwariPhase,
+  laid: number,
+): Stitch[] {
+  if (division !== "simple") return jiwariStitches(division, color);
+  if (phase === "done") return simpleStitches(5, color);
+  if (phase === "meridians") return simpleStitches(laid, color);
+  return [];
+}
+
+export function jiwariVisiblePins(division: Division, phase: JiwariPhase): Pin[] {
+  if (division !== "simple") return jiwariPins(division);
+  return simplePins(phase);
+}
+
 export function jiwariNormals(division: Division): Vec3[] {
   if (division === "simple") {
     const s = Math.SQRT1_2;

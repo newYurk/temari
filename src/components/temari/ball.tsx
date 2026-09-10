@@ -20,7 +20,7 @@ import { createMotifGeometry, getYarnTexture } from "./stitches";
 import { useTemari } from "./store";
 import * as feel from "./feel";
 import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
-import { jiwariMarkColor, jiwariStitches } from "./jiwari";
+import { jiwariMarkColor, jiwariStitches, jiwariVisibleStitches } from "./jiwari";
 
 const pointer = { x: 0, y: 0, down: false, dragged: false };
 const ptrs = new Map<number, { x: number; y: number }>();
@@ -86,28 +86,61 @@ function ThreadLayer({
 }
 
 function PaperStrip() {
-  const ticks = useMemo(
-    () =>
-      Array.from({ length: 8 }, (_, i) => {
+  const phase = useTemari((s) => s.jiwariPhase);
+  const on = phase === "strip" || phase === "poles" || phase === "equator";
+  const equator = phase === "equator";
+  const ticks = useMemo(() => {
+    if (phase === "strip") return [[0, 0, 1.02] as const];
+    if (phase === "poles") return [[0, 1.02, 0] as const, [0, -1.02, 0] as const];
+    if (phase === "equator") {
+      return Array.from({ length: 8 }, (_, i) => {
         const a = (Math.PI * 2 * i) / 8;
         return [Math.sin(a) * 1.02, 0, Math.cos(a) * 1.02] as const;
-      }),
-    [],
-  );
+      });
+    }
+    return [];
+  }, [phase]);
+  if (!on) return null;
   return (
     <group>
-      <mesh rotation={[Math.PI / 2, 0, 0]} renderOrder={14} raycast={() => {}}>
+      <mesh
+        rotation={equator ? [Math.PI / 2, 0, 0] : [0, Math.PI / 2, 0]}
+        renderOrder={14}
+        raycast={() => {}}
+      >
         <torusGeometry args={[1.02, 0.011, 5, 96]} />
         <meshStandardMaterial color="#f3eee4" roughness={0.94} metalness={0} />
       </mesh>
       {ticks.map((p, i) => (
         <mesh key={i} position={p} renderOrder={15} raycast={() => {}}>
           <boxGeometry args={[0.007, 0.03, 0.01]} />
-          <meshStandardMaterial color={i % 4 === 0 ? "#8f3d32" : "#8a847c"} roughness={0.85} />
+          <meshStandardMaterial
+            color={phase === "equator" && i % 4 === 0 ? "#8f3d32" : "#8a847c"}
+            roughness={0.85}
+          />
         </mesh>
       ))}
     </group>
   );
+}
+
+function JiwariGuide() {
+  const on = useTemari((s) => s.jiwariOn);
+  const division = useTemari((s) => s.division);
+  const phase = useTemari((s) => s.jiwariPhase);
+  const laid = useTemari((s) => s.jiwariLaid);
+  const advance = useTemari((s) => s.advanceJiwari);
+  useEffect(() => {
+    if (!on || division !== "simple") return;
+    if (phase === "off" || phase === "done") return;
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const ms = reduce ? 0 : phase === "meridians" ? 480 : 1100;
+    const id = window.setTimeout(advance, ms);
+    return () => window.clearTimeout(id);
+  }, [advance, division, laid, on, phase]);
+  return null;
 }
 
 function WrapSurface({ color, width }: { color: string; width: number }) {
@@ -179,6 +212,8 @@ export function Ball() {
   const wrapResetNonce = useTemari((s) => s.wrapResetNonce);
   const layerDone = useTemari((s) => s.layerDone);
   const jiwariOn = useTemari((s) => s.jiwariOn);
+  const jiwariPhase = useTemari((s) => s.jiwariPhase);
+  const jiwariLaid = useTemari((s) => s.jiwariLaid);
   const wrapSeed = useTemari((s) => s.wrapSeed);
   const threadWidth = useTemari((s) => s.threadWidth);
   const paint = useTemari((s) => s.paint);
@@ -231,8 +266,13 @@ export function Ball() {
   const markStitches = useMemo(() => {
     if (mode === "title") return stitchesOn ? jiwariStitches("simple", 1) : [];
     if (mode !== "studio" || !layerDone || !jiwariOn) return [];
-    return jiwariStitches(division, jiwariMarkColor(wrapColor));
-  }, [division, jiwariOn, layerDone, mode, wrapColor, stitchesOn]);
+    return jiwariVisibleStitches(
+      division,
+      jiwariMarkColor(wrapColor),
+      jiwariPhase,
+      jiwariLaid,
+    );
+  }, [division, jiwariLaid, jiwariOn, jiwariPhase, layerDone, mode, wrapColor, stitchesOn]);
   const ghostStitches = useMemo(() => {
     if (mode !== "studio" || craft !== "stitch" || !hoverSlot) return [];
     return stitchesForSlot(division, hoverSlot, selectedColor);
@@ -648,6 +688,7 @@ export function Ball() {
       ) : null}
 
       {mode === "studio" && layerDone && jiwariOn && division === "simple" ? <PaperStrip /> : null}
+      {mode === "studio" && layerDone ? <JiwariGuide /> : null}
 
       {markStitches.length > 0 ? (
         <ThreadLayer

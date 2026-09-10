@@ -1,6 +1,7 @@
 import { isClosedContour, type KagariDir, type KagariSpacing, type MotifId } from "./patterns";
 import type { Craft } from "./craft";
 import type { Division } from "./division";
+import type { JiwariPhase } from "./jiwari";
 import type { Mode } from "./store";
 import { useTemari } from "./store";
 import type { PaletteId } from "./palettes";
@@ -12,6 +13,7 @@ export type TemariCraftState = {
   layerDone: boolean;
   craft: Craft;
   jiwariOn: boolean;
+  jiwariPhase: JiwariPhase;
   division: Division;
   motif: MotifId;
   closedContour: boolean;
@@ -51,6 +53,7 @@ export function getCraftState(): TemariCraftState {
     layerDone: s.layerDone,
     craft: s.craft,
     jiwariOn: s.jiwariOn,
+    jiwariPhase: s.jiwariPhase,
     division: s.division,
     motif: s.motif,
     closedContour: isClosedContour(s.pins.map((pin) => pin.p)),
@@ -62,6 +65,9 @@ export function getCraftState(): TemariCraftState {
     paletteId: s.paletteId,
   };
 }
+
+const jiwariReady = (s: TemariCraftState) =>
+  s.jiwariOn && (s.division !== "simple" || s.jiwariPhase === "done");
 
 export const CRAFT_ACTIONS: CraftAction[] = [
   {
@@ -108,13 +114,15 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "stitch",
     label: "Стежок",
     cluster: "kagari",
-    canExecute: (s) => !needWrap(s) && (s.jiwariOn || s.hasPin),
+    canExecute: (s) => !needWrap(s) && (jiwariReady(s) || s.hasPin),
     isActive: (s) => s.craft === "stitch",
     getDisabledReason: (s) =>
       needWrap(s) ??
-      (s.jiwariOn || s.hasPin
+      (jiwariReady(s) || s.hasPin
         ? null
-        : "Сначала выберите опорную булавку или линию разметки"),
+        : s.jiwariOn && s.division === "simple"
+          ? "Сначала доведите разметку полоской"
+          : "Сначала выберите опорную булавку или линию разметки"),
   },
   {
     id: "motif-none",

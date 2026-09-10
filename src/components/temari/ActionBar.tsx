@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { RotateCcw, Undo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PALETTE_LIST, PALETTES } from "./palettes";
+import { jiwariPhaseHint } from "./jiwari";
 import { useTemari } from "./store";
 import {
   CRAFT_ACTIONS,
@@ -64,6 +65,8 @@ export function ActionBar() {
   const layerDone = useTemari((s) => s.layerDone);
   const craft = useTemari((s) => s.craft);
   const jiwariOn = useTemari((s) => s.jiwariOn);
+  const jiwariPhase = useTemari((s) => s.jiwariPhase);
+  const jiwariLaid = useTemari((s) => s.jiwariLaid);
   const division = useTemari((s) => s.division);
   const motif = useTemari((s) => s.motif);
   const pins = useTemari((s) => s.pins);
@@ -85,6 +88,8 @@ export function ActionBar() {
       layerDone,
       craft,
       jiwariOn,
+      jiwariPhase,
+      jiwariLaid,
       division,
       motif,
       pins,
@@ -117,7 +122,7 @@ export function ActionBar() {
             className="min-h-4 px-1 text-[0.65rem] tracking-wide text-stone"
             aria-live="polite"
           >
-            {tip ?? ""}
+            {tip ?? (jiwariOn ? jiwariPhaseHint(jiwariPhase, jiwariLaid) : "")}
           </p>
           <div className="flex gap-0.5">
             {jiwari.map((action) => (

@@ -32,7 +32,7 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import * as feel from "./feel";
-import { jiwariPins } from "./jiwari";
+import { jiwariVisiblePins, simplePins, type JiwariPhase } from "./jiwari";
 
 export type Mode = "title" | "studio" | "kata";
 
@@ -181,10 +181,13 @@ type TemariState = {
   originNonce: number;
   wrapSeed: "empty" | "full";
   jiwariOn: boolean;
+  jiwariPhase: JiwariPhase;
+  jiwariLaid: number;
   enterStudio: () => void;
   enterKata: (index?: number) => void;
   toTitle: () => void;
   setDivision: (division: Division) => void;
+  advanceJiwari: () => void;
   clearJiwari: () => void;
   setPalette: (id: PaletteId) => void;
   setMotif: (id: MotifId) => void;
@@ -284,6 +287,8 @@ export const useTemari = create<TemariState>((set, get) => ({
   originNonce: 0,
   wrapSeed: "full",
   jiwariOn: false,
+  jiwariPhase: "off",
+  jiwariLaid: 0,
 
   enterStudio: () => {
     feel.unlock();
@@ -319,6 +324,8 @@ export const useTemari = create<TemariState>((set, get) => ({
       originNonce: get().originNonce + 1,
       wrapSeed: "full",
       jiwariOn: false,
+      jiwariPhase: "off",
+      jiwariLaid: 0,
     });
   },
 
@@ -388,8 +395,14 @@ export const useTemari = create<TemariState>((set, get) => ({
     if (get().mode === "kata") return;
     const on = get().jiwariOn;
     if (on && get().division === division) {
+      if (division === "simple" && get().jiwariPhase !== "done" && get().jiwariPhase !== "off") {
+        get().advanceJiwari();
+        return;
+      }
       set({
         jiwariOn: false,
+        jiwariPhase: "off",
+        jiwariLaid: 0,
         pins: [],
         pinArcs: [],
         activePin: null,
@@ -400,26 +413,60 @@ export const useTemari = create<TemariState>((set, get) => ({
       return;
     }
     const motif = get().motif;
+    const simple = division === "simple";
     set({
       division,
       jiwariOn: true,
+      jiwariPhase: simple ? "strip" : "done",
+      jiwariLaid: simple ? 0 : 5,
       fills: emptyFills(division),
       sewn: motif === "kiku" ? fillKikuSewn(division) : [],
       history: [],
       sewnHistory: [],
       hover: -1,
       hoverSlot: null,
-      pins: get().layerDone ? jiwariPins(division) : [],
+      pins: get().layerDone ? jiwariVisiblePins(division, simple ? "strip" : "done") : [],
       pinArcs: [],
       activePin: null,
     });
     rememberStudio(get());
   },
 
+  advanceJiwari: () => {
+    const state = get();
+    if (!state.jiwariOn || state.division !== "simple") return;
+    if (state.jiwariPhase === "strip") {
+      feel.pin();
+      set({ jiwariPhase: "poles", pins: simplePins("poles"), jiwariLaid: 0 });
+      return;
+    }
+    if (state.jiwariPhase === "poles") {
+      feel.pin();
+      set({ jiwariPhase: "equator", pins: simplePins("equator") });
+      return;
+    }
+    if (state.jiwariPhase === "equator") {
+      feel.stitch();
+      set({ jiwariPhase: "meridians", jiwariLaid: 1 });
+      return;
+    }
+    if (state.jiwariPhase === "meridians") {
+      const next = state.jiwariLaid + 1;
+      feel.stitch();
+      if (next >= 5) {
+        set({ jiwariPhase: "done", jiwariLaid: 5, pins: simplePins("done") });
+      } else {
+        set({ jiwariLaid: next });
+      }
+    }
+  },
+
   clearJiwari: () => {
     if (get().mode === "kata") return;
     set({
       jiwariOn: false,
+      jiwariPhase: "off",
+      jiwariLaid: 0,
       pins: [],
       pinArcs: [],
       activePin: null,
@@ -642,6 +689,8 @@ export const useTemari = create<TemariState>((set, get) => ({
       originNonce: state.originNonce + 1,
       wrapSeed: "full",
       jiwariOn: false,
+      jiwariPhase: "off",
+      jiwariLaid: 0,
     });
     rememberStudio(get());
   },
@@ -708,6 +757,8 @@ export const useTemari = create<TemariState>((set, get) => ({
       wrapSeed: "full",
       wrapProgress: 1,
       jiwariOn: false,
+      jiwariPhase: "off",
+      jiwariLaid: 0,
       pins: [],
     });
   },
