@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { DIV_INDEX, ICOSA_FACE_NORMALS, type Division } from "./division";
 import { PALETTES, type PaletteId } from "./palettes";
+import { unitFromMm, WRAP_THREAD_MM } from "./measure";
 
 const vertexShader = /* glsl */ `
 varying vec3 vN;
@@ -276,6 +277,7 @@ const wrapCoverFrag = /* glsl */ `
 uniform vec3 uCamPos;
 uniform vec3 uColor;
 uniform float uWidth;
+uniform float uSewW;
 uniform sampler2D uThread;
 
 varying vec3 vN;
@@ -299,11 +301,11 @@ void paintLayer(inout vec3 col, vec3 p, int n, float w, float seed, float lo, fl
     if (i >= n) break;
     vec3 ax = wrapAxis(i, n, seed);
     float d = abs(dot(p, ax));
-    float t = d / max(w, 0.0008);
-    float mask = 1.0 - smoothstep(0.88, 1.0, t);
+    float t = d / max(w, 0.0004);
+    float mask = 1.0 - smoothstep(0.90, 1.0, t);
     float round = sqrt(max(0.0, 1.0 - min(t * t, 1.0)));
     float dye = mix(lo, hi, fract(sin((float(i) + seed) * 419.2) * 43758.5453));
-    vec3 thread = uColor * dye * mix(0.90, 1.06, round);
+    vec3 thread = uColor * dye * mix(0.92, 1.05, round);
     col = mix(col, thread, mask);
   }
 }
@@ -312,28 +314,31 @@ void main() {
   vec3 p = normalize(vL);
   vec3 n = normalize(vN);
   float slider = clamp(uWidth, 0.0, 1.0);
-  vec3 col = uColor * 0.90;
-  paintLayer(col, p, 96, mix(0.012, 0.016, slider), 0.13, 0.84, 0.96);
-  paintLayer(col, p, 96, mix(0.008, 0.011, slider), 1.71, 0.88, 1.02);
-  paintLayer(col, p, 128, mix(0.0052, 0.0070, slider), 2.94, 0.92, 1.08);
-  paintLayer(col, p, 128, mix(0.0046, 0.0062, slider), 4.17, 0.94, 1.10);
+  float w = uSewW * mix(0.92, 1.12, slider);
+  vec3 col = uColor * 0.93;
+  paintLayer(col, p, 128, w * 1.15, 0.13, 0.88, 0.98);
+  paintLayer(col, p, 128, w, 1.71, 0.90, 1.02);
+  paintLayer(col, p, 128, w * 0.95, 2.94, 0.92, 1.06);
+  paintLayer(col, p, 128, w * 0.88, 4.17, 0.94, 1.08);
   vec3 L = normalize(vec3(0.46, 0.82, 0.52));
   vec3 L2 = normalize(vec3(-0.55, 0.22, -0.28));
   vec3 V = normalize(uCamPos - vW);
   float ndl = max(dot(n, L), 0.0);
   float ndl2 = max(dot(n, L2), 0.0);
-  float lit = 0.78 + 0.16 * ndl + 0.06 * ndl2;
-  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.8) * 0.025;
+  float lit = 0.80 + 0.14 * ndl + 0.06 * ndl2;
+  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.8) * 0.02;
   gl_FragColor = vec4(col * lit + rim * col, 1.0);
 }
 `;
 
 export function createWrapCoverMaterial() {
+  const sewW = unitFromMm(WRAP_THREAD_MM.sew.mm) * 0.5;
   return new THREE.ShaderMaterial({
     uniforms: {
       uCamPos: { value: new THREE.Vector3(0, 0.35, 3.35) },
       uColor: { value: new THREE.Color("#c4a574") },
       uWidth: { value: 0.42 },
+      uSewW: { value: sewW },
       uThread: { value: getThreadTex() },
     },
     vertexShader: wrapCoverVert,
@@ -348,6 +353,7 @@ export function syncWrapCoverMaterial(
 ) {
   (material.uniforms.uColor.value as THREE.Color).set(opts.color);
   material.uniforms.uWidth.value = opts.width;
+  material.uniforms.uSewW.value = unitFromMm(WRAP_THREAD_MM.sew.mm) * 0.5;
   (material.uniforms.uCamPos.value as THREE.Vector3).copy(opts.camera);
 }
 
