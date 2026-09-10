@@ -282,16 +282,18 @@ vec3 wrapAxis(int i, int n) {
 }
 
 vec3 wrapAlbedo(vec3 p, vec3 color, float w, int wraps) {
-  vec3 col = color * 0.90;
+  vec3 col = color * 0.92;
+  float n = float(wraps);
   for (int i = 0; i < 512; i++) {
     if (i >= wraps) break;
-    vec3 ax = wrapAxis(i, wraps);
+    int k = int(mod(float(i) * 277.0, n));
+    vec3 ax = wrapAxis(k, wraps);
     float t = abs(dot(p, ax)) / max(w, 0.0004);
-    float mask = 1.0 - smoothstep(0.97, 1.0, t);
+    float mask = 1.0 - smoothstep(0.96, 1.0, t);
     float round = sqrt(max(0.0, 1.0 - min(t * t, 1.0)));
-    float dye = mix(0.82, 1.08, fract(sin(float(i) * 419.2) * 43758.5453));
-    vec3 thread = color * dye * mix(0.78, 1.10, round);
-    col = mix(col, thread, mask);
+    float dye = mix(0.86, 1.06, fract(sin(float(k) * 419.2) * 43758.5453));
+    vec3 thread = color * dye * mix(0.88, 1.06, round);
+    col = mix(col, thread, mask * 0.62);
   }
   return col;
 }

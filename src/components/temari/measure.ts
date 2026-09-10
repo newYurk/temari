@@ -53,10 +53,10 @@ export function wrapHalfWidth(mm: number, Ccm = MARI_C_CM) {
 }
 
 /**
- * 0.3 mm at 2048 bake ≈ 2.5 px — bilinear smears the cord.
- * Raster scale is optical only. N stays wrapsToCover.
+ * 0.3 mm at 4096 bake ≈ 5 px. Extra fattening made cords look like yarn
+ * and, with z-ordered paint, like a skein. Keep 1.
  */
-export const WRAP_RASTER = 2.4;
+export const WRAP_RASTER = 1;
 
 /** Visible maki layer: sewing thread, N from the cover formula — not a visual guess. */
 export function sewCover(Ccm = MARI_C_CM) {
