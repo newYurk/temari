@@ -610,8 +610,12 @@ export class MariWinder {
   }
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
-    this.advance(buffer, this.sNeeded, color, hex, 0.07);
-    this.cover = buffer.sampleCoverage();
+    let guard = 0;
+    while (this.cover < 0.96 && guard < 10) {
+      this.advance(buffer, TWO_PI * 24, color, hex, 0.08);
+      this.cover = buffer.sampleCoverage();
+      guard++;
+    }
   }
 
   advance(buffer: WrapBuffer, ds: number, color: number, hex: string, step = 0.07) {

@@ -351,13 +351,7 @@ export function Ball() {
     const st = useTemari.getState();
     mari.current.reset(st.threadWidth);
     if (st.wrapSeed === "full") {
-      if (st.mode === "title") {
-        feel.resetTurns();
-        setWrapCount(1);
-        setWrapProgress(1);
-        return;
-      }
-      wrap.strokeWidth = strokePx(0.55);
+      wrap.strokeWidth = strokePx(st.mode === "title" ? 0.82 : 0.58);
       const hex = PALETTES[st.paletteId].colors[0] ?? "#8f3d32";
       mari.current.fill(wrap, 0, hex);
       feel.resetTurns();
@@ -646,8 +640,8 @@ export function Ball() {
       peeking: mode === "kata" && peeking,
       camera: camera.position,
       wrap: wrap.texture,
-      wrapOn: mode !== "title",
-      felt: mode === "title" ? 1 : layerDone && wrap.covered < 0.97 ? 0.4 : 0,
+      wrapOn: true,
+      felt: mode === "title" ? 0 : layerDone && wrap.covered < 0.97 ? 0.4 : 0,
       feltColor: palette.colors[selectedColor] ?? palette.thread,
       threadWidth,
     });

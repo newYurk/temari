@@ -194,7 +194,7 @@ function starSkip(division: Division) {
 }
 
 function kikuSpec(division: Division) {
-  if (division === "simple") return { inner: 0.32, chord: 0.05, pitch: 0.038, rounds: 6 };
+  if (division === "simple") return { inner: 0.2, chord: 0.048, pitch: 0.036, rounds: 10 };
   if (division === "c8") return { inner: 0.18, chord: 0.05, pitch: 0.036, rounds: 6 };
   return { inner: 0.16, chord: 0.048, pitch: 0.034, rounds: 6 };
 }
