@@ -16,7 +16,7 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import { createTemariMaterial, syncTemariMaterial } from "./shader";
-import { createMotifGeometry, createWrapGeometry, getYarnTexture } from "./stitches";
+import { createMotifGeometry, createWrapGeometry, getWrapYarnTexture, getYarnTexture } from "./stitches";
 import { useTemari } from "./store";
 import * as feel from "./feel";
 import { DEFAULT_KIND, threadMetalness, threadRoughness, wrapRibbonWidth, type ThreadKind } from "./thread";
@@ -93,7 +93,7 @@ function WrapYarn({
   width: number;
 }) {
   const mesh = useRef<THREE.Mesh>(null);
-  const yarn = useMemo(() => getYarnTexture(), []);
+  const yarn = useMemo(() => getWrapYarnTexture(), []);
   const last = useRef("");
   useFrame(() => {
     const meshObj = mesh.current;
@@ -193,7 +193,12 @@ export function Ball() {
     mode === "title" ? "kiku" : mode === "studio" && motif !== "kiku" && motif !== "none" ? motif : "none";
   const [stitchesOn, setStitchesOn] = useState(mode !== "title");
   useEffect(() => {
-    const id = window.setTimeout(() => setStitchesOn(true), 40);
+    if (mode !== "title") {
+      setStitchesOn(true);
+      return;
+    }
+    setStitchesOn(false);
+    const id = window.setTimeout(() => setStitchesOn(true), 320);
     return () => window.clearTimeout(id);
   }, [mode, preset, division]);
   const presetStitches = useMemo(
@@ -214,10 +219,10 @@ export function Ball() {
     [mode, pinArcs],
   );
   const markStitches = useMemo(() => {
-    if (mode === "title") return jiwariStitches("simple", 1);
+    if (mode === "title") return stitchesOn ? jiwariStitches("simple", 1) : [];
     if (mode === "studio" && !layerDone) return [];
     return jiwariStitches(division, jiwariMarkColor(selectedColor));
-  }, [division, layerDone, mode, selectedColor]);
+  }, [division, layerDone, mode, selectedColor, stitchesOn]);
   const ghostStitches = useMemo(() => {
     if (mode !== "studio" || craft !== "stitch" || !hoverSlot) return [];
     return stitchesForSlot(division, hoverSlot, selectedColor);
@@ -556,7 +561,7 @@ export function Ball() {
       wrapN: wrap.polarN,
       wrapS: wrap.polarS,
       wrapOn: false,
-      felt: mode === "title" ? 0 : layerDone && wrap.covered < 0.97 ? 0.4 : 0,
+      felt: mode === "title" || layerDone ? 0.94 : wrap.covered > 0.2 ? 0.35 : 0,
       feltColor: palette.colors[selectedColor] ?? palette.thread,
       threadWidth,
     });
@@ -626,7 +631,7 @@ export function Ball() {
           if (snapGhost.current) snapGhost.current.visible = false;
         }}
       >
-        <sphereGeometry args={[0.992, 96, 64]} />
+        <sphereGeometry args={[0.985, 96, 64]} />
         <primitive object={material} attach="material" />
       </mesh>
 

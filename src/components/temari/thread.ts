@@ -77,7 +77,7 @@ export function ribbonWidth(kind: ThreadKind) {
 /** Slider 0–1 → ribbon width on the unit sphere for the wrap thread. */
 export function wrapRibbonWidth(slider: number) {
   const t = Math.max(0, Math.min(1, slider));
-  return 0.008 + t * 0.014;
+  return 0.016 + t * 0.02;
 }
 
 export function threadRoughness(kind: ThreadKind) {

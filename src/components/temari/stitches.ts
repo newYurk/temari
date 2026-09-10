@@ -4,7 +4,7 @@ import type { Stitch } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth } from "./thread";
 
 const ARC_SEGS = 16;
-const LIFT = 1.006;
+const LIFT = 1.022;
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -121,23 +121,34 @@ function arcRibbon(a: THREE.Vector3, b: THREE.Vector3, width: number) {
   return ribbonFromPoints(pts, width, false);
 }
 
-let yarn: THREE.CanvasTexture | null = null;
-
 export function getYarnTexture() {
   if (yarn) return yarn;
+  yarn = makeYarnTexture(true);
+  return yarn;
+}
+
+/** Wrap yarn stays opaque — edge fade punches holes through to the wool. */
+export function getWrapYarnTexture() {
+  if (wrapYarn) return wrapYarn;
+  wrapYarn = makeYarnTexture(false);
+  return wrapYarn;
+}
+
+let yarn: THREE.CanvasTexture | null = null;
+let wrapYarn: THREE.CanvasTexture | null = null;
+
+function makeYarnTexture(fadeEdges: boolean) {
   const canvas = document.createElement("canvas");
   canvas.width = 128;
   canvas.height = 24;
   const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    yarn = new THREE.CanvasTexture(canvas);
-    return yarn;
-  }
-  ctx.fillStyle = "#f6efe4";
+  const tex = new THREE.CanvasTexture(canvas);
+  if (!ctx) return tex;
+  ctx.fillStyle = "#d9cfc4";
   ctx.fillRect(0, 0, 128, 24);
   for (let s = 0; s < 6; s++) {
     const y = 3 + s * 3.2;
-    ctx.strokeStyle = s % 2 === 0 ? "rgba(48,40,34,0.22)" : "rgba(255,252,246,0.45)";
+    ctx.strokeStyle = s % 2 === 0 ? "rgba(48,40,34,0.22)" : "rgba(255,252,246,0.4)";
     ctx.lineWidth = 1.15;
     ctx.beginPath();
     for (let x = 0; x <= 128; x += 4) {
@@ -147,20 +158,21 @@ export function getYarnTexture() {
     }
     ctx.stroke();
   }
-  const fade = ctx.createLinearGradient(0, 0, 0, 24);
-  fade.addColorStop(0, "rgba(255,255,255,0)");
-  fade.addColorStop(0.18, "rgba(255,255,255,1)");
-  fade.addColorStop(0.82, "rgba(255,255,255,1)");
-  fade.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.globalCompositeOperation = "destination-in";
-  ctx.fillStyle = fade;
-  ctx.fillRect(0, 0, 128, 24);
-  yarn = new THREE.CanvasTexture(canvas);
-  yarn.wrapS = THREE.RepeatWrapping;
-  yarn.wrapT = THREE.ClampToEdgeWrapping;
-  yarn.colorSpace = THREE.SRGBColorSpace;
-  yarn.needsUpdate = true;
-  return yarn;
+  if (fadeEdges) {
+    const fade = ctx.createLinearGradient(0, 0, 0, 24);
+    fade.addColorStop(0, "rgba(255,255,255,0)");
+    fade.addColorStop(0.18, "rgba(255,255,255,1)");
+    fade.addColorStop(0.82, "rgba(255,255,255,1)");
+    fade.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.globalCompositeOperation = "destination-in";
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, 0, 128, 24);
+  }
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
 }
 
 export function createMotifGeometry(
@@ -196,7 +208,7 @@ export function createWrapGeometry(
   const parts: THREE.BufferGeometry[] = [];
   for (const pts of strands) {
     if (pts.length < 2) continue;
-    const lifted = pts.map((p) => p.clone().normalize().multiplyScalar(1.007));
+    const lifted = pts.map((p) => p.clone().normalize().multiplyScalar(1.012));
     parts.push(ribbonFromPoints(lifted, width, false));
   }
   if (parts.length === 0) return null;
