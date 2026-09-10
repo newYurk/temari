@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { DIV_INDEX, ICOSA_FACE_NORMALS, type Division } from "./division";
 import { PALETTES, type PaletteId } from "./palettes";
-import { sewCover, WRAP_GPU_MAX } from "./measure";
+import { sewCover, WRAP_BAKE, WRAP_GPU_MAX } from "./measure";
 
 const vertexShader = /* glsl */ `
 varying vec3 vN;
@@ -282,15 +282,15 @@ vec3 wrapAxis(int i, int n) {
 }
 
 vec3 wrapAlbedo(vec3 p, vec3 color, float w, int wraps) {
-  vec3 col = color * 0.93;
+  vec3 col = color * 0.90;
   for (int i = 0; i < 512; i++) {
     if (i >= wraps) break;
     vec3 ax = wrapAxis(i, wraps);
     float t = abs(dot(p, ax)) / max(w, 0.0004);
-    float mask = 1.0 - smoothstep(0.90, 1.0, t);
+    float mask = 1.0 - smoothstep(0.97, 1.0, t);
     float round = sqrt(max(0.0, 1.0 - min(t * t, 1.0)));
-    float dye = mix(0.90, 1.06, fract(sin(float(i) * 419.2) * 43758.5453));
-    vec3 thread = color * dye * mix(0.92, 1.05, round);
+    float dye = mix(0.82, 1.08, fract(sin(float(i) * 419.2) * 43758.5453));
+    vec3 thread = color * dye * mix(0.78, 1.10, round);
     col = mix(col, thread, mask);
   }
   return col;
@@ -352,7 +352,7 @@ export type WrapBaker = {
 
 export function createWrapBaker(): WrapBaker {
   const sew = sewCover();
-  const rt = new THREE.WebGLRenderTarget(2048, 1024, {
+  const rt = new THREE.WebGLRenderTarget(WRAP_BAKE.w, WRAP_BAKE.h, {
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
     generateMipmaps: false,

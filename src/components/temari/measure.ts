@@ -52,18 +52,25 @@ export function wrapHalfWidth(mm: number, Ccm = MARI_C_CM) {
   return unitFromMm(mm, Ccm) * 0.5;
 }
 
+/**
+ * 0.3 mm at 2048 bake ≈ 2.5 px — bilinear smears the cord.
+ * Raster scale is optical only. N stays wrapsToCover.
+ */
+export const WRAP_RASTER = 2.4;
+
 /** Visible maki layer: sewing thread, N from the cover formula — not a visual guess. */
 export function sewCover(Ccm = MARI_C_CM) {
   const mm = WRAP_THREAD_MM.sew.mm;
   return {
     mm,
     wraps: wrapsToCover(Ccm, mm),
-    halfWidth: wrapHalfWidth(mm, Ccm),
+    halfWidth: wrapHalfWidth(mm, Ccm) * WRAP_RASTER,
   };
 }
 
 /** GPU loop ceiling. 24 cm sew = 449. Do not invent extra passes past this. */
 export const WRAP_GPU_MAX = 512;
+export const WRAP_BAKE = { w: 4096, h: 2048 } as const;
 
 export function wrapLengthM(Ccm: number, wraps: number) {
   return (wraps * Ccm) / 100;
