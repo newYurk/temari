@@ -19,8 +19,11 @@ import {
   isMotifId,
   kikuArcsFromPins,
   sakasaArcsFromPins,
+  kikuCapacity,
+  KAGARI_SPACING_META,
   slotKey,
   type KagariDir,
+  type KagariSpacing,
   type KikuSlot,
   type MotifId,
   type SewnEntry,
@@ -169,6 +172,7 @@ type TemariState = {
   layerDone: boolean;
   kikuLayers: number;
   kagariDir: KagariDir;
+  kagariSpacing: KagariSpacing;
   startPin: Vec3 | null;
   originNonce: number;
   wrapSeed: "empty" | "full";
@@ -200,6 +204,7 @@ type TemariState = {
   finishLayer: () => void;
   setKikuLayers: (n: number) => void;
   setKagariDir: (dir: KagariDir) => void;
+  setKagariSpacing: (spacing: KagariSpacing) => void;
   fillKiku: () => void;
   setStartPin: (local: Vec3) => void;
   showExample: () => void;
@@ -225,6 +230,14 @@ function sameSlot(a: KikuSlot | null, b: KikuSlot | null) {
   if (!a && !b) return true;
   if (!a || !b) return false;
   return a.pole === b.pole && a.ring === b.ring && a.sector === b.sector;
+}
+
+function currentCap(state: { pins: Pin[]; threadWidth: number; kagariSpacing: KagariSpacing }) {
+  return kikuCapacity(
+    state.pins.map((pin) => pin.p),
+    state.threadWidth,
+    KAGARI_SPACING_META[state.kagariSpacing].density,
+  );
 }
 
 export const useTemari = create<TemariState>((set, get) => ({
@@ -257,6 +270,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   layerDone: false,
   kikuLayers: 8,
   kagariDir: "in",
+  kagariSpacing: "even",
   startPin: null,
   originNonce: 0,
   wrapSeed: "full",
@@ -656,17 +670,47 @@ export const useTemari = create<TemariState>((set, get) => ({
       pins: [],
     });
   },
-  setKikuLayers: (n) => set({ kikuLayers: Math.max(3, Math.min(14, Math.round(n))) }),
+  setKikuLayers: (n) => {
+    const max = Math.max(1, currentCap(get()).max);
+    set({ kikuLayers: Math.max(1, Math.min(max, Math.round(n))) });
+  },
   setKagariDir: (dir) => set({ kagariDir: dir }),
+  setKagariSpacing: (spacing) => {
+    const state = get();
+    const max = kikuCapacity(
+      state.pins.map((pin) => pin.p),
+      state.threadWidth,
+      KAGARI_SPACING_META[spacing].density,
+    ).max;
+    set({
+      kagariSpacing: spacing,
+      kikuLayers: Math.max(1, Math.min(Math.max(1, max), state.kikuLayers)),
+    });
+  },
   fillKiku: () => {
     const state = get();
     if (state.mode !== "studio" || !state.layerDone) return;
     if (state.pins.length < 3) return;
     const pts = state.pins.map((pin) => pin.p);
+    const density = KAGARI_SPACING_META[state.kagariSpacing].density;
     const extra =
       state.pins.length >= 5
-        ? kikuArcsFromPins(pts, state.kikuLayers, state.selectedColor, state.kagariDir)
-        : sakasaArcsFromPins(pts, state.kikuLayers, state.selectedColor, state.kagariDir);
+        ? kikuArcsFromPins(
+            pts,
+            state.kikuLayers,
+            state.selectedColor,
+            state.kagariDir,
+            state.threadWidth,
+            density,
+          )
+        : sakasaArcsFromPins(
+            pts,
+            state.kikuLayers,
+            state.selectedColor,
+            state.kagariDir,
+            state.threadWidth,
+            density,
+          );
     if (extra.length === 0) return;
     feel.kikuFill();
     const snap: PinSnap = {

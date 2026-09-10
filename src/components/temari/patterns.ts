@@ -29,6 +29,48 @@ export const KAGARI_DIR_META: Record<KagariDir, { label: string; hint: string }>
   in: { label: "Внутрь", hint: "от большого края к центру — фигура густеет" },
 };
 
+export type KagariSpacing = "open" | "even" | "tight";
+
+export const KAGARI_SPACING_META: Record<
+  KagariSpacing,
+  { label: string; density: number }
+> = {
+  open: { label: "Реже", density: 0.22 },
+  even: { label: "Так", density: 0.5 },
+  tight: { label: "Плотнее", density: 0.86 },
+};
+
+const KIKU_MAX = 36;
+
+/** Angular step of one herringbone row. Packed ≈ 1.7 thread widths. */
+export function kikuPitch(threadWidth: number, density: number) {
+  const ang = 0.01 + Math.min(1, Math.max(0, threadWidth)) * 0.018;
+  const airy = 5.6;
+  const packed = 1.65;
+  const d = Math.min(1, Math.max(0, density));
+  return ang * (airy + (packed - airy) * d);
+}
+
+export function kikuCapacity(
+  pins: Vec3[],
+  threadWidth: number,
+  density: number,
+): { max: number; span: number; pitch: number; innerMin: number } {
+  if (pins.length < 3) return { max: 0, span: 0, pitch: 0, innerMin: 0 };
+  const pole = normalize([
+    pins.reduce((s, p) => s + p[0], 0),
+    pins.reduce((s, p) => s + p[1], 0),
+    pins.reduce((s, p) => s + p[2], 0),
+  ]);
+  const meanTheta =
+    pins.reduce((s, p) => s + polarAround(pole, p).theta, 0) / pins.length;
+  const pitch = kikuPitch(threadWidth, density);
+  const innerMin = Math.max(0.045, pitch * 0.85);
+  const outerMax = Math.max(innerMin + pitch, meanTheta - pitch * 0.25);
+  const max = Math.max(1, Math.min(KIKU_MAX, Math.floor((outerMax - innerMin) / pitch)));
+  return { max, span: meanTheta, pitch, innerMin };
+}
+
 export function isMotifId(value: unknown): value is MotifId {
   return (
     value === "none" ||
@@ -392,8 +434,11 @@ export function sakasaArcsFromPins(
   layers: number,
   color: number,
   dir: KagariDir = "in",
+  threadWidth = 0.42,
+  density = 0.5,
 ): { a: Vec3; b: Vec3; color: number }[] {
   if (pins.length < 3) return [];
+  const cap = kikuCapacity(pins, threadWidth, density);
   const pole = normalize([
     pins.reduce((s, p) => s + p[0], 0),
     pins.reduce((s, p) => s + p[1], 0),
@@ -403,10 +448,10 @@ export function sakasaArcsFromPins(
     .map((p) => ({ p: normalize(p), ...polarAround(pole, p) }))
     .sort((a, b) => a.phi - b.phi);
   const n = sorted.length;
-  const L = Math.max(3, Math.min(14, Math.round(layers)));
+  const L = Math.max(1, Math.min(cap.max, Math.round(layers)));
   const arcs: { a: Vec3; b: Vec3; color: number }[] = [];
   for (let r = 0; r < L; r++) {
-    const along = r / Math.max(1, L - 1);
+    const along = L <= 1 ? 0 : r / (L - 1);
     const t = dir === "in" ? along * 0.9 : (1 - along) * 0.9;
     const ring = sorted.map((item) => slerp3(item.p, pole, t));
     const c = r % 2 === 0 ? color : (color + 1) % 4;
@@ -425,8 +470,11 @@ export function kikuArcsFromPins(
   layers: number,
   color: number,
   dir: KagariDir = "out",
+  threadWidth = 0.42,
+  density = 0.5,
 ): { a: Vec3; b: Vec3; color: number }[] {
   if (pins.length < 3) return [];
+  const cap = kikuCapacity(pins, threadWidth, density);
   const pole = normalize([
     pins.reduce((s, p) => s + p[0], 0),
     pins.reduce((s, p) => s + p[1], 0),
@@ -435,16 +483,14 @@ export function kikuArcsFromPins(
   const sorted = pins
     .map((p) => ({ p, ...polarAround(pole, p) }))
     .sort((a, b) => a.phi - b.phi);
-  const meanTheta =
-    sorted.reduce((s, p) => s + p.theta, 0) / Math.max(1, sorted.length);
-  const span = Math.max(0.22, meanTheta);
   const n = sorted.length;
-  const L = Math.max(1, Math.min(10, Math.round(layers)));
+  const L = Math.max(1, Math.min(cap.max, Math.round(layers)));
+  const chord = cap.pitch * 1.15;
   const arcs: { a: Vec3; b: Vec3; color: number }[] = [];
   const order = Array.from({ length: L }, (_, i) => (dir === "in" ? L - 1 - i : i));
   for (const r of order) {
-    const inner = span * (0.16 + r * 0.09);
-    const outer = inner + span * 0.12;
+    const inner = cap.innerMin + r * cap.pitch;
+    const outer = inner + chord;
     const c = r % 2 === 0 ? color : (color + 1) % 4;
     for (let i = 0; i < n; i++) {
       const a = sorted[i];

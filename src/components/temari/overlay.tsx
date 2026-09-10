@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { CRAFT_META, type Craft } from "./craft";
 import { DIVISION_META, fillsMatch, type Division } from "./division";
 import { PALETTE_LIST, PALETTES } from "./palettes";
-import { MOTIF_LIST, MOTIF_META, KAGARI_DIR_META, type KagariDir } from "./patterns";
+import { MOTIF_LIST, MOTIF_META, KAGARI_DIR_META, KAGARI_SPACING_META, kikuCapacity, type KagariDir, type KagariSpacing } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import { useTemari } from "./store";
 import { unlock } from "./feel";
@@ -157,6 +157,7 @@ function Workbench() {
   const jiwariOn = useTemari((s) => s.jiwariOn);
   const kikuLayers = useTemari((s) => s.kikuLayers);
   const kagariDir = useTemari((s) => s.kagariDir);
+  const kagariSpacing = useTemari((s) => s.kagariSpacing);
   const toTitle = useTemari((s) => s.toTitle);
   const setDivision = useTemari((s) => s.setDivision);
   const clearJiwari = useTemari((s) => s.clearJiwari);
@@ -170,6 +171,7 @@ function Workbench() {
   const setThreadWidth = useTemari((s) => s.setThreadWidth);
   const setKikuLayers = useTemari((s) => s.setKikuLayers);
   const setKagariDir = useTemari((s) => s.setKagariDir);
+  const setKagariSpacing = useTemari((s) => s.setKagariSpacing);
   const fillKiku = useTemari((s) => s.fillKiku);
   const setPeeking = useTemari((s) => s.setPeeking);
   const setPuzzle = useTemari((s) => s.setPuzzle);
@@ -178,6 +180,11 @@ function Workbench() {
 
   const palette = PALETTES[paletteId];
   const puzzle = PUZZLES[puzzleIndex];
+  const kikuCap = kikuCapacity(
+    pins.map((pin) => pin.p),
+    threadWidth,
+    KAGARI_SPACING_META[kagariSpacing].density,
+  );
   const complete =
     mode === "kata" && puzzle ? fillsMatch(fills, puzzle.target) : false;
 
@@ -299,43 +306,56 @@ function Workbench() {
                 ))}
               </div>
               {craft === "pin" && pins.length >= 3 ? (
-                <div className="flex items-center gap-1">
-                  {(["in", "out"] as KagariDir[]).map((id) => (
-                    <Seg
-                      key={id}
-                      active={kagariDir === id}
-                      onClick={() => setKagariDir(id)}
+                <>
+                  <div className="flex items-center gap-1">
+                    {(["in", "out"] as KagariDir[]).map((id) => (
+                      <Seg
+                        key={id}
+                        active={kagariDir === id}
+                        onClick={() => setKagariDir(id)}
+                      >
+                        {KAGARI_DIR_META[id].label}
+                      </Seg>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={fillKiku}
+                      className="min-h-10 flex-[1.4] rounded-full px-3 text-xs tracking-wide text-ink ring-1 ring-line"
                     >
-                      {KAGARI_DIR_META[id].label}
-                    </Seg>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={fillKiku}
-                    className="min-h-10 flex-[1.4] rounded-full px-3 text-xs tracking-wide text-ink ring-1 ring-line"
-                  >
-                    Залить
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Меньше слоёв"
-                    onClick={() => setKikuLayers(kikuLayers - 1)}
-                    className="flex size-10 items-center justify-center rounded-full text-stone ring-1 ring-line"
-                  >
-                    −
-                  </button>
-                  <span className="min-w-6 text-center text-xs tabular-nums text-ink">
-                    {kikuLayers}
-                  </span>
-                  <button
-                    type="button"
-                    aria-label="Больше слоёв"
-                    onClick={() => setKikuLayers(kikuLayers + 1)}
-                    className="flex size-10 items-center justify-center rounded-full text-stone ring-1 ring-line"
-                  >
-                    +
-                  </button>
-                </div>
+                      Залить
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Меньше рядов"
+                      onClick={() => setKikuLayers(kikuLayers - 1)}
+                      className="flex size-10 items-center justify-center rounded-full text-stone ring-1 ring-line"
+                    >
+                      −
+                    </button>
+                    <span className="min-w-10 text-center text-xs tabular-nums text-ink">
+                      {Math.min(kikuLayers, kikuCap.max)}/{kikuCap.max}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Больше рядов"
+                      onClick={() => setKikuLayers(kikuLayers + 1)}
+                      className="flex size-10 items-center justify-center rounded-full text-stone ring-1 ring-line"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="flex gap-1">
+                    {(["open", "even", "tight"] as KagariSpacing[]).map((id) => (
+                      <Seg
+                        key={id}
+                        active={kagariSpacing === id}
+                        onClick={() => setKagariSpacing(id)}
+                      >
+                        {KAGARI_SPACING_META[id].label}
+                      </Seg>
+                    ))}
+                  </div>
+                </>
               ) : null}
               {craft === "stitch" ? (
                 <div className="flex gap-1">
