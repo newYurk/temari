@@ -139,19 +139,25 @@ function stampDot(
   hex: string,
   width: number,
 ) {
-  const [u, v] = toUV(p);
+  const ay = Math.abs(p.y);
   ctx.fillStyle = hex;
   ctx.globalAlpha = 1;
-  const sinT = Math.max(0.14, Math.sqrt(Math.max(0, 1 - p.y * p.y)));
-  const ry = Math.max(1.8, width * 0.5);
-  const rx = Math.min(W * 0.46, ry / sinT);
-  for (const shift of [-1, 0, 1]) {
-    ctx.beginPath();
-    ctx.ellipse((u + shift) * W, v * H, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fill();
+  // Equirect smear at the poles is not a thread. Polar canvases own |y| ≳ 0.75.
+  if (ay < 0.76) {
+    const [u, v] = toUV(p);
+    const sinT = Math.max(0.42, Math.sqrt(Math.max(0, 1 - p.y * p.y)));
+    const ry = Math.max(1.6, width * 0.46);
+    const rx = Math.min(ry * 2.1, ry / sinT);
+    for (const shift of [-1, 0, 1]) {
+      ctx.beginPath();
+      ctx.ellipse((u + shift) * W, v * H, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
-  if (polarN) stampStereo(polarN, p, hex, width, true);
-  if (polarS) stampStereo(polarS, p, hex, width, false);
+  if (ay > 0.48) {
+    if (polarN) stampStereo(polarN, p, hex, width, true);
+    if (polarS) stampStereo(polarS, p, hex, width, false);
+  }
 }
 
 function strokeSeg(
@@ -293,7 +299,7 @@ export class WrapBuffer {
         hex,
         points: this.last && this.last.dot(p) > 0.2 ? [this.last.clone(), p] : [p],
       });
-      stampDot(this.ctx, p, hex, this.strokeWidth * 1.35);
+      stampDot(this.ctx, p, hex, this.strokeWidth);
       this.last = p;
       this.live = [p.clone()];
       this.liveColor = hex;
@@ -350,7 +356,7 @@ export class WrapBuffer {
     }
     if (this.strands.length >= MAX_STRANDS) this.strands.shift();
     this.strands.push({ color, hex, points: [p] });
-    stampDot(this.ctx, p, hex, this.strokeWidth * 1.35);
+    stampDot(this.ctx, p, hex, this.strokeWidth);
     this.last = p;
     this.live = [p.clone()];
     this.liveColor = hex;
@@ -387,7 +393,7 @@ export class WrapBuffer {
         if (a && b) stroke(this.ctx, a, b, strand.hex, this.strokeWidth);
       }
       const first = strand.points[0];
-      if (first) stampDot(this.ctx, first, strand.hex, this.strokeWidth * 1.35);
+      if (first) stampDot(this.ctx, first, strand.hex, this.strokeWidth);
     }
     const last = this.strands[this.strands.length - 1];
     this.last = last?.points[last.points.length - 1] ?? null;

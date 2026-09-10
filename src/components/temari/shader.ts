@@ -82,18 +82,10 @@ void main() {
 
   vec3 col = uCore;
 
-  float ay = abs(nL.y);
   float wu = atan(nL.x, nL.z) / 6.28318530718 + 0.5;
   float wv = clamp(0.5 - asin(clamp(nL.y, -1.0, 1.0)) / 3.14159265359, 0.0015, 0.9985);
   vec4 wool = texture2D(uWool, vec2(wu, wv));
   col = mix(col, wool.rgb, clamp(wool.a, 0.0, 1.0) * 0.9);
-  float cap = smoothstep(0.78, 0.94, ay);
-  if (cap > 0.0) {
-    vec3 felt = vec3(0.775, 0.728, 0.658);
-    float n = fract(sin(dot(nL, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
-    felt *= 0.93 + 0.1 * n;
-    col = mix(col, felt, cap);
-  }
   if (fill >= 0.0 && fill < 0.5) col = uPalette[0];
   else if (fill >= 0.5 && fill < 1.5) col = uPalette[1];
   else if (fill >= 1.5 && fill < 2.5) col = uPalette[2];
@@ -102,8 +94,8 @@ void main() {
   vec4 wcol = vec4(0.0);
   if (uWrapOn > 0.5) {
     wcol = texture2DLodEXT(uWrap, vec2(wu, wv), 0.0);
-    float capN = smoothstep(0.7, 0.88, nL.y);
-    float capS = smoothstep(0.7, 0.88, -nL.y);
+    float capN = smoothstep(0.58, 0.8, nL.y);
+    float capS = smoothstep(0.58, 0.8, -nL.y);
     if (capN > 0.0) {
       vec2 pn = vec2(0.5) + nL.xz * (0.5 / max(1e-4, 1.0 + nL.y));
       wcol = mix(wcol, texture2DLodEXT(uWrapN, pn, 0.0), capN);
