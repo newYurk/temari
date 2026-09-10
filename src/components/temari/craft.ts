@@ -32,7 +32,7 @@ const H = 768;
 const PW = 512;
 const MIN_DOT = 0.9994;
 const MAX_LIVE = 400;
-const MAX_STRANDS = 160;
+const MAX_STRANDS = 560;
 const MAX_JOINS = 16;
 const POINTS_PER_STRAND = 6000;
 const TWO_PI = Math.PI * 2;
@@ -605,7 +605,7 @@ export class MariWinder {
     this.axis.applyQuaternion(this.q).normalize();
     this.keepOnEquator();
     this.band += this.tilt;
-    if (this.band > 0.38) this.newBand();
+    if (this.band > 0.22) this.newBand();
   }
 
   /** Next equator is far from the last — Fibonacci on S², not a precession cone. */
@@ -613,8 +613,8 @@ export class MariWinder {
     this.bandIndex += 1;
     const i = this.bandIndex;
     const golden = Math.PI * (3 - Math.sqrt(5));
-    const n = 13;
-    const y = 1 - ((2 * ((i * 5) % n) + 1) / n);
+    const n = 21;
+    const y = 1 - ((2 * ((i * 8) % n) + 1) / n);
     const r = Math.sqrt(Math.max(0, 1 - y * y));
     const theta = i * golden;
     this.axis.set(Math.cos(theta) * r, y, Math.sin(theta) * r).normalize();
@@ -678,8 +678,8 @@ export class MariWinder {
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
     let guard = 0;
-    while (this.cover < 0.96 && guard < 18) {
-      this.advance(buffer, TWO_PI * 20, color, hex, 0.08);
+    while (this.cover < 0.93 && guard < 26) {
+      this.advance(buffer, TWO_PI * 22, color, hex, 0.07);
       this.cover = buffer.sampleCoverage();
       guard++;
     }
