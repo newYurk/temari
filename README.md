@@ -1,7 +1,7 @@
 # Темари
 
-Нить на сфере. Намотка вокруг или спиралью от булавки-начала, булавки, стежок.
+Нить на сфере.
 
-**Сайт:** https://newyurk.github.io/temari/
+**Играть:** https://newyurk.github.io/temari/
 
-Исходники — в `src/components/temari`. Сборка для GitHub Pages — в `docs/`.
+Исходники — в `src/`. Сборка для GitHub Pages — `index.html` в корне (и копия в `docs/`).
