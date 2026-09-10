@@ -78,6 +78,12 @@ function TitleLayer() {
           >
             Пример кику
           </Button>
+          <a
+            href="./design.html"
+            className="inline-flex h-9 items-center px-2 text-xs tracking-wide text-stone underline-offset-4 hover:text-ink hover:underline"
+          >
+            схема нити
+          </a>
           <Button
             variant="ghost"
             className="text-ink ring-line hover:bg-ink/5"
