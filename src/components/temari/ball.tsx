@@ -105,11 +105,11 @@ function WrapYarn({
       dashed: false,
       toneMapped: true,
       depthTest: true,
-      depthWrite: true,
+      depthWrite: false,
     });
     const mesh = new LineSegments2(new LineSegmentsGeometry(), mat);
     mesh.frustumCulled = false;
-    mesh.renderOrder = 2;
+    mesh.renderOrder = 4;
     return mesh;
   }, []);
   const { size } = useThree();
@@ -726,7 +726,7 @@ export function Ball() {
         ref={nodesMesh}
         args={[undefined, undefined, 80]}
         frustumCulled={false}
-        visible={mode === "studio" && craft === "pin" && layerDone}
+        visible={mode === "studio" && craft === "pin" && layerDone && jiwariOn}
         count={nodes.length}
       >
         <sphereGeometry args={[0.012, 10, 8]} />

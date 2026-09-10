@@ -219,6 +219,7 @@ export class WrapBuffer {
   strokeWidth = 9;
   joins: THREE.Vector3[] = [];
   covered = 0;
+  paint = true;
 
   constructor() {
     this.canvas = document.createElement("canvas");
@@ -283,7 +284,7 @@ export class WrapBuffer {
       if (this.last) {
         if (this.joins.length >= MAX_JOINS) this.joins.shift();
         this.joins.push(this.last.clone());
-        if (this.last.dot(p) > 0.2) {
+        if (this.last.dot(p) > 0.2 && this.paint) {
           stroke(this.ctx, this.last, p, hex, this.strokeWidth);
         }
       }
@@ -293,12 +294,8 @@ export class WrapBuffer {
         hex,
         points: this.last && this.last.dot(p) > 0.2 ? [this.last.clone(), p] : [p],
       });
-      stampDot(this.ctx, p, hex, this.strokeWidth);
+      if (this.paint) stampDot(this.ctx, p, hex, this.strokeWidth);
       this.last = p;
-      this.live = [p.clone()];
-      this.liveColor = hex;
-      this.markDirty();
-      return true;
     }
     if (this.last && this.last.dot(p) > MIN_DOT) return false;
     if (this.last) {
@@ -308,7 +305,7 @@ export class WrapBuffer {
       for (let i = 1; i <= steps; i++) {
         slerpOnto(origin, p, i / steps, _segP);
         const q = _segP.clone();
-        stroke(this.ctx, this.last, q, hex, this.strokeWidth);
+        if (this.paint) stroke(this.ctx, this.last, q, hex, this.strokeWidth);
         current.points.push(q);
         this.live.push(q);
         this.last = q;
@@ -350,7 +347,7 @@ export class WrapBuffer {
     }
     if (this.strands.length >= MAX_STRANDS) this.strands.shift();
     this.strands.push({ color, hex, points: [p] });
-    stampDot(this.ctx, p, hex, this.strokeWidth);
+    if (this.paint) stampDot(this.ctx, p, hex, this.strokeWidth);
     this.last = p;
     this.live = [p.clone()];
     this.liveColor = hex;
@@ -677,12 +674,14 @@ export class MariWinder {
   }
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
-    const n = 320;
+    const n = 480;
+    buffer.paint = false;
     for (let i = 0; i < n; i++) {
       this.aimAxis(i, n);
       buffer.relocate(this.dir, color, hex);
       this.layCircle(buffer, color, hex);
     }
+    buffer.paint = true;
     this.cover = 1;
   }
 
