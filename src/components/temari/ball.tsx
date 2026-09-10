@@ -16,13 +16,10 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import { createTemariMaterial, syncTemariMaterial } from "./shader";
-import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
-import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
-import { LineMaterial } from "three/addons/lines/LineMaterial.js";
-import { createMotifGeometry, createWrapLineGeometry, getYarnTexture } from "./stitches";
+import { createMotifGeometry, createWrapGeometry, getYarnTexture } from "./stitches";
 import { useTemari } from "./store";
 import * as feel from "./feel";
-import { DEFAULT_KIND, threadMetalness, threadRoughness, wrapLineWidth, type ThreadKind } from "./thread";
+import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
 import { jiwariMarkColor, jiwariStitches } from "./jiwari";
 
 const pointer = { x: 0, y: 0, down: false, dragged: false };
@@ -97,57 +94,52 @@ function WrapYarn({
   color: string;
   width: number;
 }) {
-  const line = useMemo(() => {
-    const mat = new LineMaterial({
+  const mesh = useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
       color,
-      linewidth: width,
-      worldUnits: true,
-      dashed: false,
-      toneMapped: true,
-      depthTest: true,
-      depthWrite: false,
+      map: getYarnTexture(),
+      roughness: 0.58,
+      metalness: 0.05,
     });
-    const mesh = new LineSegments2(new LineSegmentsGeometry(), mat);
-    mesh.frustumCulled = false;
-    mesh.renderOrder = 4;
-    return mesh;
+    const m = new THREE.Mesh(new THREE.BufferGeometry(), mat);
+    m.frustumCulled = false;
+    m.renderOrder = 4;
+    return m;
   }, []);
-  const { size } = useThree();
   const last = useRef("");
   useLayoutEffect(() => {
-    const mat = line.material as LineMaterial;
-    mat.resolution.set(size.width, size.height);
-  }, [line, size]);
-  useLayoutEffect(() => {
-    const mat = line.material as LineMaterial;
-    mat.color.set(color);
-    mat.linewidth = width;
-  }, [line, color, width]);
+    (mesh.material as THREE.MeshStandardMaterial).color.set(color);
+  }, [mesh, color]);
   useLayoutEffect(() => {
     const strands = wrap.yarn().map((s) => s.points);
-    const key = `${strands.length}:${strands.reduce((n, pts) => n + pts.length, 0)}`;
+    const key = `${strands.length}:${width.toFixed(2)}`;
     if (key === last.current) return;
     last.current = key;
-    const geo = createWrapLineGeometry(strands);
+    const geo = createWrapGeometry(strands, width);
     if (!geo) return;
-    const prev = line.geometry;
-    line.geometry = geo;
+    const prev = mesh.geometry;
+    mesh.geometry = geo;
     if (prev && prev !== geo) prev.dispose();
   });
   useEffect(() => {
     return () => {
-      line.geometry.dispose();
-      (line.material as LineMaterial).dispose();
+      mesh.geometry.dispose();
+      (mesh.material as THREE.MeshStandardMaterial).dispose();
     };
-  }, [line]);
-  return <primitive object={line} />;
+  }, [mesh]);
+  return <primitive object={mesh} />;
 }
 
 function WrapCover({ color }: { color: string }) {
+  const under = useMemo(() => {
+    const c = new THREE.Color(color);
+    c.offsetHSL(0, 0, -0.12);
+    return `#${c.getHexString()}`;
+  }, [color]);
   return (
     <mesh frustumCulled={false} renderOrder={3}>
-      <sphereGeometry args={[0.998, 96, 64]} />
-      <meshStandardMaterial color={color} roughness={0.9} metalness={0.03} />
+      <sphereGeometry args={[0.982, 96, 64]} />
+      <meshStandardMaterial color={under} roughness={0.92} metalness={0.02} />
     </mesh>
   );
 }
@@ -663,7 +655,7 @@ export function Ball() {
       {mode === "title" || layerDone ? (
         <WrapCover color={wrapHex} />
       ) : null}
-      <WrapYarn wrap={wrap} color={wrapHex} width={wrapLineWidth(threadWidth)} />
+      <WrapYarn wrap={wrap} color={wrapHex} width={threadWidth} />
 
       {markStitches.length > 0 ? (
         <ThreadLayer

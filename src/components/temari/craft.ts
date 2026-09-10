@@ -37,6 +37,13 @@ const MAX_JOINS = 16;
 const POINTS_PER_STRAND = 6000;
 const TWO_PI = Math.PI * 2;
 
+/** Yarn → fingering → sewing. Crossing directions, thick under thin. */
+export const WRAP_LAYERS = [
+  { per: 28, step: 0.12, radius: 0.016, shell: 0.987 },
+  { per: 40, step: 0.085, radius: 0.009, shell: 0.996 },
+  { per: 64, step: 0.052, radius: 0.0044, shell: 1.004 },
+] as const;
+
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
@@ -689,24 +696,21 @@ export class MariWinder {
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
     buffer.paint = false;
-    const step = 0.014;
-    const layers = 2;
-    const per = 230;
     const ref = new THREE.Vector3();
-    for (let layer = 0; layer < layers; layer++) {
-      const t = 0.55 + layer * 1.17;
-      this.axis.set(Math.cos(t), Math.sin(t * 0.4), Math.sin(t)).normalize();
-      ref.set(Math.sin(t * 0.8), Math.cos(t), Math.cos(t * 0.8));
+    WRAP_LAYERS.forEach((layer, li) => {
+      const t = 0.4 + li * 1.21;
+      this.axis.set(Math.cos(t), Math.sin(t * 0.45), Math.sin(t)).normalize();
+      ref.set(Math.sin(t * 0.9), Math.cos(t), Math.cos(t * 0.7));
       this.dir.crossVectors(this.axis, ref).normalize();
-      for (let i = 0; i < per; i++) {
+      for (let i = 0; i < layer.per; i++) {
         buffer.addClosedCircle(this.axis, this.dir, color, hex);
-        this.axis.applyAxisAngle(this.dir, step);
+        this.axis.applyAxisAngle(this.dir, layer.step);
         this.axis.normalize();
         this.tmp.crossVectors(this.axis, this.dir);
         if (this.tmp.lengthSq() < 1e-8) this.tmp.set(0, 1, 0);
         this.dir.crossVectors(this.tmp, this.axis).normalize();
       }
-    }
+    });
     buffer.paint = true;
     this.cover = 1;
   }

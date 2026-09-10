@@ -3,6 +3,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import type { Stitch } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth } from "./thread";
+import { WRAP_LAYERS } from "./craft";
 
 const ARC_SEGS = 16;
 const LIFT = 1.012;
@@ -200,20 +201,25 @@ export function createMotifGeometry(
   return merged;
 }
 
-/** Round thread hugging the mari. Centerline stays on a sphere so
- *  Catmull-Rom cannot overshoot into the air. */
+/** Round threads in three shells: yarn under, sewing on top. */
 export function createWrapGeometry(
   strands: THREE.Vector3[][],
   width: number,
 ): THREE.BufferGeometry | null {
   const parts: THREE.BufferGeometry[] = [];
-  const radius = Math.min(0.007, Math.max(0.004, width * 0.38));
-  const shell = 1.002;
-  for (const pts of strands) {
-    if (pts.length < 2) continue;
-    const lifted = pts.map((p) => p.clone().normalize().multiplyScalar(shell));
-    parts.push(tubeOnSphere(lifted, radius));
-  }
+  const slider = Math.max(0, Math.min(1, width));
+  let cursor = 0;
+  WRAP_LAYERS.forEach((layer) => {
+    const radius = layer.radius * (0.82 + slider * 0.45);
+    const end = Math.min(strands.length, cursor + layer.per);
+    for (let i = cursor; i < end; i++) {
+      const pts = strands[i];
+      if (!pts || pts.length < 2) continue;
+      const lifted = pts.map((p) => p.clone().normalize().multiplyScalar(layer.shell));
+      parts.push(tubeOnSphere(lifted, radius));
+    }
+    cursor = end;
+  });
   if (parts.length === 0) return null;
   const merged = mergeGeometries(parts, false);
   for (const geo of parts) geo.dispose();
