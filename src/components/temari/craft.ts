@@ -354,6 +354,20 @@ export class WrapBuffer {
     this.markDirty();
   }
 
+  addClosedCircle(axis: THREE.Vector3, start: THREE.Vector3, color: number, hex: string) {
+    const n = 48;
+    const pts: THREE.Vector3[] = [];
+    const p = start.clone().normalize();
+    const q = new THREE.Quaternion();
+    for (let i = 0; i <= n; i++) {
+      q.setFromAxisAngle(axis, (i / n) * TWO_PI);
+      pts.push(p.clone().applyQuaternion(q).normalize());
+    }
+    if (this.strands.length >= MAX_STRANDS) this.strands.shift();
+    this.strands.push({ color, hex, points: pts });
+    this.last = pts[pts.length - 1] ?? null;
+  }
+
   undo() {
     this.strands.pop();
     this.joins.pop();
@@ -675,28 +689,22 @@ export class MariWinder {
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
     buffer.paint = false;
-    const width = 0.036;
+    const step = 0.014;
     const layers = 2;
-    const per = 28;
-    const wander = new THREE.Vector3();
+    const per = 230;
+    const ref = new THREE.Vector3();
     for (let layer = 0; layer < layers; layer++) {
-      const t = layer * 1.13;
-      wander.set(Math.sin(t), Math.cos(t * 0.71), Math.cos(t)).normalize();
-      this.axis.set(Math.cos(t * 0.4), Math.sin(t * 0.55), Math.sin(t * 0.4)).normalize();
+      const t = 0.55 + layer * 1.17;
+      this.axis.set(Math.cos(t), Math.sin(t * 0.4), Math.sin(t)).normalize();
+      ref.set(Math.sin(t * 0.8), Math.cos(t), Math.cos(t * 0.8));
+      this.dir.crossVectors(this.axis, ref).normalize();
       for (let i = 0; i < per; i++) {
-        this.dir.crossVectors(this.axis, wander);
-        if (this.dir.lengthSq() < 1e-6) {
-          wander.set(1, 0, 0);
-          this.dir.crossVectors(this.axis, wander);
-        }
-        this.dir.normalize();
-        this.arc = 0;
-        buffer.relocate(this.dir, color, hex);
-        this.layCircle(buffer, color, hex);
-        this.axis.applyAxisAngle(wander, width);
+        buffer.addClosedCircle(this.axis, this.dir, color, hex);
+        this.axis.applyAxisAngle(this.dir, step);
         this.axis.normalize();
-        wander.applyAxisAngle(this.axis, width * 0.31);
-        wander.normalize();
+        this.tmp.crossVectors(this.axis, this.dir);
+        if (this.tmp.lengthSq() < 1e-8) this.tmp.set(0, 1, 0);
+        this.dir.crossVectors(this.tmp, this.axis).normalize();
       }
     }
     buffer.paint = true;
@@ -719,7 +727,7 @@ export class MariWinder {
 
   /** One closed great circle. Caller relocates first so we don't skip. */
   private layCircle(buffer: WrapBuffer, color: number, hex: string) {
-    const h0 = 0.07;
+    const h0 = 0.11;
     let left = TWO_PI;
     while (left > 1e-6) {
       const h = Math.min(h0, left);
