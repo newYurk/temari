@@ -291,51 +291,39 @@ vec3 wrapAxis(int i, int n, float seed) {
   float k = fract(sin((float(i) + seed) * 269.5) * 43758.5453);
   vec3 t = normalize(cross(a, vec3(0.17, 0.93, 0.31)));
   vec3 b = normalize(cross(a, t));
-  return normalize(a + (t * (h - 0.5) + b * (k - 0.5)) * 0.05);
+  return normalize(a + (t * (h - 0.5) + b * (k - 0.5)) * 0.07);
 }
 
-float strand(vec3 p, vec3 ax, float w) {
-  float d = abs(dot(p, ax));
-  return smoothstep(w, w * 0.12, d);
-}
-
-float layer(vec3 p, int n, float w, float seed) {
-  float acc = 0.0;
-  for (int i = 0; i < 96; i++) {
+void paintLayer(inout vec3 col, vec3 p, int n, float w, float seed, float lo, float hi) {
+  for (int i = 0; i < 128; i++) {
     if (i >= n) break;
-    acc += strand(p, wrapAxis(i, n, seed), w);
+    vec3 ax = wrapAxis(i, n, seed);
+    float d = abs(dot(p, ax));
+    float t = d / max(w, 0.0008);
+    float mask = 1.0 - smoothstep(0.88, 1.0, t);
+    float round = sqrt(max(0.0, 1.0 - min(t * t, 1.0)));
+    float dye = mix(lo, hi, fract(sin((float(i) + seed) * 419.2) * 43758.5453));
+    vec3 thread = uColor * dye * mix(0.90, 1.06, round);
+    col = mix(col, thread, mask);
   }
-  return acc;
 }
 
 void main() {
   vec3 p = normalize(vL);
   vec3 n = normalize(vN);
   float slider = clamp(uWidth, 0.0, 1.0);
-  float yarn = layer(p, 96, mix(0.018, 0.028, slider), 0.13);
-  float mid = layer(p, 96, mix(0.010, 0.016, slider), 1.71);
-  float sew = layer(p, 80, mix(0.005, 0.008, slider), 2.94);
-  float layers = yarn + mid + sew;
-  float cover = 1.0 - exp(-layers * 0.85);
-  float ridge = layers / (layers + 2.2);
-  vec3 groove = uColor * 0.68;
-  vec3 crown = uColor * 1.06;
-  vec3 col = mix(groove, crown, ridge);
-  col = mix(groove, col, max(cover, 0.92));
-  vec3 an = abs(p);
-  vec3 tw = an / max(an.x + an.y + an.z, 0.001);
-  float nap = texture2D(uThread, p.yz * 40.0).r * tw.x
-            + texture2D(uThread, p.xz * 40.0).r * tw.y
-            + texture2D(uThread, p.xy * 40.0).r * tw.z;
-  col *= 0.93 + 0.10 * nap;
-  vec3 Nn = normalize(n + p * (ridge * 0.22));
+  vec3 col = uColor * 0.90;
+  paintLayer(col, p, 96, mix(0.012, 0.016, slider), 0.13, 0.84, 0.96);
+  paintLayer(col, p, 96, mix(0.008, 0.011, slider), 1.71, 0.88, 1.02);
+  paintLayer(col, p, 128, mix(0.0052, 0.0070, slider), 2.94, 0.92, 1.08);
+  paintLayer(col, p, 128, mix(0.0046, 0.0062, slider), 4.17, 0.94, 1.10);
   vec3 L = normalize(vec3(0.46, 0.82, 0.52));
   vec3 L2 = normalize(vec3(-0.55, 0.22, -0.28));
   vec3 V = normalize(uCamPos - vW);
-  float ndl = max(dot(Nn, L), 0.0);
-  float ndl2 = max(dot(Nn, L2), 0.0);
-  float lit = 0.70 + 0.24 * ndl + 0.08 * ndl2;
-  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.8) * 0.035;
+  float ndl = max(dot(n, L), 0.0);
+  float ndl2 = max(dot(n, L2), 0.0);
+  float lit = 0.78 + 0.16 * ndl + 0.06 * ndl2;
+  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.8) * 0.025;
   gl_FragColor = vec4(col * lit + rim * col, 1.0);
 }
 `;
