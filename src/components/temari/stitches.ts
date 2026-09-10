@@ -4,7 +4,7 @@ import type { Stitch } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth } from "./thread";
 
 const ARC_SEGS = 16;
-const LIFT = 1.022;
+const LIFT = 1.012;
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -199,19 +199,19 @@ export function createMotifGeometry(
   return merged;
 }
 
-/** Round thread on the mari — a ribbon pinches when seen edge-on. */
+/** Round thread hugging the mari. Centerline stays on a sphere so
+ *  Catmull-Rom cannot overshoot into the air. */
 export function createWrapGeometry(
   strands: THREE.Vector3[][],
   width: number,
 ): THREE.BufferGeometry | null {
   const parts: THREE.BufferGeometry[] = [];
-  const radius = Math.max(0.004, width * 0.5);
+  const radius = Math.min(0.007, Math.max(0.004, width * 0.38));
+  const shell = 1.002;
   for (const pts of strands) {
     if (pts.length < 2) continue;
-    const lifted = pts.map((p) =>
-      p.clone().normalize().multiplyScalar(1.0 + radius + 0.004),
-    );
-    parts.push(tubeFromPoints(lifted, radius));
+    const lifted = pts.map((p) => p.clone().normalize().multiplyScalar(shell));
+    parts.push(tubeOnSphere(lifted, radius));
   }
   if (parts.length === 0) return null;
   const merged = mergeGeometries(parts, false);
@@ -221,8 +221,28 @@ export function createWrapGeometry(
   return merged;
 }
 
-function tubeFromPoints(pts: THREE.Vector3[], radius: number) {
-  const curve = new THREE.CatmullRomCurve3(pts, false, "centripetal");
+class SpherePolyline extends THREE.Curve<THREE.Vector3> {
+  constructor(private pts: THREE.Vector3[]) {
+    super();
+  }
+  getPoint(t: number, optionalTarget = new THREE.Vector3()) {
+    const pts = this.pts;
+    const n = pts.length - 1;
+    if (n < 1) return optionalTarget.set(1, 0, 0);
+    const f = Math.max(0, Math.min(1, t)) * n;
+    const i = Math.min(n - 1, Math.floor(f));
+    const u = f - i;
+    const a = pts[i];
+    const b = pts[i + 1];
+    if (!a) return optionalTarget.set(1, 0, 0);
+    if (!b) return optionalTarget.copy(a);
+    const r = a.length();
+    return optionalTarget.lerpVectors(a, b, u).normalize().multiplyScalar(r);
+  }
+}
+
+function tubeOnSphere(pts: THREE.Vector3[], radius: number) {
+  const curve = new SpherePolyline(pts);
   const segs = Math.max(12, pts.length);
   return new THREE.TubeGeometry(curve, segs, radius, 5, false);
 }

@@ -115,15 +115,15 @@ function WrapYarn({
     };
   }, []);
   return (
-    <mesh ref={mesh} frustumCulled={false} renderOrder={4}>
+    <mesh ref={mesh} frustumCulled={false} renderOrder={2}>
       <meshStandardMaterial
         map={yarn}
         color={color}
         roughness={threadRoughness("serger")}
         metalness={threadMetalness("serger")}
         polygonOffset
-        polygonOffsetFactor={-3}
-        polygonOffsetUnits={-3}
+        polygonOffsetFactor={2}
+        polygonOffsetUnits={2}
       />
     </mesh>
   );

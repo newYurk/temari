@@ -83,7 +83,7 @@ export function jiwariStitches(division: Division, color = 1): Stitch[] {
     kind: "loop" as const,
     points: circle(n),
     color,
-    lift: 0.028,
+    lift: 0.006,
   }));
 }
 
