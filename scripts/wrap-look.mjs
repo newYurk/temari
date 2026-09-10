@@ -22,11 +22,15 @@ await page.waitForTimeout(1800);
 await page.screenshot({ path: `${out}/look-title.png` });
 
 await page.getByRole("button", { name: "Намотать базу" }).click();
-await page.waitForTimeout(1400);
+await page.waitForTimeout(2800);
 const netBtn = page.getByRole("button", { name: "Нет" });
 if (await netBtn.count()) await netBtn.click();
-await page.waitForTimeout(300);
+await page.waitForTimeout(400);
 await page.screenshot({ path: `${out}/look-net.png` });
+const sewBtn = page.getByRole("button", { name: "Нить", exact: true });
+if (await sewBtn.count()) await sewBtn.click();
+await page.waitForTimeout(2500);
+await page.screenshot({ path: `${out}/look-sew.png` });
 
 await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
 await page.waitForTimeout(800);
@@ -39,4 +43,4 @@ await page.waitForTimeout(300);
 await page.screenshot({ path: `${out}/look-beige.png` });
 
 await browser.close();
-console.log("wrote look-title.png look-net.png look-beige.png");
+console.log("wrote look-title.png look-net.png look-sew.png look-beige.png");

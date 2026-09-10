@@ -201,6 +201,8 @@ function Workbench() {
   const threadWidth = useTemari((s) => s.threadWidth);
   const wrapStarted = useTemari((s) => s.wrapStarted);
   const layerDone = useTemari((s) => s.layerDone);
+  const wrapPass = useTemari((s) => s.wrapPass);
+  const setWrapPass = useTemari((s) => s.setWrapPass);
   const jiwariOn = useTemari((s) => s.jiwariOn);
   const kikuLayers = useTemari((s) => s.kikuLayers);
   const kagariDir = useTemari((s) => s.kagariDir);
@@ -333,6 +335,13 @@ function Workbench() {
 
           {mode === "studio" && layerDone ? (
             <>
+              <div className="flex gap-1">
+                {([1, 2, 3] as const).map((n) => (
+                  <Seg key={n} active={wrapPass === n} onClick={() => setWrapPass(n)}>
+                    {n === 1 ? "Пряжа" : n === 2 ? "Тоньше" : "Нить"}
+                  </Seg>
+                ))}
+              </div>
               <div className="flex gap-1">
                 {(["pin", "stitch"] as Craft[]).map((id) => (
                   <Seg key={id} active={craft === id} onClick={() => setCraft(id)}>

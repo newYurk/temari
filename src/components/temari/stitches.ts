@@ -201,16 +201,18 @@ export function createMotifGeometry(
   return merged;
 }
 
-/** Round threads in three shells: yarn under, sewing on top. */
+/** Round threads: yarn under, sewing on top. `pass` 1–3 = how many layers. */
 export function createWrapGeometry(
   strands: THREE.Vector3[][],
   width: number,
+  pass = 3,
 ): THREE.BufferGeometry | null {
   const parts: THREE.BufferGeometry[] = [];
   const slider = Math.max(0, Math.min(1, width));
   let cursor = 0;
-  WRAP_LAYERS.forEach((layer) => {
-    const radius = layer.radius * (0.82 + slider * 0.45);
+  const layers = WRAP_LAYERS.slice(0, Math.max(1, Math.min(3, pass)));
+  layers.forEach((layer) => {
+    const radius = layer.radius * (0.88 + slider * 0.28);
     const end = Math.min(strands.length, cursor + layer.per);
     for (let i = cursor; i < end; i++) {
       const pts = strands[i];

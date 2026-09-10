@@ -173,6 +173,7 @@ type TemariState = {
   threadWidth: number;
   wrapStarted: boolean;
   layerDone: boolean;
+  wrapPass: 1 | 2 | 3;
   kikuLayers: number;
   kagariDir: KagariDir;
   kagariSpacing: KagariSpacing;
@@ -206,6 +207,7 @@ type TemariState = {
   setWrapStarted: () => void;
   setThreadWidth: (n: number) => void;
   finishLayer: () => void;
+  setWrapPass: (pass: 1 | 2 | 3) => void;
   setKikuLayers: (n: number) => void;
   setKagariDir: (dir: KagariDir) => void;
   setKagariSpacing: (spacing: KagariSpacing) => void;
@@ -274,6 +276,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   threadWidth: 0.42,
   wrapStarted: false,
   layerDone: false,
+  wrapPass: 3,
   kikuLayers: 8,
   kagariDir: "in",
   kagariSpacing: "even",
@@ -308,6 +311,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       hoverSlot: null,
       wrapProgress: 1,
       layerDone: true,
+      wrapPass: 1,
       wrapStarted: true,
       wrapResetNonce: get().wrapResetNonce + 1,
       wrapCount: 1,
@@ -354,6 +358,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   toTitle: () => {
     set({
       mode: "title",
+      wrapPass: 3,
       division: "simple",
       paletteId: "beni",
       motif: "kiku",
@@ -681,12 +686,17 @@ export const useTemari = create<TemariState>((set, get) => ({
     feel.layer();
     set({
       layerDone: true,
+      wrapPass: 1,
       craft: "pin",
       wrapSeed: "full",
       wrapProgress: 1,
       jiwariOn: false,
       pins: [],
     });
+  },
+  setWrapPass: (pass) => {
+    const n = (pass < 1 ? 1 : pass > 3 ? 3 : pass) as 1 | 2 | 3;
+    set({ wrapPass: n });
   },
   setKikuLayers: (n) => {
     const max = Math.max(1, currentCap(get()).max);

@@ -89,10 +89,12 @@ function WrapYarn({
   wrap,
   color,
   width,
+  pass,
 }: {
   wrap: WrapBuffer;
   color: string;
   width: number;
+  pass: number;
 }) {
   const mesh = useMemo(() => {
     const mat = new THREE.MeshStandardMaterial({
@@ -112,10 +114,10 @@ function WrapYarn({
   }, [mesh, color]);
   useLayoutEffect(() => {
     const strands = wrap.yarn().map((s) => s.points);
-    const key = `${strands.length}:${width.toFixed(2)}`;
+    const key = `${strands.length}:${width.toFixed(2)}:${pass}`;
     if (key === last.current) return;
     last.current = key;
-    const geo = createWrapGeometry(strands, width);
+    const geo = createWrapGeometry(strands, width, pass);
     if (!geo) return;
     const prev = mesh.geometry;
     mesh.geometry = geo;
@@ -131,15 +133,10 @@ function WrapYarn({
 }
 
 function WrapCover({ color }: { color: string }) {
-  const under = useMemo(() => {
-    const c = new THREE.Color(color);
-    c.offsetHSL(0, 0, -0.12);
-    return `#${c.getHexString()}`;
-  }, [color]);
   return (
     <mesh frustumCulled={false} renderOrder={3}>
-      <sphereGeometry args={[0.982, 96, 64]} />
-      <meshStandardMaterial color={under} roughness={0.92} metalness={0.02} />
+      <sphereGeometry args={[0.986, 96, 64]} />
+      <meshStandardMaterial color={color} roughness={0.88} metalness={0.03} />
     </mesh>
   );
 }
@@ -187,6 +184,7 @@ export function Ball() {
   const wrapUndoNonce = useTemari((s) => s.wrapUndoNonce);
   const wrapResetNonce = useTemari((s) => s.wrapResetNonce);
   const layerDone = useTemari((s) => s.layerDone);
+  const wrapPass = useTemari((s) => s.wrapPass);
   const jiwariOn = useTemari((s) => s.jiwariOn);
   const wrapSeed = useTemari((s) => s.wrapSeed);
   const threadWidth = useTemari((s) => s.threadWidth);
@@ -631,7 +629,7 @@ export function Ball() {
           if (snapGhost.current) snapGhost.current.visible = false;
         }}
       >
-        <sphereGeometry args={[0.985, 96, 64]} />
+        <sphereGeometry args={[0.96, 96, 64]} />
         <primitive object={material} attach="material" />
       </mesh>
 
@@ -655,7 +653,12 @@ export function Ball() {
       {mode === "title" || layerDone ? (
         <WrapCover color={wrapHex} />
       ) : null}
-      <WrapYarn wrap={wrap} color={wrapHex} width={threadWidth} />
+      <WrapYarn
+        wrap={wrap}
+        color={wrapHex}
+        width={threadWidth}
+        pass={mode === "title" ? 3 : wrapPass}
+      />
 
       {markStitches.length > 0 ? (
         <ThreadLayer

@@ -37,12 +37,64 @@ const MAX_JOINS = 16;
 const POINTS_PER_STRAND = 6000;
 const TWO_PI = Math.PI * 2;
 
-/** Yarn → fingering → sewing. Crossing directions, thick under thin. */
-export const WRAP_LAYERS = [
-  { per: 28, step: 0.12, radius: 0.016, shell: 0.987 },
-  { per: 40, step: 0.085, radius: 0.009, shell: 0.996 },
-  { per: 64, step: 0.052, radius: 0.0044, shell: 1.004 },
-] as const;
+/**
+ * Unit mari = 24 cm circumference (TemariKai 23–24 cm).
+ * n = ceil(π / (d / overlap)) wander wraps to cover: each turn
+ * offsets by ~thread diameter, a half-turn of the axis covers the ball.
+ */
+export const MARI_C_CM = 24;
+export const MARI_R_CM = MARI_C_CM / (2 * Math.PI);
+
+function unitFromMm(mm: number) {
+  return mm / 10 / MARI_R_CM;
+}
+
+function coverWraps(diameter: number, overlap = 1.12) {
+  return Math.ceil(Math.PI / (diameter / overlap));
+}
+
+type WrapLayer = {
+  id: "yarn" | "fine" | "sew";
+  mm: number;
+  diameter: number;
+  per: number;
+  step: number;
+  radius: number;
+  shell: number;
+};
+
+function makeLayer(
+  id: WrapLayer["id"],
+  mm: number,
+  shell: number,
+  visualCap?: number,
+): WrapLayer {
+  const diameter = unitFromMm(mm);
+  const step = diameter / 1.12;
+  const need = coverWraps(diameter);
+  const per = visualCap ? Math.min(need, visualCap) : need;
+  return {
+    id,
+    mm,
+    diameter,
+    per,
+    step,
+    radius: diameter * 0.5,
+    shell,
+  };
+}
+
+/** 1 пряжа 3.2 mm → 2 тонкая 1.4 mm → 3 швейная 0.3 mm. */
+export const WRAP_LAYERS: readonly WrapLayer[] = [
+  makeLayer("yarn", 3.2, 0.988),
+  makeLayer("fine", 1.4, 0.997),
+  makeLayer("sew", 0.3, 1.006, 96),
+];
+
+export function wrapLayerEnd(pass: number) {
+  const n = Math.max(1, Math.min(3, Math.floor(pass)));
+  return WRAP_LAYERS.slice(0, n).reduce((s, l) => s + l.per, 0);
+}
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
