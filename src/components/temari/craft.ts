@@ -32,7 +32,7 @@ const H = 768;
 const PW = 512;
 const MIN_DOT = 0.9994;
 const MAX_LIVE = 400;
-const MAX_STRANDS = 96;
+const MAX_STRANDS = 160;
 const MAX_JOINS = 16;
 const POINTS_PER_STRAND = 6000;
 const TWO_PI = Math.PI * 2;
@@ -449,6 +449,9 @@ export class MariWinder {
   /** +1 / −1 after the first drag; 0 = not chosen yet. */
   private sense = 0;
   private pendingSteer: THREE.Vector3 | null = null;
+  /** Angle accumulated in the current band of adjacent wraps. */
+  private band = 0;
+  private bandIndex = 0;
 
   reset(thickness: number) {
     const t = Math.max(0, Math.min(1, thickness));
@@ -461,11 +464,12 @@ export class MariWinder {
     this.lastAimT = 0;
     this.sense = 0;
     this.pendingSteer = null;
-    const ang = (strokePx(t) * Math.PI) / H;
-    this.tilt = Math.max(0.07, ang * 1.6);
+    this.band = 0;
+    this.bandIndex = 0;
+    this.tilt = Math.max(0.012, 0.008 + t * 0.018);
     this.sNeeded = TWO_PI * (64 + (1 - t) * 28);
     this.pole.set(0, 1, 0);
-    this.axis.set(0.28, 0.94, 0.18).normalize();
+    this.axis.set(0.12, 0.22, 0.97).normalize();
     this.dir.crossVectors(this.axis, new THREE.Vector3(1, 0, 0));
     if (this.dir.lengthSq() < 0.05) this.dir.crossVectors(this.axis, new THREE.Vector3(0, 0, 1));
     this.dir.normalize();
@@ -584,23 +588,38 @@ export class MariWinder {
 
   /**
    * After a full lap the plane may move — not in the middle of a wrap.
-   * A little: about a thread-width, toward the last swipe if there was one.
+   * Adjacent thread: about a thread-width. After a belt, turn the mari
+   * onto a different equator so wraps are felt, not a meridian star.
    */
   private nextWrap() {
     if (this.pendingSteer) {
       this.steer(this.pendingSteer, this.tilt * 3);
       this.pendingSteer = null;
+      this.band = 0;
       return;
     }
     this.perp.crossVectors(this.axis, this.dir);
     if (this.perp.lengthSq() < 1e-8) this.perp.set(0, 1, 0);
     this.perp.normalize();
-    const heading = 0.4 + 0.9 * (0.5 + 0.5 * Math.sin(this.s * 0.17 + this.wrapCount * 0.7));
-    this.q.setFromAxisAngle(this.axis, heading);
-    this.perp.applyQuaternion(this.q);
     this.q.setFromAxisAngle(this.perp, this.tilt);
     this.axis.applyQuaternion(this.q).normalize();
     this.keepOnEquator();
+    this.band += this.tilt;
+    if (this.band > 0.38) this.newBand();
+  }
+
+  /** Next equator is far from the last — Fibonacci on S², not a precession cone. */
+  private newBand() {
+    this.bandIndex += 1;
+    const i = this.bandIndex;
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    const n = 13;
+    const y = 1 - ((2 * ((i * 5) % n) + 1) / n);
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const theta = i * golden;
+    this.axis.set(Math.cos(theta) * r, y, Math.sin(theta) * r).normalize();
+    this.keepOnEquator();
+    this.band = 0;
   }
 
   /** Hands tuck the mari under the thread — used when the drag goes against sense. */
@@ -659,8 +678,8 @@ export class MariWinder {
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
     let guard = 0;
-    while (this.cover < 0.96 && guard < 10) {
-      this.advance(buffer, TWO_PI * 24, color, hex, 0.08);
+    while (this.cover < 0.96 && guard < 18) {
+      this.advance(buffer, TWO_PI * 20, color, hex, 0.08);
       this.cover = buffer.sampleCoverage();
       guard++;
     }
