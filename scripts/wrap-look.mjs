@@ -28,10 +28,6 @@ const netBtn = page.getByRole("button", { name: "Нет" });
 if (await netBtn.count()) await netBtn.click();
 await page.waitForTimeout(400);
 await page.screenshot({ path: `${out}/look-net.png` });
-const sewBtn = page.getByRole("button", { name: "Нить", exact: true });
-if (await sewBtn.count()) await sewBtn.click();
-await page.waitForTimeout(2500);
-await page.screenshot({ path: `${out}/look-sew.png` });
 
 await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
 await page.waitForTimeout(800);

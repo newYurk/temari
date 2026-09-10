@@ -15,8 +15,8 @@ import {
   type Stitch,
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
-import { createTemariMaterial, syncTemariMaterial } from "./shader";
-import { createMotifGeometry, createWrapGeometry, getYarnTexture } from "./stitches";
+import { createTemariMaterial, createWrapCoverMaterial, syncTemariMaterial, syncWrapCoverMaterial } from "./shader";
+import { createMotifGeometry, getYarnTexture } from "./stitches";
 import { useTemari } from "./store";
 import * as feel from "./feel";
 import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
@@ -85,58 +85,16 @@ function ThreadLayer({
   );
 }
 
-function WrapYarn({
-  wrap,
-  color,
-  width,
-  pass,
-}: {
-  wrap: WrapBuffer;
-  color: string;
-  width: number;
-  pass: number;
-}) {
-  const mesh = useMemo(() => {
-    const mat = new THREE.MeshStandardMaterial({
-      color,
-      map: getYarnTexture(),
-      roughness: 0.58,
-      metalness: 0.05,
-    });
-    const m = new THREE.Mesh(new THREE.BufferGeometry(), mat);
-    m.frustumCulled = false;
-    m.renderOrder = 4;
-    return m;
-  }, []);
-  const last = useRef("");
+function WrapSurface({ color, width }: { color: string; width: number }) {
+  const mat = useMemo(() => createWrapCoverMaterial(), []);
+  const camera = useThree((s) => s.camera);
   useLayoutEffect(() => {
-    (mesh.material as THREE.MeshStandardMaterial).color.set(color);
-  }, [mesh, color]);
-  useLayoutEffect(() => {
-    const strands = wrap.yarn().map((s) => s.points);
-    const key = `${strands.length}:${width.toFixed(2)}:${pass}`;
-    if (key === last.current) return;
-    last.current = key;
-    const geo = createWrapGeometry(strands, width, pass);
-    if (!geo) return;
-    const prev = mesh.geometry;
-    mesh.geometry = geo;
-    if (prev && prev !== geo) prev.dispose();
+    syncWrapCoverMaterial(mat, { color, width, camera: camera.position });
   });
-  useEffect(() => {
-    return () => {
-      mesh.geometry.dispose();
-      (mesh.material as THREE.MeshStandardMaterial).dispose();
-    };
-  }, [mesh]);
-  return <primitive object={mesh} />;
-}
-
-function WrapCover({ color }: { color: string }) {
+  useEffect(() => () => mat.dispose(), [mat]);
   return (
-    <mesh frustumCulled={false} renderOrder={3}>
-      <sphereGeometry args={[0.986, 96, 64]} />
-      <meshStandardMaterial color={color} roughness={0.88} metalness={0.03} />
+    <mesh frustumCulled={false} renderOrder={3} material={mat} raycast={() => {}}>
+      <sphereGeometry args={[1.0, 96, 64]} />
     </mesh>
   );
 }
@@ -557,7 +515,7 @@ export function Ball() {
       wrap: wrap.texture,
       wrapN: wrap.polarN,
       wrapS: wrap.polarS,
-      wrapOn: false,
+      wrapOn: mode === "title" || layerDone,
       felt: 0,
       feltColor: palette.core,
       threadWidth,
@@ -650,14 +608,8 @@ export function Ball() {
       </mesh>
 
       {mode === "title" || layerDone ? (
-        <WrapCover color={wrapHex} />
+        <WrapSurface color={wrapHex} width={threadWidth} />
       ) : null}
-      <WrapYarn
-        wrap={wrap}
-        color={wrapHex}
-        width={threadWidth}
-        pass={3}
-      />
 
       {markStitches.length > 0 ? (
         <ThreadLayer
