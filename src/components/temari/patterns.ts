@@ -51,19 +51,41 @@ export function kikuPitch(threadWidth: number, density: number) {
   return ang * (airy + (packed - airy) * d);
 }
 
+export function kagariPoles(pins: Vec3[]): Vec3[] {
+  if (pins.length < 3) return [];
+  const sum: Vec3 = [
+    pins.reduce((s, p) => s + p[0], 0),
+    pins.reduce((s, p) => s + p[1], 0),
+    pins.reduce((s, p) => s + p[2], 0),
+  ];
+  const mag = hypot3(sum) / pins.length;
+  if (mag >= 0.18) return [normalize(sum)];
+  return [
+    [0, 1, 0],
+    [0, -1, 0],
+  ];
+}
+
+function ringAround(pins: Vec3[], pole: Vec3): Vec3[] {
+  const n = normalize(pole);
+  return pins.filter((p) => {
+    const d = dot(normalize(p), n);
+    return d > -0.15 && d < 0.92;
+  });
+}
+
 export function kikuCapacity(
   pins: Vec3[],
   threadWidth: number,
   density: number,
 ): { max: number; span: number; pitch: number; innerMin: number } {
-  if (pins.length < 3) return { max: 0, span: 0, pitch: 0, innerMin: 0 };
-  const pole = normalize([
-    pins.reduce((s, p) => s + p[0], 0),
-    pins.reduce((s, p) => s + p[1], 0),
-    pins.reduce((s, p) => s + p[2], 0),
-  ]);
+  const empty = { max: 0, span: 0, pitch: 0, innerMin: 0 };
+  const pole = kagariPoles(pins)[0];
+  if (!pole) return empty;
+  const ring = ringAround(pins, pole);
+  if (ring.length < 3) return empty;
   const meanTheta =
-    pins.reduce((s, p) => s + polarAround(pole, p).theta, 0) / pins.length;
+    ring.reduce((s, p) => s + polarAround(pole, p).theta, 0) / ring.length;
   const pitch = kikuPitch(threadWidth, density);
   const innerMin = Math.max(0.045, pitch * 0.85);
   const outerMax = Math.max(innerMin + pitch, meanTheta - pitch * 0.25);
@@ -74,12 +96,14 @@ export function kikuCapacity(
 /** Pins form a closed spherical polygon — fill is defined. An open arc is not. */
 export function isClosedContour(pins: Vec3[]): boolean {
   if (pins.length < 3) return false;
-  const pole = normalize([
+  const sum: Vec3 = [
     pins.reduce((s, p) => s + p[0], 0),
     pins.reduce((s, p) => s + p[1], 0),
     pins.reduce((s, p) => s + p[2], 0),
-  ]);
-  if (hypot3(pole) < 0.2) return false;
+  ];
+  const mag = hypot3(sum) / pins.length;
+  if (mag < 0.18) return true;
+  const pole = normalize(sum);
   const phis = pins
     .map((p) => polarAround(pole, p).phi)
     .sort((a, b) => a - b);
@@ -459,33 +483,32 @@ export function sakasaArcsFromPins(
   density = 0.5,
 ): { a: Vec3; b: Vec3; color: number }[] {
   if (pins.length < 3) return [];
-  const cap = kikuCapacity(pins, threadWidth, density);
-  const pole = normalize([
-    pins.reduce((s, p) => s + p[0], 0),
-    pins.reduce((s, p) => s + p[1], 0),
-    pins.reduce((s, p) => s + p[2], 0),
-  ]);
-  const sorted = pins
-    .map((p) => ({ p: normalize(p), ...polarAround(pole, p) }))
-    .sort((a, b) => a.phi - b.phi);
-  const n = sorted.length;
-  const L = Math.max(1, Math.min(cap.max, Math.round(layers)));
   const arcs: { a: Vec3; b: Vec3; color: number }[] = [];
-  for (let r = 0; r < L; r++) {
-    const along = L <= 1 ? 0 : r / (L - 1);
-    const t = dir === "in" ? along * 0.9 : (1 - along) * 0.9;
-    const ring = sorted.map((item) => slerp3(item.p, pole, t));
-    const c = r % 2 === 0 ? color : (color + 1) % 4;
-    for (let i = 0; i < n; i++) {
-      const a = ring[i];
-      const b = ring[(i + 1) % n];
-      if (a && b) arcs.push({ a, b, color: c });
+  for (const pole of kagariPoles(pins)) {
+    const ringPts = ringAround(pins, pole);
+    if (ringPts.length < 3) continue;
+    const cap = kikuCapacity(ringPts, threadWidth, density);
+    const sorted = ringPts
+      .map((p) => ({ p: normalize(p), ...polarAround(pole, p) }))
+      .sort((a, b) => a.phi - b.phi);
+    const n = sorted.length;
+    const L = Math.max(1, Math.min(cap.max, Math.round(layers)));
+    for (let r = 0; r < L; r++) {
+      const along = L <= 1 ? 0 : r / (L - 1);
+      const t = dir === "in" ? along * 0.9 : (1 - along) * 0.9;
+      const ring = sorted.map((item) => slerp3(item.p, pole, t));
+      const c = r % 2 === 0 ? color : (color + 1) % 4;
+      for (let i = 0; i < n; i++) {
+        const a = ring[i];
+        const b = ring[(i + 1) % n];
+        if (a && b) arcs.push({ a, b, color: c });
+      }
     }
   }
   return arcs;
 }
 
-/** Chrysanthemum herringbone around the spherical centroid of 3+ pins. */
+/** Chrysanthemum herringbone around each closed pole of 3+ pins. */
 export function kikuArcsFromPins(
   pins: Vec3[],
   layers: number,
@@ -495,40 +518,39 @@ export function kikuArcsFromPins(
   density = 0.5,
 ): { a: Vec3; b: Vec3; color: number }[] {
   if (pins.length < 3) return [];
-  const cap = kikuCapacity(pins, threadWidth, density);
-  const pole = normalize([
-    pins.reduce((s, p) => s + p[0], 0),
-    pins.reduce((s, p) => s + p[1], 0),
-    pins.reduce((s, p) => s + p[2], 0),
-  ]);
-  const sorted = pins
-    .map((p) => ({ p, ...polarAround(pole, p) }))
-    .sort((a, b) => a.phi - b.phi);
-  const n = sorted.length;
-  const L = Math.max(1, Math.min(cap.max, Math.round(layers)));
-  const chord = cap.pitch * 1.15;
-  const span = Math.max(cap.pitch, (cap.max - 1) * cap.pitch);
   const arcs: { a: Vec3; b: Vec3; color: number }[] = [];
-  const order = Array.from({ length: L }, (_, i) => (dir === "in" ? L - 1 - i : i));
-  for (const r of order) {
-    const t = L <= 1 ? 0.5 : r / (L - 1);
-    const inner = cap.innerMin + t * span;
-    const outer = inner + chord;
-    const c = r % 2 === 0 ? color : (color + 1) % 4;
-    for (let i = 0; i < n; i++) {
-      const a = sorted[i];
-      const b = sorted[(i + 1) % n];
-      if (!a || !b) continue;
-      arcs.push({
-        a: around(pole, inner, a.phi),
-        b: around(pole, outer, b.phi),
-        color: c,
-      });
-      arcs.push({
-        a: around(pole, outer, a.phi),
-        b: around(pole, inner, b.phi),
-        color: c,
-      });
+  for (const pole of kagariPoles(pins)) {
+    const ringPts = ringAround(pins, pole);
+    if (ringPts.length < 3) continue;
+    const cap = kikuCapacity(ringPts, threadWidth, density);
+    const sorted = ringPts
+      .map((p) => ({ p, ...polarAround(pole, p) }))
+      .sort((a, b) => a.phi - b.phi);
+    const n = sorted.length;
+    const L = Math.max(1, Math.min(cap.max, Math.round(layers)));
+    const chord = cap.pitch * 1.15;
+    const span = Math.max(cap.pitch, (cap.max - 1) * cap.pitch);
+    const order = Array.from({ length: L }, (_, i) => (dir === "in" ? L - 1 - i : i));
+    for (const r of order) {
+      const t = L <= 1 ? 0.5 : r / (L - 1);
+      const inner = cap.innerMin + t * span;
+      const outer = inner + chord;
+      const c = r % 2 === 0 ? color : (color + 1) % 4;
+      for (let i = 0; i < n; i++) {
+        const a = sorted[i];
+        const b = sorted[(i + 1) % n];
+        if (!a || !b) continue;
+        arcs.push({
+          a: around(pole, inner, a.phi),
+          b: around(pole, outer, b.phi),
+          color: c,
+        });
+        arcs.push({
+          a: around(pole, outer, a.phi),
+          b: around(pole, inner, b.phi),
+          color: c,
+        });
+      }
     }
   }
   return arcs;

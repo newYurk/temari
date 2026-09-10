@@ -150,6 +150,7 @@ type TemariState = {
   motif: MotifId;
   craft: Craft;
   selectedColor: number;
+  wrapColor: number;
   fills: number[];
   sewn: SewnEntry[];
   pins: Pin[];
@@ -248,6 +249,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   motif: "kiku",
   craft: "wind",
   selectedColor: 0,
+  wrapColor: 0,
   fills: emptyFills("simple"),
   sewn: [],
   pins: [],
@@ -288,6 +290,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       motif: "none",
       craft: "pin",
       selectedColor: studioDraft.selectedColor,
+      wrapColor: studioDraft.selectedColor,
       fills: hasPaint ? padFills(studioDraft.fills, division) : emptyFills(division),
       sewn: [],
       pins: [],

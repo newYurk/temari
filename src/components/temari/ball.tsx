@@ -164,6 +164,7 @@ export function Ball() {
   const hover = useTemari((s) => s.hover);
   const hoverSlot = useTemari((s) => s.hoverSlot);
   const selectedColor = useTemari((s) => s.selectedColor);
+  const wrapColor = useTemari((s) => s.wrapColor);
   const peeking = useTemari((s) => s.peeking);
   const puzzleIndex = useTemari((s) => s.puzzleIndex);
   const viewNonce = useTemari((s) => s.viewNonce);
@@ -223,8 +224,8 @@ export function Ball() {
   const markStitches = useMemo(() => {
     if (mode === "title") return stitchesOn ? jiwariStitches("simple", 1) : [];
     if (mode !== "studio" || !layerDone || !jiwariOn) return [];
-    return jiwariStitches(division, jiwariMarkColor(selectedColor));
-  }, [division, jiwariOn, layerDone, mode, selectedColor, stitchesOn]);
+    return jiwariStitches(division, jiwariMarkColor(wrapColor));
+  }, [division, jiwariOn, layerDone, mode, wrapColor, stitchesOn]);
   const ghostStitches = useMemo(() => {
     if (mode !== "studio" || craft !== "stitch" || !hoverSlot) return [];
     return stitchesForSlot(division, hoverSlot, selectedColor);
@@ -549,7 +550,7 @@ export function Ball() {
       wrapS: wrap.polarS,
       wrapOn: false,
       felt: mode === "title" || layerDone ? 0.94 : wrap.covered > 0.2 ? 0.35 : 0,
-      feltColor: palette.colors[selectedColor] ?? palette.thread,
+      feltColor: palette.colors[wrapColor] ?? palette.thread,
       threadWidth,
     });
     if (guidesMat.current) guidesMat.current.color.set(palette.thread);
@@ -641,7 +642,7 @@ export function Ball() {
 
       <WrapYarn
         wrap={wrap}
-        color={palette.colors[selectedColor] ?? palette.thread}
+        color={palette.colors[wrapColor] ?? palette.thread}
         width={wrapRibbonWidth(threadWidth)}
       />
 
