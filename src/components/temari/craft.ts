@@ -748,19 +748,19 @@ export class MariWinder {
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
     buffer.paint = false;
-    const ref = new THREE.Vector3();
+    const golden = Math.PI * (3 - Math.sqrt(5));
     WRAP_LAYERS.forEach((layer, li) => {
-      const t = 0.4 + li * 1.21;
-      this.axis.set(Math.cos(t), Math.sin(t * 0.45), Math.sin(t)).normalize();
-      ref.set(Math.sin(t * 0.9), Math.cos(t), Math.cos(t * 0.7));
-      this.dir.crossVectors(this.axis, ref).normalize();
-      for (let i = 0; i < layer.per; i++) {
+      const n = layer.per;
+      const seed = 0.7 + li * 2.17;
+      for (let i = 0; i < n; i++) {
+        const z = 1 - (i + 0.5) / n;
+        const r = Math.sqrt(Math.max(0, 1 - z * z));
+        const th = seed + i * golden;
+        this.axis.set(Math.cos(th) * r, z, Math.sin(th) * r).normalize();
+        this.dir.set(-this.axis.z, 0, this.axis.x);
+        if (this.dir.lengthSq() < 1e-8) this.dir.set(0, 0, 1);
+        this.dir.normalize();
         buffer.addClosedCircle(this.axis, this.dir, color, hex);
-        this.axis.applyAxisAngle(this.dir, layer.step);
-        this.axis.normalize();
-        this.tmp.crossVectors(this.axis, this.dir);
-        if (this.tmp.lengthSq() < 1e-8) this.tmp.set(0, 1, 0);
-        this.dir.crossVectors(this.tmp, this.axis).normalize();
       }
     });
     buffer.paint = true;
