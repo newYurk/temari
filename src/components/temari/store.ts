@@ -165,6 +165,7 @@ type TemariState = {
   viewNonce: number;
   wrapProgress: number;
   threadWidth: number;
+  wrapStarted: boolean;
   layerDone: boolean;
   kikuLayers: number;
   kagariDir: KagariDir;
@@ -192,6 +193,7 @@ type TemariState = {
   resetView: () => void;
   setWrapCount: (n: number) => void;
   setWrapProgress: (n: number) => void;
+  setWrapStarted: () => void;
   setThreadWidth: (n: number) => void;
   finishLayer: () => void;
   setKikuLayers: (n: number) => void;
@@ -249,6 +251,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   viewNonce: 0,
   wrapProgress: 0,
   threadWidth: 0.42,
+  wrapStarted: false,
   layerDone: false,
   kikuLayers: 8,
   kagariDir: "in",
@@ -284,6 +287,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       hoverSlot: null,
       wrapProgress: 0,
       layerDone: false,
+      wrapStarted: false,
       wrapResetNonce: get().wrapResetNonce + 1,
       wrapCount: 0,
       startPin: null,
@@ -346,6 +350,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       wrapResetNonce: get().wrapResetNonce + 1,
       wrapCount: 0,
       wrapProgress: 1,
+      wrapStarted: false,
       layerDone: false,
       startPin: null,
       wrapSeed: "full",
@@ -546,6 +551,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       wrapResetNonce: state.wrapResetNonce + 1,
       wrapCount: 0,
       wrapProgress: 0,
+      wrapStarted: false,
       layerDone: false,
       craft: "wind",
       startPin: null,
@@ -600,7 +606,14 @@ export const useTemari = create<TemariState>((set, get) => ({
   resetView: () => set({ viewNonce: get().viewNonce + 1 }),
   setWrapCount: (n) => set({ wrapCount: n }),
   setWrapProgress: (n) => set({ wrapProgress: Math.max(0, Math.min(1, n)) }),
-  setThreadWidth: (n) => set({ threadWidth: Math.max(0, Math.min(1, n)) }),
+  setWrapStarted: () => {
+    if (get().wrapStarted) return;
+    set({ wrapStarted: true });
+  },
+  setThreadWidth: (n) => {
+    if (get().wrapStarted) return;
+    set({ threadWidth: Math.max(0, Math.min(1, n)) });
+  },
   finishLayer: () => {
     if (get().mode !== "studio") return;
     feel.layer();
@@ -668,6 +681,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       layerDone: true,
       wrapProgress: 1,
       wrapCount: 1,
+      wrapStarted: true,
       wrapResetNonce: get().wrapResetNonce + 1,
       wrapSeed: "full",
       startPin: null,

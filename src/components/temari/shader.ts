@@ -94,16 +94,6 @@ void main() {
   vec4 wcol = vec4(0.0);
   if (uWrapOn > 0.5) {
     wcol = texture2DLodEXT(uWrap, vec2(wu, wv), 0.0);
-    float capN = smoothstep(0.58, 0.8, nL.y);
-    float capS = smoothstep(0.58, 0.8, -nL.y);
-    if (capN > 0.0) {
-      vec2 pn = vec2(0.5) + nL.xz * (0.5 / max(1e-4, 1.0 + nL.y));
-      wcol = mix(wcol, texture2DLodEXT(uWrapN, pn, 0.0), capN);
-    }
-    if (capS > 0.0) {
-      vec2 ps = vec2(0.5) + nL.xz * (0.5 / max(1e-4, 1.0 - nL.y));
-      wcol = mix(wcol, texture2DLodEXT(uWrapS, ps, 0.0), capS);
-    }
     col = mix(col, wcol.rgb / max(wcol.a, 0.001), clamp(wcol.a, 0.0, 1.0));
   }
 

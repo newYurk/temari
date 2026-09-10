@@ -167,6 +167,7 @@ function Workbench() {
   const wrapCount = useTemari((s) => s.wrapCount);
   const wrapProgress = useTemari((s) => s.wrapProgress);
   const threadWidth = useTemari((s) => s.threadWidth);
+  const wrapStarted = useTemari((s) => s.wrapStarted);
   const layerDone = useTemari((s) => s.layerDone);
   const kikuLayers = useTemari((s) => s.kikuLayers);
   const kagariDir = useTemari((s) => s.kagariDir);
@@ -269,9 +270,10 @@ function Workbench() {
                   max={1}
                   step={0.01}
                   value={threadWidth}
+                  disabled={wrapStarted}
                   aria-label="Толщина нити"
                   onChange={(e) => setThreadWidth(Number(e.target.value))}
-                  className="h-10 min-w-0 flex-1 accent-ink"
+                  className="h-10 min-w-0 flex-1 accent-ink disabled:opacity-40"
                 />
                 <button
                   type="button"

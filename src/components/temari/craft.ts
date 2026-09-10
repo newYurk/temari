@@ -139,25 +139,19 @@ function stampDot(
   hex: string,
   width: number,
 ) {
-  const ay = Math.abs(p.y);
+  // Coverage only. The visible thread is a 3D ribbon — UV stamps near a
+  // pole are not a great circle (they become a smear or a second line).
+  const [u, v] = toUV(p);
   ctx.fillStyle = hex;
   ctx.globalAlpha = 1;
-  // Equirect smear at the poles is not a thread. Polar canvases own |y| ≳ 0.75.
-  if (ay < 0.76) {
-    const [u, v] = toUV(p);
-    const sinT = Math.max(0.42, Math.sqrt(Math.max(0, 1 - p.y * p.y)));
-    const ry = Math.max(1.6, width * 0.46);
-    const rx = Math.min(ry * 2.1, ry / sinT);
-    for (const shift of [-1, 0, 1]) {
-      ctx.beginPath();
-      ctx.ellipse((u + shift) * W, v * H, rx, ry, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
+  const r = Math.max(1.4, width * 0.38);
+  for (const shift of [-1, 0, 1]) {
+    ctx.beginPath();
+    ctx.arc((u + shift) * W, v * H, r, 0, Math.PI * 2);
+    ctx.fill();
   }
-  if (ay > 0.48) {
-    if (polarN) stampStereo(polarN, p, hex, width, true);
-    if (polarS) stampStereo(polarS, p, hex, width, false);
-  }
+  if (polarN) stampStereo(polarN, p, hex, width, true);
+  if (polarS) stampStereo(polarS, p, hex, width, false);
 }
 
 function strokeSeg(

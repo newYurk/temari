@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { arcsToStitches, getWrapBuffer, pinHit, MariWinder, strokePx, toVec3 } from "./craft";
+import { arcsToStitches, getWrapBuffer, pinHit, MariWinder, strokePx, toVec3, type WrapBuffer } from "./craft";
 import { gridNodes, polePositions, regionIndex, snapToNode } from "./division";
 import { createGuideGeometry } from "./guides";
 import { PALETTES } from "./palettes";
@@ -16,10 +16,10 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import { createTemariMaterial, syncTemariMaterial } from "./shader";
-import { createMotifGeometry, getYarnTexture } from "./stitches";
+import { createMotifGeometry, createWrapGeometry, getYarnTexture } from "./stitches";
 import { useTemari } from "./store";
 import * as feel from "./feel";
-import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
+import { DEFAULT_KIND, threadMetalness, threadRoughness, wrapRibbonWidth, type ThreadKind } from "./thread";
 import { jiwariMarkColor, jiwariStitches } from "./jiwari";
 
 const pointer = { x: 0, y: 0, down: false, dragged: false };
@@ -83,6 +83,51 @@ function ThreadLayer({
   );
 }
 
+function WrapYarn({
+  wrap,
+  color,
+  width,
+}: {
+  wrap: WrapBuffer;
+  color: string;
+  width: number;
+}) {
+  const mesh = useRef<THREE.Mesh>(null);
+  const yarn = useMemo(() => getYarnTexture(), []);
+  const last = useRef("");
+  useFrame(() => {
+    const meshObj = mesh.current;
+    if (!meshObj) return;
+    const strands = wrap.yarn().map((s) => s.points);
+    const key = `${strands.length}:${strands.reduce((n, pts) => n + pts.length, 0)}:${width.toFixed(4)}`;
+    if (key === last.current) return;
+    last.current = key;
+    const geo = createWrapGeometry(strands, width);
+    const prev = meshObj.geometry;
+    meshObj.geometry = geo ?? new THREE.BufferGeometry();
+    if (prev && prev !== meshObj.geometry) prev.dispose();
+  });
+  useEffect(() => {
+    return () => {
+      mesh.current?.geometry.dispose();
+    };
+  }, []);
+  return (
+    <mesh ref={mesh} frustumCulled={false} renderOrder={4}>
+      <meshStandardMaterial
+        map={yarn}
+        color={color}
+        roughness={threadRoughness("serger")}
+        metalness={threadMetalness("serger")}
+        side={THREE.DoubleSide}
+        polygonOffset
+        polygonOffsetFactor={-3}
+        polygonOffsetUnits={-3}
+      />
+    </mesh>
+  );
+}
+
 export function Ball() {
   const matRef = useRef<THREE.ShaderMaterial>(null);
   const guidesMat = useRef<THREE.MeshStandardMaterial>(null);
@@ -133,6 +178,7 @@ export function Ball() {
   const setHoverSlot = useTemari((s) => s.setHoverSlot);
   const setWrapCount = useTemari((s) => s.setWrapCount);
   const setWrapProgress = useTemari((s) => s.setWrapProgress);
+  const setWrapStarted = useTemari((s) => s.setWrapStarted);
 
   const material = useMemo(() => createTemariMaterial(), []);
   const guideGeo = useMemo(() => createGuideGeometry(division), [division]);
@@ -350,6 +396,7 @@ export function Ball() {
         omega.current.copy(_axis).multiplyScalar(wind.vis / dt);
         const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
         mari.current.spin(wind.mag, wrap, st.selectedColor, hex);
+        if (!st.wrapStarted) setWrapStarted();
         return;
       }
 
@@ -389,7 +436,7 @@ export function Ball() {
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
     };
-  }, [camera, gl, size.height, wrap]);
+  }, [camera, gl, setWrapStarted, size.height, wrap]);
 
   useEffect(() => {
     const probe = {
@@ -462,12 +509,13 @@ export function Ball() {
     }
 
     const state = useTemari.getState();
-    wrap.strokeWidth = strokePx(state.threadWidth);
+    if (!state.wrapStarted) wrap.strokeWidth = strokePx(state.threadWidth);
     feel.setSpin(state.mode === "studio" && state.craft === "wind" ? spd : 0);
     if (state.mode === "studio" && state.craft === "wind" && !state.layerDone) {
       if (!spinning.current && spd > 0.12 && g) {
         const hex = PALETTES[state.paletteId].colors[state.selectedColor] ?? "#8f3d32";
         mari.current.spin(spd * d, wrap, state.selectedColor, hex);
+        if (!state.wrapStarted) setWrapStarted();
         feel.wrapTurn(mari.current.wrapCount);
       }
       const next = mari.current.progress;
@@ -507,7 +555,7 @@ export function Ball() {
       wrap: wrap.texture,
       wrapN: wrap.polarN,
       wrapS: wrap.polarS,
-      wrapOn: true,
+      wrapOn: false,
       felt: mode === "title" ? 0 : layerDone && wrap.covered < 0.97 ? 0.4 : 0,
       feltColor: palette.colors[selectedColor] ?? palette.thread,
       threadWidth,
@@ -618,6 +666,12 @@ export function Ball() {
       {ghostStitches.length > 0 ? (
         <ThreadLayer stitches={ghostStitches} colors={palette.colors} opacity={0.42} />
       ) : null}
+
+      <WrapYarn
+        wrap={wrap}
+        color={palette.colors[selectedColor] ?? palette.thread}
+        width={wrapRibbonWidth(threadWidth)}
+      />
 
 
 

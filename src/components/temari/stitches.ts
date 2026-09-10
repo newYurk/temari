@@ -51,7 +51,7 @@ function vec(p: [number, number, number], lift = 0) {
   return new THREE.Vector3(p[0], p[1], p[2]).normalize().multiplyScalar(LIFT + lift);
 }
 
-function ribbonFromPoints(pts: THREE.Vector3[], width: number, closed: boolean) {
+export function ribbonFromPoints(pts: THREE.Vector3[], width: number, closed: boolean) {
   const n = pts.length;
   if (n < 2) return new THREE.BufferGeometry();
   const half = width / 2;
@@ -178,6 +178,26 @@ export function createMotifGeometry(
     } else {
       parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, lift)), width * 1.08, true));
     }
+  }
+  if (parts.length === 0) return null;
+  const merged = mergeGeometries(parts, false);
+  for (const geo of parts) geo.dispose();
+  if (!merged) return null;
+  merged.computeVertexNormals();
+  return merged;
+}
+
+/** Base wrap as a ribbon on the sphere — not a UV splat. Great circles
+ *  near a texture pole are still geodesics here. */
+export function createWrapGeometry(
+  strands: THREE.Vector3[][],
+  width: number,
+): THREE.BufferGeometry | null {
+  const parts: THREE.BufferGeometry[] = [];
+  for (const pts of strands) {
+    if (pts.length < 2) continue;
+    const lifted = pts.map((p) => p.clone().normalize().multiplyScalar(1.007));
+    parts.push(ribbonFromPoints(lifted, width, false));
   }
   if (parts.length === 0) return null;
   const merged = mergeGeometries(parts, false);
