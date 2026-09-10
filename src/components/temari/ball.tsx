@@ -119,7 +119,6 @@ function WrapYarn({
         color={color}
         roughness={threadRoughness("serger")}
         metalness={threadMetalness("serger")}
-        side={THREE.DoubleSide}
         polygonOffset
         polygonOffsetFactor={-3}
         polygonOffsetUnits={-3}

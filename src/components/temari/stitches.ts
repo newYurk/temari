@@ -199,17 +199,19 @@ export function createMotifGeometry(
   return merged;
 }
 
-/** Base wrap as a ribbon on the sphere — not a UV splat. Great circles
- *  near a texture pole are still geodesics here. */
+/** Round thread on the mari — a ribbon pinches when seen edge-on. */
 export function createWrapGeometry(
   strands: THREE.Vector3[][],
   width: number,
 ): THREE.BufferGeometry | null {
   const parts: THREE.BufferGeometry[] = [];
+  const radius = Math.max(0.004, width * 0.5);
   for (const pts of strands) {
     if (pts.length < 2) continue;
-    const lifted = pts.map((p) => p.clone().normalize().multiplyScalar(1.012));
-    parts.push(ribbonFromPoints(lifted, width, false));
+    const lifted = pts.map((p) =>
+      p.clone().normalize().multiplyScalar(1.0 + radius + 0.004),
+    );
+    parts.push(tubeFromPoints(lifted, radius));
   }
   if (parts.length === 0) return null;
   const merged = mergeGeometries(parts, false);
@@ -217,4 +219,10 @@ export function createWrapGeometry(
   if (!merged) return null;
   merged.computeVertexNormals();
   return merged;
+}
+
+function tubeFromPoints(pts: THREE.Vector3[], radius: number) {
+  const curve = new THREE.CatmullRomCurve3(pts, false, "centripetal");
+  const segs = Math.max(12, pts.length);
+  return new THREE.TubeGeometry(curve, segs, radius, 5, false);
 }
