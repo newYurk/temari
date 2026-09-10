@@ -29,6 +29,7 @@ export type PinArc = { a: Vec3; b: Vec3; color: number };
 
 const W = 1536;
 const H = 768;
+const PW = 512;
 const MIN_DOT = 0.9994;
 const MAX_LIVE = 400;
 const MAX_STRANDS = 96;
@@ -90,6 +91,30 @@ function slerpOnto(
     .normalize();
 }
 
+let polarN: CanvasRenderingContext2D | null = null;
+let polarS: CanvasRenderingContext2D | null = null;
+
+function stampStereo(
+  ctx: CanvasRenderingContext2D,
+  p: THREE.Vector3,
+  hex: string,
+  width: number,
+  north: boolean,
+) {
+  const y = north ? p.y : -p.y;
+  if (y < -0.02) return;
+  const s = 0.5 / Math.max(1e-4, 1 + y);
+  const u = 0.5 + p.x * s;
+  const v = 0.5 + p.z * s;
+  if (u < -0.08 || u > 1.08 || v < -0.08 || v > 1.08) return;
+  const r = Math.max(2.6, width * 0.62 * (PW / H));
+  ctx.fillStyle = hex;
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.arc(u * PW, v * PW, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function stampDot(
   ctx: CanvasRenderingContext2D,
   p: THREE.Vector3,
@@ -99,12 +124,16 @@ function stampDot(
   const [u, v] = toUV(p);
   ctx.fillStyle = hex;
   ctx.globalAlpha = 1;
-  const r = Math.max(1.8, width * 0.5);
+  const sinT = Math.max(0.14, Math.sqrt(Math.max(0, 1 - p.y * p.y)));
+  const ry = Math.max(1.8, width * 0.5);
+  const rx = Math.min(W * 0.46, ry / sinT);
   for (const shift of [-1, 0, 1]) {
     ctx.beginPath();
-    ctx.arc((u + shift) * W, v * H, r, 0, Math.PI * 2);
+    ctx.ellipse((u + shift) * W, v * H, rx, ry, 0, 0, Math.PI * 2);
     ctx.fill();
   }
+  if (polarN) stampStereo(polarN, p, hex, width, true);
+  if (polarS) stampStereo(polarS, p, hex, width, false);
 }
 
 function strokeSeg(
@@ -141,10 +170,28 @@ function stroke(
 
 type Strand = { color: number; hex: string; points: THREE.Vector3[] };
 
+function makeWrapTex(canvas: HTMLCanvasElement) {
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  texture.anisotropy = 1;
+  texture.premultiplyAlpha = true;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 export class WrapBuffer {
   readonly canvas: HTMLCanvasElement;
   readonly texture: THREE.CanvasTexture;
+  readonly polarN: THREE.CanvasTexture;
+  readonly polarS: THREE.CanvasTexture;
   private ctx: CanvasRenderingContext2D;
+  private poleN: HTMLCanvasElement;
+  private poleS: HTMLCanvasElement;
   private probe: HTMLCanvasElement;
   private probeCtx: CanvasRenderingContext2D;
   private strands: Strand[] = [];
@@ -162,22 +209,29 @@ export class WrapBuffer {
     const ctx = this.canvas.getContext("2d", { alpha: true });
     if (!ctx) throw new Error("wrap canvas");
     this.ctx = ctx;
+    this.poleN = document.createElement("canvas");
+    this.poleN.width = PW;
+    this.poleN.height = PW;
+    const nctx = this.poleN.getContext("2d", { alpha: true });
+    if (!nctx) throw new Error("wrap polar N");
+    this.poleS = document.createElement("canvas");
+    this.poleS.width = PW;
+    this.poleS.height = PW;
+    const sctx = this.poleS.getContext("2d", { alpha: true });
+    if (!sctx) throw new Error("wrap polar S");
+    polarN = nctx;
+    polarS = sctx;
     this.probe = document.createElement("canvas");
     this.probe.width = 192;
     this.probe.height = 96;
     const pctx = this.probe.getContext("2d", { alpha: true });
     if (!pctx) throw new Error("wrap probe");
     this.probeCtx = pctx;
-    this.texture = new THREE.CanvasTexture(this.canvas);
-    this.texture.wrapS = THREE.RepeatWrapping;
-    this.texture.wrapT = THREE.ClampToEdgeWrapping;
-    this.texture.minFilter = THREE.LinearFilter;
-    this.texture.magFilter = THREE.LinearFilter;
-    this.texture.generateMipmaps = false;
-    this.texture.anisotropy = 1;
-    this.texture.premultiplyAlpha = true;
-    this.texture.colorSpace = THREE.SRGBColorSpace;
-    this.texture.needsUpdate = true;
+    this.texture = makeWrapTex(this.canvas);
+    this.polarN = makeWrapTex(this.poleN);
+    this.polarS = makeWrapTex(this.poleS);
+    this.polarN.wrapS = THREE.ClampToEdgeWrapping;
+    this.polarS.wrapS = THREE.ClampToEdgeWrapping;
   }
 
   get strandCount() {
@@ -225,7 +279,7 @@ export class WrapBuffer {
       this.last = p;
       this.live = [p.clone()];
       this.liveColor = hex;
-      this.texture.needsUpdate = true;
+      this.markDirty();
       return true;
     }
     if (this.last && this.last.dot(p) > MIN_DOT) return false;
@@ -246,7 +300,7 @@ export class WrapBuffer {
       }
       if (this.live.length > MAX_LIVE) this.live.splice(0, this.live.length - MAX_LIVE);
       this.liveColor = hex;
-      this.texture.needsUpdate = true;
+      this.markDirty();
     }
     return true;
   }
@@ -293,7 +347,7 @@ export class WrapBuffer {
     this.last = p;
     this.live = [p.clone()];
     this.liveColor = hex;
-    this.texture.needsUpdate = true;
+    this.markDirty();
   }
 
   undo() {
@@ -309,8 +363,16 @@ export class WrapBuffer {
     this.redraw();
   }
 
+  private markDirty() {
+    this.texture.needsUpdate = true;
+    this.polarN.needsUpdate = true;
+    this.polarS.needsUpdate = true;
+  }
+
   private redraw() {
     this.ctx.clearRect(0, 0, W, H);
+    polarN?.clearRect(0, 0, PW, PW);
+    polarS?.clearRect(0, 0, PW, PW);
     for (const strand of this.strands) {
       for (let i = 1; i < strand.points.length; i++) {
         const a = strand.points[i - 1];
@@ -324,12 +386,14 @@ export class WrapBuffer {
     this.last = last?.points[last.points.length - 1] ?? null;
     this.live = last ? last.points.slice(-MAX_LIVE).map((p) => p.clone()) : [];
     this.liveColor = last?.hex ?? this.liveColor;
-    this.texture.needsUpdate = true;
+    this.markDirty();
     this.sampleCoverage();
   }
 
   dispose() {
     this.texture.dispose();
+    this.polarN.dispose();
+    this.polarS.dispose();
   }
 }
 

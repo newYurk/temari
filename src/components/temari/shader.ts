@@ -27,6 +27,8 @@ uniform int uDivision;
 uniform int uHover;
 uniform float uPeek;
 uniform sampler2D uWrap;
+uniform sampler2D uWrapN;
+uniform sampler2D uWrapS;
 uniform float uWrapOn;
 uniform float uFelt;
 uniform vec3 uFeltColor;
@@ -85,6 +87,13 @@ void main() {
   float wv = clamp(0.5 - asin(clamp(nL.y, -1.0, 1.0)) / 3.14159265359, 0.0015, 0.9985);
   vec4 wool = texture2D(uWool, vec2(wu, wv));
   col = mix(col, wool.rgb, clamp(wool.a, 0.0, 1.0) * 0.9);
+  float cap = smoothstep(0.78, 0.94, ay);
+  if (cap > 0.0) {
+    vec3 felt = vec3(0.775, 0.728, 0.658);
+    float n = fract(sin(dot(nL, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+    felt *= 0.93 + 0.1 * n;
+    col = mix(col, felt, cap);
+  }
   if (fill >= 0.0 && fill < 0.5) col = uPalette[0];
   else if (fill >= 0.5 && fill < 1.5) col = uPalette[1];
   else if (fill >= 1.5 && fill < 2.5) col = uPalette[2];
@@ -92,14 +101,16 @@ void main() {
 
   vec4 wcol = vec4(0.0);
   if (uWrapOn > 0.5) {
-    if (ay > 0.972) {
-      float pv = nL.y > 0.0 ? 0.002 : 0.998;
-      wcol = texture2DLodEXT(uWrap, vec2(0.00, pv), 0.0) * 0.25
-           + texture2DLodEXT(uWrap, vec2(0.25, pv), 0.0) * 0.25
-           + texture2DLodEXT(uWrap, vec2(0.50, pv), 0.0) * 0.25
-           + texture2DLodEXT(uWrap, vec2(0.75, pv), 0.0) * 0.25;
-    } else {
-      wcol = texture2DLodEXT(uWrap, vec2(wu, wv), 0.0);
+    wcol = texture2DLodEXT(uWrap, vec2(wu, wv), 0.0);
+    float capN = smoothstep(0.7, 0.88, nL.y);
+    float capS = smoothstep(0.7, 0.88, -nL.y);
+    if (capN > 0.0) {
+      vec2 pn = vec2(0.5) + nL.xz * (0.5 / max(1e-4, 1.0 + nL.y));
+      wcol = mix(wcol, texture2DLodEXT(uWrapN, pn, 0.0), capN);
+    }
+    if (capS > 0.0) {
+      vec2 ps = vec2(0.5) + nL.xz * (0.5 / max(1e-4, 1.0 - nL.y));
+      wcol = mix(wcol, texture2DLodEXT(uWrapS, ps, 0.0), capS);
     }
     col = mix(col, wcol.rgb / max(wcol.a, 0.001), clamp(wcol.a, 0.0, 1.0));
   }
@@ -249,6 +260,8 @@ export function createTemariMaterial() {
       uHover: { value: -1 },
       uPeek: { value: 0 },
       uWrap: { value: emptyWrap },
+      uWrapN: { value: emptyWrap },
+      uWrapS: { value: emptyWrap },
       uWrapOn: { value: 0 },
       uFelt: { value: 0 },
       uFeltColor: { value: new THREE.Color("#8f3d32") },
@@ -273,6 +286,8 @@ export function syncTemariMaterial(
     peeking: boolean;
     camera: THREE.Vector3;
     wrap?: THREE.Texture | null;
+    wrapN?: THREE.Texture | null;
+    wrapS?: THREE.Texture | null;
     wrapOn?: boolean;
     felt?: number;
     feltColor?: string;
@@ -294,6 +309,8 @@ export function syncTemariMaterial(
   }
   (material.uniforms.uCamPos.value as THREE.Vector3).copy(opts.camera);
   material.uniforms.uWrap.value = opts.wrap ?? emptyWrap;
+  material.uniforms.uWrapN.value = opts.wrapN ?? emptyWrap;
+  material.uniforms.uWrapS.value = opts.wrapS ?? emptyWrap;
   material.uniforms.uWrapOn.value = opts.wrapOn ? 1 : 0;
   material.uniforms.uFelt.value = opts.felt ?? 0;
   (material.uniforms.uFeltColor.value as THREE.Color).set(opts.feltColor ?? palette.colors[0]);

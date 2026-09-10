@@ -502,6 +502,8 @@ export function Ball() {
       peeking: mode === "kata" && peeking,
       camera: camera.position,
       wrap: wrap.texture,
+      wrapN: wrap.polarN,
+      wrapS: wrap.polarS,
       wrapOn: true,
       felt: mode === "title" ? 0 : layerDone && wrap.covered < 0.97 ? 0.4 : 0,
       feltColor: palette.colors[selectedColor] ?? palette.thread,
