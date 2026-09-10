@@ -4,6 +4,8 @@ import {
   C8_EXTRA,
   c8Pins,
   c8Stitches,
+  c10NorthRing,
+  c10Pins,
   isGreatCircle,
   jiwariNormals,
   jiwariStitches,
@@ -65,6 +67,27 @@ describe("c8 jiwari", () => {
 
   it("every C8 thread is a great circle", () => {
     for (const stitch of c8Stitches(4, 1)) {
+      if (stitch.kind !== "loop") {
+        assert.fail("marking thread must be a closed loop");
+        continue;
+      }
+      assert.equal(isGreatCircle(stitch.points), true);
+    }
+  });
+});
+
+describe("c10 jiwari", () => {
+  it("has twelve 10-point centers and a 5-ring at the start pole", () => {
+    assert.equal(c10NorthRing().length, 5);
+    assert.equal(c10Pins("done", 0).length, 12);
+    assert.equal(c10Pins("vruler", 0).length, 1);
+    assert.equal(c10Pins("vruler", 5).length, 6);
+  });
+
+  it("every C10 thread is a great circle", () => {
+    const all = jiwariStitches("c10");
+    assert.ok(all.length >= 10);
+    for (const stitch of all) {
       if (stitch.kind !== "loop") {
         assert.fail("marking thread must be a closed loop");
         continue;

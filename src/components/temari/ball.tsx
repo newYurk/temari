@@ -20,7 +20,7 @@ import { createMotifGeometry, getYarnTexture } from "./stitches";
 import { useTemari } from "./store";
 import * as feel from "./feel";
 import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
-import { C8_EXTRA, jiwariMarkColor, jiwariStitches, jiwariVisibleStitches } from "./jiwari";
+import { C8_EXTRA, jiwariMarkColor, jiwariStitches, jiwariVisibleStitches, vRulerLegs } from "./jiwari";
 
 const pointer = { x: 0, y: 0, down: false, dragged: false };
 const ptrs = new Map<number, { x: number; y: number }>();
@@ -142,6 +142,33 @@ function PaperStrip() {
   );
 }
 
+function VLeg({ from, to }: { from: readonly [number, number, number]; to: readonly [number, number, number] }) {
+  const a = new THREE.Vector3(from[0], from[1], from[2]).multiplyScalar(1.035);
+  const b = new THREE.Vector3(to[0], to[1], to[2]).multiplyScalar(1.035);
+  const mid = a.clone().add(b).multiplyScalar(0.5);
+  const dir = b.clone().sub(a);
+  const len = dir.length();
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+  return (
+    <mesh position={mid} quaternion={q} renderOrder={16} raycast={() => {}}>
+      <cylinderGeometry args={[0.007, 0.007, len, 6]} />
+      <meshStandardMaterial color="#f3eee4" roughness={0.92} metalness={0} />
+    </mesh>
+  );
+}
+
+function VRuler() {
+  const phase = useTemari((s) => s.jiwariPhase);
+  const legs = vRulerLegs(phase);
+  if (!legs) return null;
+  return (
+    <group>
+      <VLeg from={legs.origin} to={legs.a} />
+      <VLeg from={legs.origin} to={legs.b} />
+    </group>
+  );
+}
+
 function JiwariGuide() {
   const on = useTemari((s) => s.jiwariOn);
   const division = useTemari((s) => s.division);
@@ -151,11 +178,18 @@ function JiwariGuide() {
   useEffect(() => {
     if (!on) return;
     if (phase === "off" || phase === "done") return;
-    if (division !== "simple" && !(division === "c8" && phase === "combine")) return;
+    if (division !== "simple" && !(division === "c8" && phase === "combine") && division !== "c10") return;
+    if (division === "c10" && phase !== "vruler" && phase !== "south" && phase !== "meridians") return;
     const reduce =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const ms = reduce ? 0 : phase === "meridians" || phase === "combine" ? 480 : 1100;
+    const ms = reduce
+      ? 0
+      : phase === "meridians" || phase === "combine"
+        ? 320
+        : phase === "vruler" || phase === "south"
+          ? 700
+          : 1100;
     const id = window.setTimeout(advance, ms);
     return () => window.clearTimeout(id);
   }, [advance, division, laid, on, phase]);
@@ -707,6 +741,7 @@ export function Ball() {
       ) : null}
 
       {mode === "studio" && layerDone && jiwariOn ? <PaperStrip /> : null}
+      {mode === "studio" && layerDone && jiwariOn ? <VRuler /> : null}
       {mode === "studio" && layerDone ? <JiwariGuide /> : null}
 
       {markStitches.length > 0 ? (

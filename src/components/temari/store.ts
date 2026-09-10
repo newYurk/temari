@@ -32,7 +32,7 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import * as feel from "./feel";
-import { c8Pins, jiwariVisiblePins, simplePins, type JiwariPhase } from "./jiwari";
+import { c8Pins, c10Pins, jiwariNormals, jiwariVisiblePins, simplePins, type JiwariPhase } from "./jiwari";
 
 export type Mode = "title" | "studio" | "kata";
 
@@ -398,7 +398,8 @@ export const useTemari = create<TemariState>((set, get) => ({
     if (on && get().division === division) {
       if (
         (division === "simple" && phase !== "done" && phase !== "off") ||
-        (division === "c8" && phase === "combine")
+        (division === "c8" && phase === "combine") ||
+        (division === "c10" && phase !== "done" && phase !== "off")
       ) {
         get().advanceJiwari();
         return;
@@ -436,6 +437,25 @@ export const useTemari = create<TemariState>((set, get) => ({
       rememberStudio(get());
       return;
     }
+    if (division === "c10") {
+      set({
+        division: "c10",
+        jiwariOn: true,
+        jiwariPhase: "vruler",
+        jiwariLaid: 0,
+        fills: emptyFills("c10"),
+        sewn: motif === "kiku" ? fillKikuSewn("c10") : [],
+        history: [],
+        sewnHistory: [],
+        hover: -1,
+        hoverSlot: null,
+        pins: get().layerDone ? c10Pins("vruler", 0) : [],
+        pinArcs: [],
+        activePin: null,
+      });
+      rememberStudio(get());
+      return;
+    }
     const simple = division === "simple";
     set({
       division,
@@ -465,6 +485,40 @@ export const useTemari = create<TemariState>((set, get) => ({
         set({ jiwariPhase: "done", jiwariLaid: 4, pins: c8Pins() });
       } else {
         set({ jiwariLaid: next });
+      }
+      return;
+    }
+    if (state.division === "c10") {
+      if (state.jiwariPhase === "vruler") {
+        const next = state.jiwariLaid + 1;
+        feel.pin();
+        if (next > 5) {
+          set({ jiwariPhase: "south", jiwariLaid: 0, pins: c10Pins("south", 0) });
+        } else {
+          set({ jiwariLaid: next, pins: c10Pins("vruler", next) });
+        }
+        return;
+      }
+      if (state.jiwariPhase === "south") {
+        const next = state.jiwariLaid + 1;
+        feel.pin();
+        if (next > 5) {
+          set({ jiwariPhase: "meridians", jiwariLaid: 1, pins: c10Pins("done", 0) });
+        } else {
+          set({ jiwariLaid: next, pins: c10Pins("south", next) });
+        }
+        return;
+      }
+      if (state.jiwariPhase === "meridians") {
+        const max = jiwariNormals("c10").length;
+        const next = state.jiwariLaid + 1;
+        feel.stitch();
+        if (next >= max) {
+          set({ jiwariPhase: "done", jiwariLaid: max, pins: c10Pins("done", 0) });
+        } else {
+          set({ jiwariLaid: next });
+        }
+        return;
       }
       return;
     }

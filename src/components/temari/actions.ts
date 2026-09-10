@@ -115,10 +115,11 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "jiwari-c10",
     label: "C10",
     cluster: "jiwari",
-    canExecute: (s) => !needWrap(s) && c8Done(s),
+    canExecute: (s) => !needWrap(s) && (c8Done(s) || s.division === "c10"),
     isActive: (s) => s.jiwariOn && s.division === "c10",
     getDisabledReason: (s) =>
-      needWrap(s) ?? (c8Done(s) ? null : "C10 — после C8, линейка V"),
+      needWrap(s) ??
+      (c8Done(s) || s.division === "c10" ? null : "C10 — после C8, линейка V"),
   },
   {
     id: "stitch",
