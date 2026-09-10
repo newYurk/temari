@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { CRAFT_META, type Craft } from "./craft";
 import { DIVISION_META, fillsMatch, type Division } from "./division";
 import { PALETTE_LIST, PALETTES } from "./palettes";
-import { MOTIF_LIST, MOTIF_META, KAGARI_DIR_META, KAGARI_SPACING_META, kikuCapacity, type KagariDir, type KagariSpacing } from "./patterns";
+import { MOTIF_LIST, MOTIF_META, KAGARI_DIR_META, KAGARI_SPACING_META, kikuCapacity, isClosedContour, type KagariDir, type KagariSpacing } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import { useTemari } from "./store";
 import { unlock } from "./feel";
@@ -205,7 +205,9 @@ function Workbench() {
           : "полный круг, потом чуть повернуть — в середине витка нельзя"
         : craft === "pin"
           ? jiwariOn
-            ? "дзивари поверх базы — булавка только метит угол"
+            ? isClosedContour(pins.map((pin) => pin.p))
+              ? "замкнутый контур — можно залить кагари, или стежками"
+              : "дзивари поверх базы — булавка метит угол. кагари заливать, только если контур замкнут"
             : "шар без разметки — простое, C8 или C10, либо оставить так"
           : motif === "kiku"
             ? MOTIF_META.kiku.hint
@@ -305,7 +307,7 @@ function Workbench() {
                   </Seg>
                 ))}
               </div>
-              {craft === "pin" && pins.length >= 3 ? (
+              {craft === "pin" && isClosedContour(pins.map((pin) => pin.p)) ? (
                 <>
                   <div className="flex items-center gap-1">
                     {(["in", "out"] as KagariDir[]).map((id) => (

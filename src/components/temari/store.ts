@@ -21,6 +21,7 @@ import {
   sakasaArcsFromPins,
   kikuCapacity,
   KAGARI_SPACING_META,
+  isClosedContour,
   slotKey,
   type KagariDir,
   type KagariSpacing,
@@ -692,6 +693,7 @@ export const useTemari = create<TemariState>((set, get) => ({
     if (state.mode !== "studio" || !state.layerDone) return;
     if (state.pins.length < 3) return;
     const pts = state.pins.map((pin) => pin.p);
+    if (!isClosedContour(pts)) return;
     const density = KAGARI_SPACING_META[state.kagariSpacing].density;
     const extra =
       state.pins.length >= 5

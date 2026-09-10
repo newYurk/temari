@@ -71,6 +71,27 @@ export function kikuCapacity(
   return { max, span: meanTheta, pitch, innerMin };
 }
 
+/** Pins form a closed spherical polygon — fill is defined. An open arc is not. */
+export function isClosedContour(pins: Vec3[]): boolean {
+  if (pins.length < 3) return false;
+  const pole = normalize([
+    pins.reduce((s, p) => s + p[0], 0),
+    pins.reduce((s, p) => s + p[1], 0),
+    pins.reduce((s, p) => s + p[2], 0),
+  ]);
+  if (hypot3(pole) < 0.2) return false;
+  const phis = pins
+    .map((p) => polarAround(pole, p).phi)
+    .sort((a, b) => a - b);
+  let maxGap = 0;
+  for (let i = 0; i < phis.length; i++) {
+    const a = phis[i] ?? 0;
+    const b = i + 1 < phis.length ? (phis[i + 1] ?? 0) : (phis[0] ?? 0) + Math.PI * 2;
+    maxGap = Math.max(maxGap, b - a);
+  }
+  return maxGap < Math.PI * 0.94;
+}
+
 export function isMotifId(value: unknown): value is MotifId {
   return (
     value === "none" ||
