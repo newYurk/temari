@@ -45,7 +45,6 @@ function RecenterButton({ className }: { className?: string }) {
 
 function TitleLayer() {
   const enterStudio = useTemari((s) => s.enterStudio);
-  const enterKata = useTemari((s) => s.enterKata);
 
   return (
     <div className="flex h-full flex-col px-5 py-6 md:px-10 md:py-10">
@@ -71,26 +70,12 @@ function TitleLayer() {
           >
             Намотать базу
           </Button>
-          <Button
-            variant="ghost"
-            className="text-ink ring-line hover:bg-ink/5"
-            onClick={() => useTemari.getState().showExample()}
-          >
-            Пример кику
-          </Button>
           <a
             href="./design.html"
             className="inline-flex h-9 items-center px-2 text-xs tracking-wide text-stone underline-offset-4 hover:text-ink hover:underline"
           >
             схема нити
           </a>
-          <Button
-            variant="ghost"
-            className="text-ink ring-line hover:bg-ink/5"
-            onClick={() => enterKata()}
-          >
-            По образцу
-          </Button>
         </div>
       </div>
     </div>
