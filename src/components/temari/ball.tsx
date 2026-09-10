@@ -16,10 +16,13 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import { createTemariMaterial, syncTemariMaterial, createWrapCoverMaterial, syncWrapCoverMaterial } from "./shader";
-import { createMotifGeometry, getYarnTexture } from "./stitches";
+import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "three/addons/lines/LineMaterial.js";
+import { createMotifGeometry, createWrapLineGeometry, getYarnTexture } from "./stitches";
 import { useTemari } from "./store";
 import * as feel from "./feel";
-import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
+import { DEFAULT_KIND, threadMetalness, threadRoughness, wrapLineWidth, type ThreadKind } from "./thread";
 import { jiwariMarkColor, jiwariStitches } from "./jiwari";
 
 const pointer = { x: 0, y: 0, down: false, dragged: false };
@@ -83,6 +86,61 @@ function ThreadLayer({
       )}
     </group>
   );
+}
+
+function WrapYarn({
+  wrap,
+  color,
+  width,
+}: {
+  wrap: WrapBuffer;
+  color: string;
+  width: number;
+}) {
+  const line = useMemo(() => {
+    const mat = new LineMaterial({
+      color,
+      linewidth: width,
+      worldUnits: true,
+      dashed: false,
+      toneMapped: true,
+      depthTest: true,
+      depthWrite: true,
+    });
+    const mesh = new LineSegments2(new LineSegmentsGeometry(), mat);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 2;
+    return mesh;
+  }, []);
+  const { size } = useThree();
+  const last = useRef("");
+  useLayoutEffect(() => {
+    const mat = line.material as LineMaterial;
+    mat.resolution.set(size.width, size.height);
+  }, [line, size]);
+  useLayoutEffect(() => {
+    const mat = line.material as LineMaterial;
+    mat.color.set(color);
+    mat.linewidth = width;
+  }, [line, color, width]);
+  useLayoutEffect(() => {
+    const strands = wrap.yarn().map((s) => s.points);
+    const key = `${strands.length}:${strands.reduce((n, pts) => n + pts.length, 0)}`;
+    if (key === last.current) return;
+    last.current = key;
+    const geo = createWrapLineGeometry(strands);
+    if (!geo) return;
+    const prev = line.geometry;
+    line.geometry = geo;
+    if (prev && prev !== geo) prev.dispose();
+  });
+  useEffect(() => {
+    return () => {
+      line.geometry.dispose();
+      (line.material as LineMaterial).dispose();
+    };
+  }, [line]);
+  return <primitive object={line} />;
 }
 
 function WrapCover({ color, width }: { color: string; width: number }) {
@@ -241,8 +299,10 @@ export function Ball() {
     const st = useTemari.getState();
     mari.current.reset(st.threadWidth);
     if (st.wrapSeed === "full") {
+      wrap.strokeWidth = strokePx(st.threadWidth);
+      mari.current.fill(wrap, st.wrapColor, st.wrapHex);
       feel.resetTurns();
-      setWrapCount(1);
+      setWrapCount(wrap.strandCount);
       setWrapProgress(1);
       return;
     }
@@ -611,6 +671,7 @@ export function Ball() {
           width={threadWidth}
         />
       ) : null}
+      <WrapYarn wrap={wrap} color={wrapHex} width={wrapLineWidth(threadWidth)} />
 
       {markStitches.length > 0 ? (
         <ThreadLayer

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import type { Stitch } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth } from "./thread";
 
@@ -219,6 +220,26 @@ export function createWrapGeometry(
   if (!merged) return null;
   merged.computeVertexNormals();
   return merged;
+}
+
+/** Hair-thin sewing wraps as world-space line segments on the sphere. */
+export function createWrapLineGeometry(strands: THREE.Vector3[][]) {
+  const pos: number[] = [];
+  const shell = 1.003;
+  for (const pts of strands) {
+    if (pts.length < 2) continue;
+    const n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % n];
+      if (!a || !b) continue;
+      pos.push(a.x * shell, a.y * shell, a.z * shell, b.x * shell, b.y * shell, b.z * shell);
+    }
+  }
+  if (pos.length < 6) return null;
+  const geo = new LineSegmentsGeometry();
+  geo.setPositions(pos);
+  return geo;
 }
 
 class SpherePolyline extends THREE.Curve<THREE.Vector3> {
