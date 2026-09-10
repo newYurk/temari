@@ -5,7 +5,7 @@ import type { Stitch } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth } from "./thread";
 import { WRAP_LAYERS } from "./craft";
 
-const ARC_SEGS = 16;
+const ARC_SEGS = 32;
 const LIFT = 1.012;
 
 const _a = new THREE.Vector3();

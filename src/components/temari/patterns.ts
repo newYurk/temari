@@ -219,8 +219,8 @@ export function hitKikuSlot(
   const { theta, phi } = polarAround(poles[pole], p);
   const n = petalCount(division);
   const spec = kikuSpec(division);
-  if (theta < spec.inner * 0.45) return null;
-  const ring = Math.floor((theta - spec.inner + spec.pitch * 0.35) / spec.pitch);
+  if (theta < spec.inner * 0.45 || theta > spec.outer + spec.pitch * 0.5) return null;
+  const ring = Math.floor((spec.outer - theta + spec.pitch * 0.35) / spec.pitch);
   if (ring < 0 || ring >= spec.rounds) return null;
   let sector = Math.floor((phi / (Math.PI * 2)) * n);
   if (sector >= n) sector = n - 1;
@@ -285,17 +285,15 @@ function starSkip(division: Division) {
   return division === "c10" ? 3 : 3;
 }
 
-/** Simple: outer = ⅓ пути от экватора к полюсу. Шаг — толщина перле №5. */
+/** Simple: outer = ⅓ пути от экватора к полюсу. Нить — перле №5. */
 export function kikuSpec(division: Division) {
   const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
-  const gap = unitFromMm(2);
-  const inner = gap;
+  const inner = unitFromMm(2);
   const outer =
     division === "simple" ? Math.PI / 3 : division === "c8" ? Math.PI / 4 : 0.52;
-  const chord = pitch * 1.3;
-  const fit = Math.max(1, Math.floor((outer - inner - chord) / pitch));
+  const fit = Math.max(1, Math.floor((outer - inner) / pitch));
   const cap = division === "simple" ? 20 : 8;
-  return { inner, chord, pitch, rounds: Math.min(cap, fit) };
+  return { inner, outer, pitch, rounds: Math.min(cap, fit) };
 }
 
 function kikuColor(ring: number) {
@@ -305,22 +303,23 @@ function kikuColor(ring: number) {
 
 function kikuPetal(
   pole: Vec3,
-  spec: { inner: number; chord: number; pitch: number; rounds: number },
+  spec: { inner: number; outer: number; pitch: number; rounds: number },
   ring: number,
   sector: number,
   n: number,
   color: number,
 ): Stitch[] {
-  const inner = spec.inner + ring * spec.pitch;
-  const outer = inner + spec.chord;
+  const tInner = spec.inner;
+  const tOuter = spec.outer - ring * spec.pitch;
+  if (tOuter <= tInner + spec.pitch * 0.6) return [];
   const a = (2 * Math.PI * sector) / n;
   const b = (2 * Math.PI * (sector + 1)) / n;
   const lift = ring * 0.00045;
   return [
     {
       kind: "arc",
-      a: around(pole, outer, a),
-      b: around(pole, inner, b),
+      a: around(pole, tOuter, a),
+      b: around(pole, tInner, b),
       color,
       lift,
     },
@@ -532,13 +531,12 @@ export function kikuArcsFromPins(
       .sort((a, b) => a.phi - b.phi);
     const n = sorted.length;
     const L = Math.max(1, Math.min(cap.max, Math.round(layers)));
-    const chord = cap.pitch * 1.15;
-    const span = Math.max(cap.pitch, (cap.max - 1) * cap.pitch);
+    const outer0 = Math.min(cap.span * (2 / 3), cap.span - cap.pitch);
     const order = Array.from({ length: L }, (_, i) => (dir === "in" ? L - 1 - i : i));
     for (const r of order) {
-      const t = L <= 1 ? 0.5 : r / (L - 1);
-      const inner = cap.innerMin + t * span;
-      const outer = inner + chord;
+      const inner = cap.innerMin;
+      const outer = outer0 - r * cap.pitch;
+      if (outer <= inner + cap.pitch * 0.6) continue;
       const c = r % 2 === 0 ? color : (color + 1) % 4;
       for (const pass of [0, 1] as const) {
         for (let i = 0; i < n; i++) {

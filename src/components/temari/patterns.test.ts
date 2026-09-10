@@ -33,8 +33,21 @@ describe("kiku on Simple 8", () => {
     const spec = kikuSpec("simple");
     const gap = unitFromMm(2);
     assert.ok(Math.abs(spec.inner - gap) < 1e-6);
-    assert.ok(spec.inner + spec.rounds * spec.pitch < Math.PI / 2);
+    assert.ok(spec.outer === Math.PI / 3);
+    assert.ok(spec.inner + spec.rounds * spec.pitch <= spec.outer + spec.pitch);
     assert.ok(Math.abs(spec.pitch - unitFromMm(STITCH_THREAD_MM.pearl5)) < 1e-6);
+  });
+
+  it("one stitch is a long petal, not a short octagon chord", () => {
+    const pole: [number, number, number] = [0, 1, 0];
+    const stitch = stitchesForSlot("simple", { pole: 0, ring: 0, sector: 0 }, 1)[0];
+    assert.ok(stitch && stitch.kind === "arc");
+    if (!stitch || stitch.kind !== "arc") return;
+    const a = polar(pole, stitch.a);
+    const b = polar(pole, stitch.b);
+    const span = Math.abs(a.theta - b.theta);
+    assert.ok(span > 0.7, `petal span ${span} should reach ~π/3`);
+    assert.ok(Math.min(a.theta, b.theta) < 0.08, "inner sits at the 2 mm gap");
   });
 
   it("fills even meridians first, then odd", () => {
