@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Visual gate for maki wrap. Title-with-kiku is not a wrap check.
- * Shots: title, studio Нет (default color), studio Нет after beige wrap.
+ * Visual gate for maki wrap. See public/design.html §6.
+ * look-net = studio Пряжа + Нет: crossings, NOT a meridian fan, no felt.
+ * A covered accordion still fails. Title-with-kiku is not a wrap check.
  */
 import { mkdirSync } from "node:fs";
 import { chromium } from "playwright";
