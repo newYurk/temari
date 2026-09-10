@@ -70,8 +70,20 @@ function toUV(p: THREE.Vector3): [number, number] {
   return [((u % 1) + 1) % 1, clamp(v, 0, 1)];
 }
 
+const FIB_N = 2048;
+const FIB_GOLDEN = Math.PI * (3 - Math.sqrt(5));
+const FIB_UV: [number, number][] = Array.from({ length: FIB_N }, (_, i) => {
+  const y = 1 - (2 * (i + 0.5)) / FIB_N;
+  const r = Math.sqrt(Math.max(0, 1 - y * y));
+  const th = FIB_GOLDEN * i;
+  const u = Math.atan2(r * Math.cos(th), r * Math.sin(th)) / (Math.PI * 2) + 0.5;
+  const v = 0.5 - Math.asin(clamp(y, -1, 1)) / Math.PI;
+  return [((u % 1) + 1) % 1, clamp(v, 0, 1)];
+});
+
 const _slerpA = new THREE.Vector3();
 const _slerpB = new THREE.Vector3();
+const _slerpMid = new THREE.Vector3();
 const _segP = new THREE.Vector3();
 
 function slerpOnto(
@@ -83,6 +95,12 @@ function slerpOnto(
   const dot = clamp(a.dot(b), -1, 1);
   const theta = Math.acos(dot);
   if (theta < 1e-4) return out.copy(a);
+  if (theta > Math.PI - 1e-4) {
+    const axis = Math.abs(a.y) < 0.9 ? _slerpA.set(0, 1, 0) : _slerpA.set(1, 0, 0);
+    _slerpMid.crossVectors(a, axis).normalize();
+    if (t < 0.5) return slerpOnto(a, _slerpMid, t * 2, out);
+    return slerpOnto(_slerpMid, b, t * 2 - 1, out);
+  }
   const s = Math.sin(theta);
   return out
     .copy(a)
@@ -311,26 +329,15 @@ export class WrapBuffer {
     this.probeCtx.clearRect(0, 0, pw, ph);
     this.probeCtx.drawImage(this.canvas, 0, 0, pw, ph);
     const data = this.probeCtx.getImageData(0, 0, pw, ph).data;
-    let body = 0;
-    let bodyW = 0;
-    let poles = 0;
-    let poleN = 0;
-    for (let y = 0; y < ph; y++) {
-      const w = 0.25 + 0.75 * Math.sin(((y + 0.5) / ph) * Math.PI);
-      const polar = y < 4 || y >= ph - 4;
-      for (let x = 0; x < pw; x++) {
-        const a = data[(y * pw + x) * 4 + 3];
-        const hit = a > 48 ? 1 : 0;
-        body += hit * w;
-        bodyW += w;
-        if (polar) {
-          poles += hit;
-          poleN += 1;
-        }
-      }
+    let hit = 0;
+    for (let i = 0; i < FIB_N; i++) {
+      const uv = FIB_UV[i];
+      if (!uv) continue;
+      const x = Math.min(pw - 1, (uv[0] * pw) | 0);
+      const y = Math.min(ph - 1, (uv[1] * ph) | 0);
+      if (data[(y * pw + x) * 4 + 3] > 48) hit += 1;
     }
-    const mid = bodyW > 0 ? body / bodyW : 0;
-    this.covered = Math.min(1, mid);
+    this.covered = hit / FIB_N;
     return this.covered;
   }
 

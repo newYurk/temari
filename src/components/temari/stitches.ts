@@ -10,6 +10,7 @@ const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
 const _side = new THREE.Vector3();
 const _radial = new THREE.Vector3();
+const _mid = new THREE.Vector3();
 
 function slerp(
   a: THREE.Vector3,
@@ -20,11 +21,30 @@ function slerp(
   const dot = THREE.MathUtils.clamp(a.dot(b), -1, 1);
   const theta = Math.acos(dot);
   if (theta < 1e-4) return out.copy(a);
+  if (theta > Math.PI - 1e-4) {
+    // Antipodes: shortest geodesic is not unique. Pick a stable plane.
+    const axis =
+      Math.abs(a.y) < 0.9
+        ? _t.set(0, 1, 0)
+        : _t.set(1, 0, 0);
+    _mid.crossVectors(a, axis).normalize();
+    if (t < 0.5) return slerp(a, _mid, t * 2, out);
+    return slerp(_mid, b, t * 2 - 1, out);
+  }
   const s = Math.sin(theta);
   return out
     .copy(a)
     .multiplyScalar(Math.sin((1 - t) * theta) / s)
     .addScaledVector(b, Math.sin(t * theta) / s);
+}
+
+export function slerpOnSphere(
+  a: THREE.Vector3,
+  b: THREE.Vector3,
+  t: number,
+  out = new THREE.Vector3(),
+) {
+  return slerp(a, b, t, out);
 }
 
 function vec(p: [number, number, number], lift = 0) {

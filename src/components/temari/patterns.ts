@@ -68,7 +68,7 @@ function frame(pole: Vec3): [Vec3, Vec3] {
 }
 
 /** Point at colatitude θ, azimuth φ around a unit pole. */
-function around(pole: Vec3, theta: number, phi: number): Vec3 {
+export function around(pole: Vec3, theta: number, phi: number): Vec3 {
   const p = normalize(pole);
   const [u, v] = frame(p);
   const ct = Math.cos(theta);

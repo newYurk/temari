@@ -16,9 +16,9 @@ export const DIVISION_META: Record<
   Division,
   { label: string; hint: string }
 > = {
-  simple: { label: "Простое", hint: "полюса, экватор, восемь долей" },
-  c8: { label: "C8", hint: "октаэдр, шесть полюсов" },
-  c10: { label: "C10", hint: "икосаэдр, двадцать граней" },
+  simple: { label: "Простое", hint: "полюса, экватор, восемь долек" },
+  c8: { label: "C8", hint: "Simple 8 плюс квадрат у полюса" },
+  c10: { label: "C10", hint: "пятиугольник у полюса, двенадцать центров" },
 };
 
 const T = (1 + Math.sqrt(5)) / 2;
@@ -45,53 +45,29 @@ const RAW_VERTS: [number, number, number][] = [
 
 export const ICOSA_VERTS: [number, number, number][] = RAW_VERTS.map(normalize);
 
-function edgeLen(i: number, j: number) {
-  const a = ICOSA_VERTS[i];
-  const b = ICOSA_VERTS[j];
-  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-}
-
-function buildFaces(): [number, number, number][] {
-  let min = Infinity;
-  for (let i = 0; i < 12; i++) {
-    for (let j = i + 1; j < 12; j++) min = Math.min(min, edgeLen(i, j));
-  }
-  const faces: [number, number, number][] = [];
-  const tol = min * 0.12;
-  for (let i = 0; i < 12; i++) {
-    for (let j = i + 1; j < 12; j++) {
-      for (let k = j + 1; k < 12; k++) {
-        if (
-          Math.abs(edgeLen(i, j) - min) > tol ||
-          Math.abs(edgeLen(j, k) - min) > tol ||
-          Math.abs(edgeLen(k, i) - min) > tol
-        ) {
-          continue;
-        }
-        const a = ICOSA_VERTS[i];
-        const b = ICOSA_VERTS[j];
-        const c = ICOSA_VERTS[k];
-        const cx = (a[0] + b[0] + c[0]) / 3;
-        const cy = (a[1] + b[1] + c[1]) / 3;
-        const cz = (a[2] + b[2] + c[2]) / 3;
-        const ax = b[0] - a[0];
-        const ay = b[1] - a[1];
-        const az = b[2] - a[2];
-        const bx = c[0] - a[0];
-        const by = c[1] - a[1];
-        const bz = c[2] - a[2];
-        const nx = ay * bz - az * by;
-        const ny = az * bx - ax * bz;
-        const nz = ax * by - ay * bx;
-        if (nx * cx + ny * cy + nz * cz < 0) faces.push([i, k, j]);
-        else faces.push([i, j, k]);
-      }
-    }
-  }
-  return faces;
-}
-
-export const ICOSA_FACES = buildFaces();
+/** 20 faces of the regular icosahedron, outward winding. Not a distance hunt. */
+export const ICOSA_FACES: [number, number, number][] = [
+  [0, 1, 8],
+  [0, 10, 1],
+  [0, 4, 5],
+  [0, 8, 4],
+  [0, 5, 10],
+  [1, 7, 6],
+  [1, 6, 8],
+  [1, 10, 7],
+  [2, 9, 3],
+  [2, 3, 11],
+  [2, 5, 4],
+  [2, 4, 9],
+  [2, 11, 5],
+  [3, 6, 7],
+  [3, 9, 6],
+  [3, 7, 11],
+  [4, 8, 9],
+  [5, 11, 10],
+  [6, 9, 8],
+  [7, 10, 11],
+];
 
 export const ICOSA_FACE_NORMALS: [number, number, number][] = ICOSA_FACES.map(
   ([i, j, k]) => {
