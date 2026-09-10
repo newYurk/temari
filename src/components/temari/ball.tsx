@@ -129,6 +129,21 @@ function WrapYarn({
   );
 }
 
+function WrapCover({ color }: { color: string }) {
+  const yarn = useMemo(() => getWrapYarnTexture(), []);
+  return (
+    <mesh frustumCulled={false} renderOrder={3}>
+      <sphereGeometry args={[0.998, 96, 64]} />
+      <meshStandardMaterial
+        map={yarn}
+        color={color}
+        roughness={threadRoughness("serger")}
+        metalness={threadMetalness("serger")}
+      />
+    </mesh>
+  );
+}
+
 export function Ball() {
   const matRef = useRef<THREE.ShaderMaterial>(null);
   const guidesMat = useRef<THREE.MeshStandardMaterial>(null);
@@ -549,8 +564,8 @@ export function Ball() {
       wrapN: wrap.polarN,
       wrapS: wrap.polarS,
       wrapOn: false,
-      felt: mode === "title" || layerDone ? 0.94 : wrap.covered > 0.2 ? 0.35 : 0,
-      feltColor: palette.colors[wrapColor] ?? palette.thread,
+      felt: 0,
+      feltColor: palette.core,
       threadWidth,
     });
     if (guidesMat.current) guidesMat.current.color.set(palette.thread);
@@ -640,6 +655,9 @@ export function Ball() {
         />
       </mesh>
 
+      {mode === "title" || layerDone ? (
+        <WrapCover color={palette.colors[wrapColor] ?? palette.thread} />
+      ) : null}
       <WrapYarn
         wrap={wrap}
         color={palette.colors[wrapColor] ?? palette.thread}

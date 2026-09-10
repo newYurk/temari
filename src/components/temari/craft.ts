@@ -677,7 +677,7 @@ export class MariWinder {
   }
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
-    const n = 360;
+    const n = 160;
     for (let i = 0; i < n; i++) {
       this.aimAxis(i, n);
       buffer.relocate(this.dir, color, hex);
