@@ -8,7 +8,7 @@ import { mkdirSync } from "node:fs";
 import { chromium } from "playwright";
 
 const url = process.env.WRAP_LOOK_URL || "http://127.0.0.1:8080/";
-const out = "/workspace/screenshots";
+const out = new URL("../screenshots", import.meta.url).pathname;
 mkdirSync(out, { recursive: true });
 
 const browser = await chromium.launch();
