@@ -1,4 +1,5 @@
-import { polePositions, type Division } from "./division";
+import { polePositions, type Division } from "./division.ts";
+import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 
 export type KikuSlot = { pole: number; ring: number; sector: number };
 
@@ -14,7 +15,7 @@ export type Stitch =
 
 export const MOTIF_META: Record<MotifId, { label: string; hint: string }> = {
   none: { label: "Ряд", hint: "стежок за стежком по сетке" },
-  kiku: { label: "Кику", hint: "ёлочка от полюса: лепесток растёт наружу" },
+  kiku: { label: "Кику", hint: "увагакэ тидори: зигзаг по меридианам, два прохода" },
   hoshi: { label: "Хоси", hint: "звезда {n/k} на малом круге" },
   hishi: { label: "Хиси", hint: "вложенные многоугольники у полюсов" },
   obi: { label: "Оби", hint: "пояса — малые круги параллельно экватору" },
@@ -235,8 +236,11 @@ export function fillKikuSewn(division: Division): SewnEntry[] {
   for (let pole = 0; pole < poles; pole++) {
     for (let ring = 0; ring < rounds; ring++) {
       const color = kikuColor(ring);
-      for (let sector = 0; sector < n; sector++) {
-        sewn.push({ key: slotKey({ pole, ring, sector }), color });
+      for (const pass of [0, 1] as const) {
+        for (let sector = 0; sector < n; sector++) {
+          if (sector % 2 !== pass) continue;
+          sewn.push({ key: slotKey({ pole, ring, sector }), color });
+        }
       }
     }
   }
@@ -273,17 +277,25 @@ function smallCircle(normal: Vec3, height: number, count = 96): Vec3[] {
 }
 
 function petalCount(division: Division) {
-  return division === "c10" ? 5 : 8;
+  if (division === "c10") return 10;
+  return 8;
 }
 
 function starSkip(division: Division) {
-  return division === "c10" ? 2 : 3;
+  return division === "c10" ? 3 : 3;
 }
 
-function kikuSpec(division: Division) {
-  if (division === "simple") return { inner: 0.2, chord: 0.048, pitch: 0.036, rounds: 10 };
-  if (division === "c8") return { inner: 0.18, chord: 0.05, pitch: 0.036, rounds: 6 };
-  return { inner: 0.16, chord: 0.048, pitch: 0.034, rounds: 6 };
+/** Simple: outer = ⅓ пути от экватора к полюсу. Шаг — толщина перле №5. */
+export function kikuSpec(division: Division) {
+  const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
+  const gap = unitFromMm(2);
+  const inner = gap;
+  const outer =
+    division === "simple" ? Math.PI / 3 : division === "c8" ? Math.PI / 4 : 0.52;
+  const chord = pitch * 1.3;
+  const fit = Math.max(1, Math.floor((outer - inner - chord) / pitch));
+  const cap = division === "simple" ? 20 : 8;
+  return { inner, chord, pitch, rounds: Math.min(cap, fit) };
 }
 
 function kikuColor(ring: number) {
@@ -303,15 +315,14 @@ function kikuPetal(
   const outer = inner + spec.chord;
   const a = (2 * Math.PI * sector) / n;
   const b = (2 * Math.PI * (sector + 1)) / n;
-  const lift = ring * 0.00035;
+  const lift = ring * 0.00045;
   return [
-    { kind: "arc", a: around(pole, inner, a), b: around(pole, outer, b), color, lift },
     {
       kind: "arc",
       a: around(pole, outer, a),
       b: around(pole, inner, b),
       color,
-      lift: lift + 0.00025,
+      lift,
     },
   ];
 }
@@ -323,8 +334,11 @@ function kiku(division: Division): Stitch[] {
   for (const pole of polePositions(division)) {
     for (let r = 0; r < spec.rounds; r++) {
       const color = kikuColor(r);
-      for (let i = 0; i < n; i++) {
-        stitches.push(...kikuPetal(pole, spec, r, i, n, color));
+      for (const pass of [0, 1] as const) {
+        for (let i = 0; i < n; i++) {
+          if (i % 2 !== pass) continue;
+          stitches.push(...kikuPetal(pole, spec, r, i, n, color));
+        }
       }
     }
   }
@@ -435,17 +449,7 @@ export function generateMotif(division: Division, motif: MotifId): Stitch[] {
 
 /** Classic first temari: Simple 8, kiku on both poles, maki obi. */
 export function generateTitleMari(): Stitch[] {
-  const spec = { inner: 0.12, chord: 0.058, pitch: 0.048, rounds: 20 };
-  const n = 8;
-  const stitches: Stitch[] = [];
-  for (const pole of polePositions("simple")) {
-    for (let r = 0; r < spec.rounds; r++) {
-      const color = r % 2 === 0 ? 2 : 1;
-      for (let i = 0; i < n; i++) {
-        stitches.push(...kikuPetal(pole, spec, r, i, n, color));
-      }
-    }
-  }
+  const stitches = kiku("simple");
   const belts: [number, number][] = [
     [0, 1],
     [0.11, 2],
@@ -536,20 +540,18 @@ export function kikuArcsFromPins(
       const inner = cap.innerMin + t * span;
       const outer = inner + chord;
       const c = r % 2 === 0 ? color : (color + 1) % 4;
-      for (let i = 0; i < n; i++) {
-        const a = sorted[i];
-        const b = sorted[(i + 1) % n];
-        if (!a || !b) continue;
-        arcs.push({
-          a: around(pole, inner, a.phi),
-          b: around(pole, outer, b.phi),
-          color: c,
-        });
-        arcs.push({
-          a: around(pole, outer, a.phi),
-          b: around(pole, inner, b.phi),
-          color: c,
-        });
+      for (const pass of [0, 1] as const) {
+        for (let i = 0; i < n; i++) {
+          if (i % 2 !== pass) continue;
+          const a = sorted[i];
+          const b = sorted[(i + 1) % n];
+          if (!a || !b) continue;
+          arcs.push({
+            a: around(pole, outer, a.phi),
+            b: around(pole, inner, b.phi),
+            color: c,
+          });
+        }
       }
     }
   }
