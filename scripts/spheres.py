@@ -377,21 +377,68 @@ def thread_one_side():
     return svg("Нить с одной стороны булавок", "\n            ".join(x for x in bits if x))
 
 
+NORTH = (0.0, 1.0, 0.0)
+
+
+def around_pole(pole, theta, phi):
+    axis, u, v = basis(pole)
+    ct, st = math.cos(theta), math.sin(theta)
+    cp, sp = math.cos(phi), math.sin(phi)
+    return add(scale(axis, ct), add(scale(u, cp * st), scale(v, sp * st)))
+
+
 def kiku():
     bits = []
-    for lam in (-0.5, 0.5):
-        bits.append(circle_paths(gc_samples(meridian_axis(lam)), "mark-front", "mark-back", 1.05))
-    for h in (0.82, 0.68, 0.54):
-        bits.append(front_only(parallel_samples((0, 1, 0), h), "beni-front", 2.05))
-    bits.append(pin((0, 1, 0), 3.3))
+    n = 8
+    da = 2 * math.pi / n
+    for i in range(n // 2):
+        bits.append(
+            circle_paths(gc_samples(meridian_axis(i * da)), "mark-front", "mark-back", 0.8)
+        )
+    for r in range(6):
+        inner = 0.14 + r * 0.095
+        outer = inner + 0.08
+        for i in range(n):
+            a0 = around_pole(NORTH, inner, i * da)
+            a1 = around_pole(NORTH, inner, (i + 1) * da)
+            b0 = around_pole(NORTH, outer, i * da)
+            b1 = around_pole(NORTH, outer, (i + 1) * da)
+            bits.append(front_only(arc_samples(a0, b1, 7), "beni-front", 1.12))
+            bits.append(front_only(arc_samples(b0, a1, 7), "beni-front", 1.12))
+    bits.append(pin(NORTH, 3.2))
     return svg("Кику от полюса", "\n            ".join(x for x in bits if x))
+
+
+def hoshi():
+    n, skip, theta = 8, 3, 0.62
+    pts = [around_pole(NORTH, theta, 2 * math.pi * i / n) for i in range(n)]
+    bits = [
+        circle_paths(gc_samples((0, 1, 0)), "mark-front", "mark-back", 0.8),
+        front_only(parallel_samples(NORTH, math.cos(theta)), "mark-front", 0.85),
+    ]
+    for i in range(n):
+        bits.append(front_only(arc_samples(pts[i], pts[(i + skip) % n], 18), "beni-front", 1.35))
+    bits.append(pin(NORTH, 3.0))
+    return svg("Хоси — звезда", "\n            ".join(x for x in bits if x))
+
+
+def hishi():
+    n = 8
+    bits = []
+    for k, theta in enumerate((0.26, 0.42, 0.58, 0.74)):
+        pts = [around_pole(NORTH, theta, 2 * math.pi * i / n + (k * math.pi / n)) for i in range(n)]
+        w = 1.45 if k % 2 == 0 else 1.15
+        for i in range(n):
+            bits.append(front_only(arc_samples(pts[i], pts[(i + 1) % n], 10), "beni-front", w))
+    bits.append(pin(NORTH, 3.0))
+    return svg("Хиси — вложенные", "\n            ".join(x for x in bits if x))
 
 
 def obi():
     bits = [
-        circle_paths(gc_samples((0, 1, 0)), "mark-front", "mark-back", 1.2),
-        circle_paths(parallel_samples((0, 1, 0), 0.22), "beni-front", "beni-back", 2.15),
-        circle_paths(parallel_samples((0, 1, 0), -0.22), "beni-front", "beni-back", 2.15),
+        circle_paths(gc_samples((0, 1, 0)), "beni-front", "beni-back", 2.2),
+        circle_paths(parallel_samples((0, 1, 0), 0.2), "beni-front", "beni-back", 2.0),
+        circle_paths(parallel_samples((0, 1, 0), -0.2), "beni-front", "beni-back", 2.0),
     ]
     return svg("Оби по экватору", "\n            ".join(bits))
 
@@ -428,6 +475,8 @@ if __name__ == "__main__":
         ("pins", pins_simple()),
         ("oneside", thread_one_side()),
         ("kiku", kiku()),
+        ("hoshi", hoshi()),
+        ("hishi", hishi()),
         ("obi", obi()),
     ]
     out = "/tmp/spheres"
