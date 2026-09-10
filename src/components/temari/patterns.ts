@@ -346,6 +346,32 @@ export function generateMotif(division: Division, motif: MotifId): Stitch[] {
   return [];
 }
 
+/** Classic first temari: Simple 8, kiku on both poles, maki obi. */
+export function generateTitleMari(): Stitch[] {
+  const spec = { inner: 0.12, chord: 0.058, pitch: 0.048, rounds: 20 };
+  const n = 8;
+  const stitches: Stitch[] = [];
+  for (const pole of polePositions("simple")) {
+    for (let r = 0; r < spec.rounds; r++) {
+      const color = r % 2 === 0 ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        stitches.push(...kikuPetal(pole, spec, r, i, n, color));
+      }
+    }
+  }
+  const belts: [number, number][] = [
+    [0, 1],
+    [0.11, 2],
+    [-0.11, 2],
+    [0.22, 1],
+    [-0.22, 1],
+  ];
+  for (const [h, c] of belts) {
+    stitches.push({ kind: "loop", points: smallCircle([0, 1, 0], h), color: c });
+  }
+  return stitches;
+}
+
 function slerp3(a: Vec3, b: Vec3, t: number): Vec3 {
   const d = Math.min(1, Math.max(-1, dot(a, b)));
   const theta = Math.acos(d);

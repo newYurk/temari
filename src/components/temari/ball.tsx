@@ -7,6 +7,7 @@ import { createGuideGeometry } from "./guides";
 import { PALETTES } from "./palettes";
 import {
   generateMotif,
+  generateTitleMari,
   hitKikuSlot,
   stitchesForSlot,
   stitchesFromSewn,
@@ -153,7 +154,9 @@ export function Ball() {
     () =>
       !stitchesOn
         ? []
-        : generateMotif(mode === "title" ? "simple" : division, preset),
+        : mode === "title"
+          ? generateTitleMari()
+          : generateMotif(division, preset),
     [division, mode, preset, stitchesOn],
   );
   const sewnStitches = useMemo(
@@ -165,7 +168,7 @@ export function Ball() {
     [mode, pinArcs],
   );
   const markStitches = useMemo(() => {
-    if (mode === "title") return [];
+    if (mode === "title") return jiwariStitches("simple", 1);
     if (mode === "studio" && !layerDone) return [];
     return jiwariStitches(division, jiwariMarkColor(selectedColor));
   }, [division, layerDone, mode, selectedColor]);

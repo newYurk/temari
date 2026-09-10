@@ -17,7 +17,7 @@ function framingDistance(width: number, height: number) {
 
 function aimY(width: number, height: number, mode: Mode) {
   const portrait = height > width * 1.15;
-  if (mode === "title") return portrait ? -0.22 : -0.08;
+  if (mode === "title") return portrait ? 0.02 : 0;
   return portrait ? -0.38 : -0.16;
 }
 

@@ -48,22 +48,22 @@ function TitleLayer() {
   const enterKata = useTemari((s) => s.enterKata);
 
   return (
-    <div className="flex h-full flex-col justify-between px-5 py-6 md:px-10 md:py-10">
-      <div className="flex items-start justify-between pt-[env(safe-area-inset-top)]">
-        <p className="temari-rise font-display text-sm italic tracking-wide text-stone">
-          нить на сфере
-        </p>
+    <div className="flex h-full flex-col px-5 py-6 md:px-10 md:py-10">
+      <div className="flex items-start justify-between gap-4 pt-[env(safe-area-inset-top)]">
+        <div className="max-w-md">
+          <h1 className="temari-rise font-display text-4xl font-medium tracking-tight text-ink md:text-5xl">
+            Темари
+          </h1>
+          <p className="temari-rise temari-rise-2 mt-2 max-w-sm text-sm leading-relaxed text-stone">
+            Сначала тонкая намотка. Потом кагари: ряды ёлочки от полюса, или
+            фигура по меткам — от большого края внутрь. Булавки только метят углы.
+          </p>
+        </div>
         <RecenterButton />
       </div>
-      <div className="max-w-md pb-[env(safe-area-inset-bottom)]">
-        <h1 className="temari-rise temari-rise-2 font-display text-5xl font-medium tracking-tight text-ink md:text-6xl">
-          Темари
-        </h1>
-        <p className="temari-rise temari-rise-3 mt-3 max-w-sm text-sm leading-relaxed text-stone">
-          Сначала тонкая намотка. Потом кагари: ряды ёлочки от полюса, или
-          фигура по меткам — от большого края внутрь. Булавки только метят углы.
-        </p>
-        <div className="temari-rise temari-rise-4 pointer-events-auto mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="min-h-0 flex-1" aria-hidden />
+      <div className="temari-rise temari-rise-3 pointer-events-auto max-w-md pb-[env(safe-area-inset-bottom)]">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <Button
             onPointerDown={() => unlock()}
             onClick={enterStudio}
