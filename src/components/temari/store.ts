@@ -28,6 +28,7 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import * as feel from "./feel";
+import { jiwariPins } from "./jiwari";
 
 export type Mode = "title" | "studio" | "kata";
 
@@ -362,6 +363,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       sewnHistory: [],
       hover: -1,
       hoverSlot: null,
+      pins: get().layerDone ? jiwariPins(division) : get().pins,
     });
     rememberStudio(get());
   },
@@ -602,9 +604,11 @@ export const useTemari = create<TemariState>((set, get) => ({
   finishLayer: () => {
     if (get().mode !== "studio") return;
     feel.layer();
+    const division = get().division;
     set({
       layerDone: true,
-      craft: "stitch",
+      craft: "pin",
+      pins: jiwariPins(division),
     });
   },
   setKikuLayers: (n) => set({ kikuLayers: Math.max(3, Math.min(14, Math.round(n))) }),

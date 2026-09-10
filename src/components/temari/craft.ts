@@ -8,11 +8,11 @@ export const CRAFT_LIST: Craft[] = ["wind", "pin", "stitch"];
 export const CRAFT_META: Record<Craft, { label: string; hint: string }> = {
   wind: {
     label: "Намотка",
-    hint: "Намотка базы — ведите шар по большому кругу",
+    hint: "полный круг — потом чуть повернуть, не в середине витка",
   },
   pin: {
-    label: "Метки",
-    hint: "тык на узел сетки — угол фигуры",
+    label: "Дзивари",
+    hint: "тонкие нити поверх базы — булавка только метит угол",
   },
   stitch: {
     label: "Кагари",
@@ -119,31 +119,30 @@ function strokeSeg(
   let [u1, v1] = toUV(b);
   if (u1 - u0 > 0.5) u1 -= 1;
   else if (u0 - u1 > 0.5) u1 += 1;
-  const longUv = Math.abs(u1 - u0) > 0.04 || Math.abs(v1 - v0) > 0.05;
-  const nearPole = Math.abs(a.y) > 0.72 || Math.abs(b.y) > 0.72;
-  if (longUv || nearPole) {
+  const pole = Math.max(Math.abs(a.y), Math.abs(b.y));
+  // Equirect U is unstable only at the geographic poles. Stamp there.
+  // Do not skip the rest of the cap — that left the holes we could not fill.
+  if (pole > 0.97) {
     stampDot(ctx, a, hex, width);
     stampDot(ctx, b, hex, width);
     return;
   }
-  ctx.strokeStyle = hex;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  const line = (alpha: number, w: number, x0: number, y0: number, x1: number, y1: number) => {
+  const draw = (alpha: number, w: number) => {
     ctx.globalAlpha = alpha;
+    ctx.strokeStyle = hex;
     ctx.lineWidth = w;
-    ctx.beginPath();
-    ctx.moveTo(x0 * W, y0 * H);
-    ctx.lineTo(x1 * W, y1 * H);
-    ctx.stroke();
-  };
-  const paint = (alpha: number, w: number) => {
     for (const shift of [-1, 0, 1]) {
-      line(alpha, w, u0 + shift, v0, u1 + shift, v1);
+      ctx.beginPath();
+      ctx.moveTo((u0 + shift) * W, v0 * H);
+      ctx.lineTo((u1 + shift) * W, v1 * H);
+      ctx.stroke();
     }
   };
-  paint(1, width * 1.18);
-  paint(1, width);
+  draw(1, width);
+  draw(0.38, width * 0.36);
+  ctx.globalAlpha = 1;
 }
 
 function stroke(
@@ -372,7 +371,7 @@ export function resetWrapBuffer() {
 
 export function strokePx(thickness: number) {
   const t = Math.max(0, Math.min(1, thickness));
-  return (H / 512) * (12.2 + t * 14);
+  return (H / 512) * (3.4 + t * 5.8);
 }
 
 /**
@@ -401,6 +400,9 @@ export class MariWinder {
   private sinceCover = 0;
   private locked = false;
   private lastAimT = 0;
+  /** +1 / −1 after the first drag; 0 = not chosen yet. */
+  private sense = 0;
+  private pendingSteer: THREE.Vector3 | null = null;
 
   reset(thickness: number) {
     const t = Math.max(0, Math.min(1, thickness));
@@ -411,9 +413,10 @@ export class MariWinder {
     this.cover = 0;
     this.sinceCover = 0;
     this.lastAimT = 0;
-    this.sNeeded = TWO_PI * (52 + (1 - t) * 36);
+    this.sense = 0;
+    this.pendingSteer = null;
     const ang = (strokePx(t) * Math.PI) / H;
-    this.tilt = ang * 2.2 + 0.1;
+    this.tilt = Math.max(0.07, ang * 1.6);
     this.sNeeded = TWO_PI * (64 + (1 - t) * 28);
     this.pole.set(0, 1, 0);
     this.axis.set(0.28, 0.94, 0.18).normalize();
@@ -434,6 +437,23 @@ export class MariWinder {
 
   copyAxis(out: THREE.Vector3) {
     return out.copy(this.axis);
+  }
+
+  get windSign() {
+    return this.sense === 0 ? 1 : this.sense;
+  }
+
+  /**
+   * First drag locks winding sense. Reverse never unwinds:
+   * vis is always that sense, mag is always laid as yarn.
+   */
+  commitSpin(ang: number) {
+    const mag = Math.abs(ang);
+    if (mag < 1e-6) return { mag: 0, vis: 0, against: false };
+    if (this.sense === 0 && mag > 0.01) this.sense = ang > 0 ? 1 : -1;
+    const sign = this.sense === 0 ? (ang > 0 ? 1 : -1) : this.sense;
+    const against = this.sense !== 0 && (ang > 0 ? 1 : -1) !== this.sense;
+    return { mag, vis: sign * mag, against };
   }
 
   /** Test helper: set the spin axis; poles are rebuilt perpendicular. */
@@ -475,23 +495,34 @@ export class MariWinder {
   }
 
   /**
-   * Turn the meridian family. Pole, spin axis and yarn rotate together.
+   * Remember how the hands want to turn — applied only when a lap closes.
+   * Mid-wrap the plane is frozen: the thread is already on that equator.
    */
-  aim(spinAxis: THREE.Vector3) {
-    this.tmp.copy(spinAxis).normalize();
+  noteSwipe(proposed: THREE.Vector3) {
+    this.tmp.copy(proposed).normalize();
     if (this.tmp.lengthSq() < 0.2) return;
-    if (this.tmp.dot(this.pole) < 0) this.tmp.negate();
-    const now = performance.now();
-    const dt = this.lastAimT ? Math.min(0.048, (now - this.lastAimT) / 1000) : 0.016;
-    this.lastAimT = now;
+    if (!this.pendingSteer) this.pendingSteer = new THREE.Vector3();
+    this.pendingSteer.copy(this.tmp);
+  }
+
+  /**
+   * Hands turn the mari: the swipe axis becomes the next wrap plane.
+   * Always the same hemisphere as the current axis, so winding sense stays.
+   * Only call at lap boundary — not while a wrap is open.
+   */
+  steer(proposed: THREE.Vector3, mag: number) {
+    this.tmp.copy(proposed).normalize();
+    if (this.tmp.lengthSq() < 0.2) return;
+    if (this.tmp.dot(this.axis) < 0) this.tmp.negate();
+    this.lastAimT = performance.now();
     this.qTo.setFromUnitVectors(this.axis, this.tmp);
     const turn = 2 * Math.acos(clamp(this.qTo.w, -1, 1));
     if (turn < 1e-4) {
       this.locked = true;
       return;
     }
-    const maxTurn = this.locked ? 0.85 * dt : 2.2 * dt;
-    const t = Math.min(1, maxTurn / turn);
+    const cap = Math.min(this.tilt * 2.4 + 0.04, Math.max(0.02, mag) * 0.7);
+    const t = Math.min(1, cap / turn);
     this.q.identity().slerp(this.qTo, t);
     this.axis.applyQuaternion(this.q).normalize();
     this.dir.applyQuaternion(this.q);
@@ -499,21 +530,45 @@ export class MariWinder {
     this.locked = true;
   }
 
+  aim(spinAxis: THREE.Vector3) {
+    const now = performance.now();
+    const dt = this.lastAimT ? Math.min(0.048, (now - this.lastAimT) / 1000) : 0.016;
+    this.steer(spinAxis, this.locked ? 0.85 * dt : 2.2 * dt);
+  }
+
   /**
-   * Next wrap is not parallel — the mari turns in the hands.
-   * TemariKai: never two successive wraps in the same place.
+   * After a full lap the plane may move — not in the middle of a wrap.
+   * A little: about a thread-width, toward the last swipe if there was one.
    */
   private nextWrap() {
+    if (this.pendingSteer) {
+      this.steer(this.pendingSteer, this.tilt * 3);
+      this.pendingSteer = null;
+      return;
+    }
     this.perp.crossVectors(this.axis, this.dir);
     if (this.perp.lengthSq() < 1e-8) this.perp.set(0, 1, 0);
     this.perp.normalize();
-    const yaw = 0.72 + 0.5 * Math.sin(this.s * 0.13) + 0.38 * Math.sin(this.s * 0.029);
-    this.q.setFromAxisAngle(this.axis, yaw);
+    const heading = 0.4 + 0.9 * (0.5 + 0.5 * Math.sin(this.s * 0.17 + this.wrapCount * 0.7));
+    this.q.setFromAxisAngle(this.axis, heading);
     this.perp.applyQuaternion(this.q);
-    const tilt = 0.5 + 0.28 * Math.sin(this.s * 0.37);
-    this.q.setFromAxisAngle(this.perp, tilt);
+    this.q.setFromAxisAngle(this.perp, this.tilt);
     this.axis.applyQuaternion(this.q).normalize();
     this.keepOnEquator();
+  }
+
+  /** Hands tuck the mari under the thread — used when the drag goes against sense. */
+  tuck(amount: number) {
+    const a = Math.min(0.2, Math.max(0.02, amount));
+    this.perp.crossVectors(this.axis, this.dir);
+    if (this.perp.lengthSq() < 1e-8) this.perp.set(0, 1, 0);
+    this.perp.normalize();
+    this.q.setFromAxisAngle(this.axis, 0.35 + a);
+    this.perp.applyQuaternion(this.q);
+    this.q.setFromAxisAngle(this.perp, this.tilt + a * 0.45);
+    this.axis.applyQuaternion(this.q).normalize();
+    this.keepOnEquator();
+    this.arc = 0;
   }
 
   /** Yarn along the current equator. After a full lap the plane turns
@@ -556,23 +611,16 @@ export class MariWinder {
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
     this.advance(buffer, this.sNeeded, color, hex, 0.07);
-    this.cover = 1;
+    this.cover = buffer.sampleCoverage();
   }
 
   advance(buffer: WrapBuffer, ds: number, color: number, hex: string, step = 0.07) {
     if (ds <= 0) return;
-    if (this.cover >= 0.94 && this.wrapCount >= 20) {
-      this.cover = 1;
-      return;
-    }
-    if (this.s >= this.sNeeded) {
-      this.cover = Math.max(this.cover, buffer.sampleCoverage());
-      return;
-    }
-    let left = Math.min(ds, this.sNeeded - this.s);
+    if (this.cover >= 0.985) return;
+    let left = ds;
     const h0 = Math.max(0.05, step);
     while (left > 1e-6) {
-      if (this.cover >= 0.94 && this.wrapCount >= 20) break;
+      if (this.cover >= 0.985) break;
       const h = Math.min(h0, left);
       this.q.setFromAxisAngle(this.axis, h);
       this.dir.applyQuaternion(this.q);

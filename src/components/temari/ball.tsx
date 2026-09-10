@@ -18,7 +18,8 @@ import { createTemariMaterial, syncTemariMaterial } from "./shader";
 import { createMotifGeometry, getYarnTexture } from "./stitches";
 import { useTemari } from "./store";
 import * as feel from "./feel";
-import { DEFAULT_KIND, threadMetalness, threadRoughness } from "./thread";
+import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
+import { jiwariMarkColor, jiwariStitches } from "./jiwari";
 
 const pointer = { x: 0, y: 0, down: false, dragged: false };
 const ptrs = new Map<number, { x: number; y: number }>();
@@ -45,14 +46,16 @@ function ThreadLayer({
   stitches,
   colors,
   opacity = 1,
+  kind = DEFAULT_KIND.stitch,
 }: {
   stitches: Stitch[];
   colors: [string, string, string, string];
   opacity?: number;
+  kind?: ThreadKind;
 }) {
   const geos = useMemo(() => {
-    return [0, 1, 2, 3].map((i) => createMotifGeometry(stitches, i));
-  }, [stitches]);
+    return [0, 1, 2, 3].map((i) => createMotifGeometry(stitches, i, kind));
+  }, [stitches, kind]);
   const yarn = useMemo(() => getYarnTexture(), []);
 
   useEffect(() => {
@@ -69,8 +72,8 @@ function ThreadLayer({
             <meshStandardMaterial
               map={yarn}
               color={colors[i]}
-              roughness={threadRoughness(DEFAULT_KIND.stitch)}
-              metalness={threadMetalness(DEFAULT_KIND.stitch)}
+              roughness={threadRoughness(kind)}
+              metalness={threadMetalness(kind)}
               transparent
               opacity={opacity}
               depthWrite={opacity >= 1}
@@ -129,7 +132,7 @@ function LiveThread() {
     const nrm = geo.getAttribute("normal") as THREE.BufferAttribute;
     const col = geo.getAttribute("color") as THREE.BufferAttribute;
     const idx = geo.getIndex() as THREE.BufferAttribute;
-    const half = Math.max(0.012, (wrap.strokeWidth / 768) * Math.PI * 0.4);
+    const half = Math.max(0.006, (wrap.strokeWidth / 768) * Math.PI * 0.26);
     let total = 0;
     for (const s of strands) total += s.points.length;
     let skip = 0;
@@ -299,6 +302,11 @@ export function Ball() {
     () => (mode === "studio" ? arcsToStitches(pinArcs) : []),
     [mode, pinArcs],
   );
+  const markStitches = useMemo(() => {
+    if (mode === "title") return [];
+    if (mode === "studio" && !layerDone) return [];
+    return jiwariStitches(division, jiwariMarkColor(selectedColor));
+  }, [division, layerDone, mode, selectedColor]);
   const ghostStitches = useMemo(() => {
     if (mode !== "studio" || craft !== "stitch" || !hoverSlot) return [];
     return stitchesForSlot(division, hoverSlot, selectedColor);
@@ -462,64 +470,27 @@ export function Ball() {
       _right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
       _up.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
 
-      if (winding && ptrs.size >= 2) {
-        let mx = 0;
-        let my = 0;
-        ptrs.forEach((p) => {
-          mx += p.x;
-          my += p.y;
-        });
-        mx /= ptrs.size;
-        my /= ptrs.size;
-        const tx = (mx - tilt.mx) * k;
-        const ty = (my - tilt.my) * k;
-        tilt.mx = mx;
-        tilt.my = my;
-        if (Math.hypot(tx, ty) < 1e-6) return;
-        _axis.copy(_up).multiplyScalar(tx).addScaledVector(_right, ty);
-        if (_axis.lengthSq() < 1e-8) return;
+      if (winding) {
+        const mag = Math.min(0.28, Math.hypot(rx, ry));
+        if (mag < 1e-6) return;
+        _axis.copy(_up).multiplyScalar(rx).addScaledVector(_right, ry);
+        if (_axis.lengthSq() < 1e-12) return;
         _axis.normalize();
         _inv.copy(g.quaternion).invert();
         _local.copy(_axis).applyQuaternion(_inv).normalize();
-        mari.current.copyAxis(_feed);
-        _tPrev.copy(_feed).applyQuaternion(g.quaternion).normalize();
-        mari.current.aim(_local);
-        mari.current.copyAxis(_local);
-        _axis.copy(_local).applyQuaternion(g.quaternion).normalize();
-        _q.setFromUnitVectors(_tPrev, _axis);
-        g.quaternion.premultiply(_q);
-        return;
-      }
-
-      if (winding) {
         if (!mari.current.hasPlane) {
-          _axis.copy(_up).multiplyScalar(rx).addScaledVector(_right, ry);
-          if (_axis.lengthSq() > 1e-8) {
-            _axis.normalize();
-            _inv.copy(g.quaternion).invert();
-            _local.copy(_axis).applyQuaternion(_inv).normalize();
-            mari.current.forceAxis(_local.x, _local.y, _local.z);
-          }
-        }
-        mari.current.copyAxis(_local);
-        _axis.copy(_local).applyQuaternion(g.quaternion).normalize();
-        const sx = _axis.dot(_right);
-        const sy = _axis.dot(_up);
-        const tlen = Math.hypot(sx, sy);
-        let ang = 0;
-        if (tlen < 0.12) {
-          ang = Math.hypot(rx, ry);
-          if (rx + ry < 0) ang = -ang;
+          mari.current.forceAxis(_local.x, _local.y, _local.z);
         } else {
-          ang = (rx * -sy + ry * sx) / tlen;
+          mari.current.noteSwipe(_local);
         }
-        ang = Math.max(-0.22, Math.min(0.22, ang));
-        if (Math.abs(ang) < 1e-6) return;
-        _q.setFromAxisAngle(_axis, ang);
+        mari.current.copyAxis(_feed);
+        _axis.copy(_feed).applyQuaternion(g.quaternion).normalize();
+        const wind = mari.current.commitSpin(mag);
+        _q.setFromAxisAngle(_axis, wind.vis);
         g.quaternion.premultiply(_q);
-        omega.current.copy(_axis).multiplyScalar(ang / dt);
+        omega.current.copy(_axis).multiplyScalar(wind.vis / dt);
         const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
-        mari.current.spin(Math.abs(ang), wrap, st.selectedColor, hex);
+        mari.current.spin(wind.mag, wrap, st.selectedColor, hex);
         return;
       }
 
@@ -587,7 +558,12 @@ export function Ball() {
       feed: (rad: number) => {
         const st = useTemari.getState();
         const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
-        mari.current.spin(rad, wrap, st.selectedColor, hex);
+        const wind = mari.current.commitSpin(rad);
+        mari.current.spin(wind.mag, wrap, st.selectedColor, hex);
+      },
+      noteSwipe: (x: number, y: number, z: number) => {
+        _feed.set(x, y, z);
+        mari.current.noteSwipe(_feed);
       },
       dump: () => {
         mari.current.copyAxis(_feed);
@@ -598,6 +574,7 @@ export function Ball() {
           livePts: wrap.live.length,
           yarnPts: wrap.yarn().reduce((n, s) => n + s.points.length, 0),
           axis: [_feed.x, _feed.y, _feed.z],
+          sign: mari.current.windSign,
           ...wrap.snapshot(),
         };
       },
@@ -637,10 +614,10 @@ export function Ball() {
       const next = mari.current.progress;
       if (wrap.strandCount !== state.wrapCount) setWrapCount(wrap.strandCount);
       if (Math.abs(next - state.wrapProgress) > 0.002) setWrapProgress(next);
-    } else if (state.layerDone && mari.current.progress < 0.999) {
+    } else if (state.layerDone && wrap.covered < 0.985) {
       const hex = PALETTES[state.paletteId].colors[state.selectedColor] ?? "#8f3d32";
-      mari.current.fill(wrap, state.selectedColor, hex);
-      setWrapProgress(1);
+      mari.current.advance(wrap, 7.5, state.selectedColor, hex, 0.1);
+      setWrapProgress(wrap.covered);
     }
 
     const tip = needle.current;
@@ -669,8 +646,8 @@ export function Ball() {
       peeking: mode === "kata" && peeking,
       camera: camera.position,
       wrap: wrap.texture,
-      wrapOn: false,
-      felt: mode === "title" || layerDone ? 1 : wrap.covered,
+      wrapOn: mode !== "title",
+      felt: mode === "title" ? 1 : layerDone && wrap.covered < 0.97 ? 0.4 : 0,
       feltColor: palette.colors[selectedColor] ?? palette.thread,
       threadWidth,
     });
@@ -678,16 +655,7 @@ export function Ball() {
     if (beadMat.current) beadMat.current.color.set(palette.thread);
 
     const rail = wrapRail.current;
-    if (rail) {
-      const winding = state.mode === "studio" && state.craft === "wind" && !state.layerDone;
-      rail.visible = winding;
-      if (winding) {
-        mari.current.copyAxis(_local);
-        if (_local.lengthSq() > 1e-8) {
-          rail.quaternion.setFromUnitVectors(Z_FWD, _local);
-        }
-      }
-    }
+    if (rail) rail.visible = false;
   });
 
   const canWork = mode !== "title";
@@ -758,7 +726,7 @@ export function Ball() {
 
       <mesh
         geometry={guideGeo}
-        visible={mode === "kata" || (mode === "studio" && layerDone && craft === "pin")}
+        visible={mode === "kata"}
         scale={1.008}
         renderOrder={8}
       >
@@ -773,6 +741,13 @@ export function Ball() {
         />
       </mesh>
 
+      {markStitches.length > 0 ? (
+        <ThreadLayer
+          stitches={markStitches}
+          colors={palette.colors}
+          kind={DEFAULT_KIND.mark}
+        />
+      ) : null}
       {presetStitches.length > 0 ? (
         <ThreadLayer stitches={presetStitches} colors={palette.colors} />
       ) : null}
@@ -841,7 +816,7 @@ export function Ball() {
         ref={beads}
         args={[undefined, undefined, 12]}
         frustumCulled={false}
-        visible={mode === "kata" || (mode === "studio" && layerDone && craft === "pin")}
+        visible={mode === "kata"}
       >
         <sphereGeometry args={[0.032, 16, 12]} />
         <meshStandardMaterial

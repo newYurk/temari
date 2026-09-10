@@ -52,7 +52,7 @@ export const THREAD_KIND_META: Record<
   metallic: {
     label: "Металлик",
     role: "mark",
-    thickness: 0.28,
+    thickness: 0.14,
     sheen: 0.86,
     hint: "дзивари и акценты",
   },
