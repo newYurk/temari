@@ -189,6 +189,7 @@ function Workbench() {
   const motif = useTemari((s) => s.motif);
   const craft = useTemari((s) => s.craft);
   const selectedColor = useTemari((s) => s.selectedColor);
+  const wrapHex = useTemari((s) => s.wrapHex);
   const fills = useTemari((s) => s.fills);
   const pins = useTemari((s) => s.pins);
   const puzzleIndex = useTemari((s) => s.puzzleIndex);
@@ -292,7 +293,7 @@ function Workbench() {
       </header>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
-        <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-linen from-55% via-linen/95 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-linen from-40% via-linen/80 to-transparent" />
         <div className="pointer-events-auto relative px-3 pb-[max(1.25rem,calc(env(safe-area-inset-bottom)+0.85rem))] md:px-8">
         <div className="mx-auto flex max-w-lg flex-col gap-1.5">
           {mode === "studio" && !layerDone ? (
@@ -463,6 +464,12 @@ function Workbench() {
           </div>
 
           <div className="flex items-center gap-2">
+            <div
+              className="size-8 shrink-0 rounded-full ring-1 ring-line"
+              style={{ backgroundColor: wrapHex }}
+              title="Цвет базы"
+              aria-label="Цвет намотанной базы"
+            />
             <div className="flex flex-1 gap-2">
               {palette.colors.map((color, i) => (
                 <button

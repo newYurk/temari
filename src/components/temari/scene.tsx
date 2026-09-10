@@ -12,14 +12,14 @@ const FIT_MARGIN = 1.16;
 function framingDistance(width: number, height: number, mode: Mode) {
   const halfH = Math.tan(THREE.MathUtils.degToRad(FOV) / 2);
   const halfW = halfH * (width / Math.max(height, 1));
-  const margin = mode === "studio" ? 1.22 : FIT_MARGIN;
+  const margin = mode === "studio" ? 1.46 : FIT_MARGIN;
   return (BALL_R * margin) / Math.min(halfW, halfH);
 }
 
 function aimY(width: number, height: number, mode: Mode) {
   const portrait = height > width * 1.15;
   if (mode === "title") return portrait ? 0.06 : 0;
-  return portrait ? -0.36 : -0.14;
+  return portrait ? -0.2 : -0.06;
 }
 
 function CameraRig() {

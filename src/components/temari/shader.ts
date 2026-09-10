@@ -289,12 +289,12 @@ vec3 fibAxis(int i, int n, float seed) {
   return vec3(cos(th) * r, z, sin(th) * r);
 }
 
-float band(vec3 p, int n, float w, float seed) {
+float filament(vec3 p, int n, float w, float seed) {
   float acc = 0.0;
   for (int i = 0; i < 96; i++) {
     if (i >= n) break;
     float d = abs(dot(p, fibAxis(i, n, seed)));
-    acc += smoothstep(w, w * 0.22, d);
+    acc += exp(-d * d / (w * w));
   }
   return acc;
 }
@@ -303,27 +303,27 @@ void main() {
   vec3 p = normalize(vL);
   vec3 n = normalize(vN);
   float slider = clamp(uWidth, 0.0, 1.0);
-  float yarn = band(p, 64, mix(0.018, 0.012, slider), 0.17);
-  float sew = band(p, 96, mix(0.009, 0.006, slider), 1.91);
-  float hit = yarn + sew;
-  float cover = 1.0 - exp(-hit * 0.55);
-  vec3 under = uColor * 0.38;
-  vec3 strand = uColor * 1.06;
-  vec3 col = mix(under, strand, cover);
+  float yarn = filament(p, 72, mix(0.013, 0.019, slider), 0.11);
+  float mid = filament(p, 96, mix(0.0075, 0.011, slider), 1.63);
+  float sew = filament(p, 96, mix(0.0042, 0.0065, slider), 2.87);
+  float layers = yarn + mid + sew;
+  float stroke = 1.0 - exp(-layers * 0.2);
+  vec3 col = uColor * mix(0.9, 0.58, stroke);
+  col *= 1.0 - 0.07 * (1.0 - exp(-layers * 0.07));
   vec3 an = abs(p);
   vec3 tw = an / max(an.x + an.y + an.z, 0.001);
-  float nap = texture2D(uThread, p.yz * 36.0).r * tw.x
-            + texture2D(uThread, p.xz * 36.0).r * tw.y
-            + texture2D(uThread, p.xy * 36.0).r * tw.z;
-  col *= 0.94 + 0.08 * nap;
-  vec3 Nn = normalize(n + p * ((cover - 0.5) * 0.16));
+  float nap = texture2D(uThread, p.yz * 48.0).r * tw.x
+            + texture2D(uThread, p.xz * 48.0).r * tw.y
+            + texture2D(uThread, p.xy * 48.0).r * tw.z;
+  col *= 0.96 + 0.06 * nap * stroke;
+  vec3 Nn = normalize(n + p * (stroke * 0.2));
   vec3 L = normalize(vec3(0.46, 0.82, 0.52));
   vec3 L2 = normalize(vec3(-0.55, 0.22, -0.28));
   vec3 V = normalize(uCamPos - vW);
   float ndl = max(dot(Nn, L), 0.0);
   float ndl2 = max(dot(Nn, L2), 0.0);
-  float lit = 0.54 + 0.36 * ndl + 0.12 * ndl2;
-  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.6) * 0.05;
+  float lit = 0.56 + 0.34 * ndl + 0.12 * ndl2;
+  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.6) * 0.04;
   gl_FragColor = vec4(col * lit + rim * col, 1.0);
 }
 `;

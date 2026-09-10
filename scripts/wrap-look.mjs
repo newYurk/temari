@@ -39,5 +39,15 @@ if (await netBtn.count()) await netBtn.click();
 await page.waitForTimeout(300);
 await page.screenshot({ path: `${out}/look-beige.png` });
 
+await page.goto(url, { waitUntil: "networkidle", timeout: 60000 });
+await page.waitForTimeout(800);
+const white = page.getByRole("button", { name: "Цвет базы 3" });
+if (await white.count()) await white.click();
+await page.getByRole("button", { name: "Намотать базу" }).click();
+await page.waitForTimeout(1400);
+if (await netBtn.count()) await netBtn.click();
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${out}/look-white.png` });
+
 await browser.close();
-console.log("wrote look-title.png look-net.png look-sew.png look-beige.png");
+console.log("wrote look-title.png look-net.png look-beige.png look-white.png");
