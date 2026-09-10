@@ -71,9 +71,6 @@ const jiwariReady = (s: TemariCraftState) => s.jiwariOn && s.jiwariPhase === "do
 const simpleDone = (s: TemariCraftState) =>
   s.jiwariOn && s.division === "simple" && s.jiwariPhase === "done";
 
-const c8Done = (s: TemariCraftState) =>
-  s.jiwariOn && s.division === "c8" && s.jiwariPhase === "done";
-
 export const CRAFT_ACTIONS: CraftAction[] = [
   {
     id: "pin",
@@ -115,11 +112,9 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "jiwari-c10",
     label: "C10",
     cluster: "jiwari",
-    canExecute: (s) => !needWrap(s) && (c8Done(s) || s.division === "c10"),
+    canExecute: (s) => !needWrap(s),
     isActive: (s) => s.jiwariOn && s.division === "c10",
-    getDisabledReason: (s) =>
-      needWrap(s) ??
-      (c8Done(s) || s.division === "c10" ? null : "C10 — после C8, линейка V"),
+    getDisabledReason: needWrap,
   },
   {
     id: "stitch",
