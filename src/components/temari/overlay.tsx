@@ -1,4 +1,5 @@
 import { LocateFixed } from "lucide-react";
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { PALETTE_LIST, PALETTES } from "./palettes";
@@ -10,6 +11,11 @@ import { ActionBar } from "./ActionBar";
 
 export function Overlay() {
   const mode = useTemari((s) => s.mode);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("kiku") !== "1") return;
+    useTemari.getState().showExample();
+  }, []);
 
   if (mode === "title") {
     return (

@@ -579,7 +579,7 @@ export const useTemari = create<TemariState>((set, get) => ({
     const division = get().division;
     set({
       motif: id,
-      sewn: id === "kiku" ? fillKikuSewn(division) : [],
+      sewn: id === "kiku" ? [] : [],
       sewnHistory: [...get().sewnHistory, get().sewn].slice(-40),
       hoverSlot: null,
     });
@@ -933,9 +933,8 @@ export const useTemari = create<TemariState>((set, get) => ({
       division: "simple",
       paletteId: "beni",
       motif: "kiku",
-      sewn: fillKikuSewn("simple"),
+      sewn: [],
       fills: emptyFills("simple"),
-      pins: [],
       pinArcs: [],
       activePin: null,
       craft: "stitch",
@@ -948,6 +947,10 @@ export const useTemari = create<TemariState>((set, get) => ({
       startPin: null,
       hoverSlot: null,
       selectedColor: 0,
+      jiwariOn: true,
+      jiwariPhase: "done",
+      jiwariLaid: 5,
+      pins: simplePins("done"),
     });
     rememberStudio(get());
   },

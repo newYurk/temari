@@ -288,7 +288,7 @@ export function Ball() {
   const nodes = useMemo(() => gridNodes(division), [division]);
 
   const preset: MotifId =
-    mode === "title" ? "kiku" : mode === "studio" && motif !== "kiku" && motif !== "none" ? motif : "none";
+    mode === "title" ? "kiku" : mode === "studio" && motif !== "none" ? motif : "none";
   const [stitchesOn, setStitchesOn] = useState(mode !== "title");
   useEffect(() => {
     if (mode !== "title") {
@@ -753,10 +753,10 @@ export function Ball() {
         />
       ) : null}
       {presetStitches.length > 0 ? (
-        <ThreadLayer stitches={presetStitches} colors={palette.colors} order={10} />
+        <ThreadLayer stitches={presetStitches} colors={palette.colors} order={14} />
       ) : null}
       {sewnStitches.length > 0 ? (
-        <ThreadLayer stitches={sewnStitches} colors={palette.colors} order={10} />
+        <ThreadLayer stitches={sewnStitches} colors={palette.colors} order={14} />
       ) : null}
       {pinStitches.length > 0 ? (
         <ThreadLayer stitches={pinStitches} colors={palette.colors} order={10} />

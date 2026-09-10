@@ -281,18 +281,27 @@ function petalCount(division: Division) {
   return 8;
 }
 
+/** Simple 8 / C10: two sets of every-other meridian. Adjacent = hugs the ray. */
+function kikuSkip(n: number) {
+  return n >= 8 ? 2 : 1;
+}
+
 function starSkip(division: Division) {
   return division === "c10" ? 3 : 3;
 }
 
-/** Simple: outer = ⅓ пути от экватора к полюсу. Нить — перле №5. */
+/**
+ * Upper marks sit ~1 cm from the pole (Barbara / TemariKai beginner).
+ * 2 mm is the turn gap at the lower point, not the pole opening.
+ * Outer: ⅓ of the pole–equator path, measured up from the equator.
+ */
 export function kikuSpec(division: Division) {
   const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
-  const inner = unitFromMm(2);
+  const inner = unitFromMm(10);
   const outer =
     division === "simple" ? Math.PI / 3 : division === "c8" ? Math.PI / 4 : 0.52;
   const fit = Math.max(1, Math.floor((outer - inner) / pitch));
-  const cap = division === "simple" ? 20 : 8;
+  const cap = division === "simple" ? 10 : 8;
   return { inner, outer, pitch, rounds: Math.min(cap, fit) };
 }
 
@@ -312,9 +321,10 @@ function kikuPetal(
   const tInner = spec.inner;
   const tOuter = spec.outer - ring * spec.pitch;
   if (tOuter <= tInner + spec.pitch * 0.6) return [];
+  const skip = kikuSkip(n);
   const a = (2 * Math.PI * sector) / n;
-  const b = (2 * Math.PI * (sector + 1)) / n;
-  const lift = ring * 0.00045;
+  const b = (2 * Math.PI * (sector + skip)) / n;
+  const lift = 0.003 + ring * 0.0005;
   return [
     {
       kind: "arc",
@@ -530,11 +540,12 @@ export function kikuArcsFromPins(
       .map((p) => ({ p, ...polarAround(pole, p) }))
       .sort((a, b) => a.phi - b.phi);
     const n = sorted.length;
+    const skip = kikuSkip(n);
     const L = Math.max(1, Math.min(cap.max, Math.round(layers)));
+    const inner = Math.max(cap.innerMin, unitFromMm(10));
     const outer0 = Math.min(cap.span * (2 / 3), cap.span - cap.pitch);
     const order = Array.from({ length: L }, (_, i) => (dir === "in" ? L - 1 - i : i));
     for (const r of order) {
-      const inner = cap.innerMin;
       const outer = outer0 - r * cap.pitch;
       if (outer <= inner + cap.pitch * 0.6) continue;
       const c = r % 2 === 0 ? color : (color + 1) % 4;
@@ -542,7 +553,7 @@ export function kikuArcsFromPins(
         for (let i = 0; i < n; i++) {
           if (i % 2 !== pass) continue;
           const a = sorted[i];
-          const b = sorted[(i + 1) % n];
+          const b = sorted[(i + skip) % n];
           if (!a || !b) continue;
           arcs.push({
             a: around(pole, outer, a.phi),
