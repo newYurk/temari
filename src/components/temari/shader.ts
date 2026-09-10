@@ -289,13 +289,13 @@ void main() {
   float nap = texture2D(uThread, p.yz * 16.0).r * tw.x
             + texture2D(uThread, p.xz * 16.0).r * tw.y
             + texture2D(uThread, p.xy * 16.0).r * tw.z;
-  vec3 col = uColor * (0.94 + 0.08 * nap);
+  vec3 col = uColor * (0.9 + 0.08 * nap);
   vec3 L = normalize(vec3(0.46, 0.82, 0.52));
   vec3 L2 = normalize(vec3(-0.55, 0.22, -0.28));
   vec3 V = normalize(uCamPos - vW);
   float ndl = max(dot(n, L), 0.0);
   float ndl2 = max(dot(n, L2), 0.0);
-  float lit = 0.72 + 0.28 * ndl + 0.08 * ndl2;
+  float lit = 0.78 + 0.22 * ndl + 0.06 * ndl2;
   float rim = pow(1.0 - max(dot(n, V), 0.0), 2.8) * 0.05;
   gl_FragColor = vec4(col * lit + rim * col, 1.0);
 }

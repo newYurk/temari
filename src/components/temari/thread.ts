@@ -83,7 +83,7 @@ export function wrapRibbonWidth(slider: number) {
 /** World-space sewing-thread diameter on the unit mari. */
 export function wrapLineWidth(slider: number) {
   const t = Math.max(0, Math.min(1, slider));
-  return 0.0058 + t * 0.005;
+  return 0.007 + t * 0.004;
 }
 
 export function threadRoughness(kind: ThreadKind) {

@@ -674,12 +674,30 @@ export class MariWinder {
   }
 
   fill(buffer: WrapBuffer, color: number, hex: string) {
-    const n = 480;
     buffer.paint = false;
-    for (let i = 0; i < n; i++) {
-      this.aimAxis(i, n);
-      buffer.relocate(this.dir, color, hex);
-      this.layCircle(buffer, color, hex);
+    const width = 0.036;
+    const layers = 2;
+    const per = 28;
+    const wander = new THREE.Vector3();
+    for (let layer = 0; layer < layers; layer++) {
+      const t = layer * 1.13;
+      wander.set(Math.sin(t), Math.cos(t * 0.71), Math.cos(t)).normalize();
+      this.axis.set(Math.cos(t * 0.4), Math.sin(t * 0.55), Math.sin(t * 0.4)).normalize();
+      for (let i = 0; i < per; i++) {
+        this.dir.crossVectors(this.axis, wander);
+        if (this.dir.lengthSq() < 1e-6) {
+          wander.set(1, 0, 0);
+          this.dir.crossVectors(this.axis, wander);
+        }
+        this.dir.normalize();
+        this.arc = 0;
+        buffer.relocate(this.dir, color, hex);
+        this.layCircle(buffer, color, hex);
+        this.axis.applyAxisAngle(wander, width);
+        this.axis.normalize();
+        wander.applyAxisAngle(this.axis, width * 0.31);
+        wander.normalize();
+      }
     }
     buffer.paint = true;
     this.cover = 1;

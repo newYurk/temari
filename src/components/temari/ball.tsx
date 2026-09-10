@@ -15,7 +15,7 @@ import {
   type Stitch,
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
-import { createTemariMaterial, syncTemariMaterial, createWrapCoverMaterial, syncWrapCoverMaterial } from "./shader";
+import { createTemariMaterial, syncTemariMaterial } from "./shader";
 import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
@@ -143,16 +143,11 @@ function WrapYarn({
   return <primitive object={line} />;
 }
 
-function WrapCover({ color, width }: { color: string; width: number }) {
-  const material = useMemo(() => createWrapCoverMaterial(), []);
-  const { camera } = useThree();
-  useFrame(() => {
-    syncWrapCoverMaterial(material, { color, width, camera: camera.position });
-  });
+function WrapCover({ color }: { color: string }) {
   return (
     <mesh frustumCulled={false} renderOrder={3}>
-      <sphereGeometry args={[0.999, 128, 96]} />
-      <primitive object={material} attach="material" />
+      <sphereGeometry args={[0.998, 96, 64]} />
+      <meshStandardMaterial color={color} roughness={0.9} metalness={0.03} />
     </mesh>
   );
 }
@@ -666,10 +661,7 @@ export function Ball() {
       </mesh>
 
       {mode === "title" || layerDone ? (
-        <WrapCover
-          color={wrapHex}
-          width={threadWidth}
-        />
+        <WrapCover color={wrapHex} />
       ) : null}
       <WrapYarn wrap={wrap} color={wrapHex} width={wrapLineWidth(threadWidth)} />
 
