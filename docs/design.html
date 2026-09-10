@@ -425,6 +425,78 @@
         </figure>
       </div>
 
+      <h3>Как кладётся нить разметки</h3>
+      <p>
+        Дзивари — не вышивка. Нить <em>ведут по большому кругу</em> и прихватывают,
+        чтобы не сползла. Игла почти не ходит вглубь мари — только крошечный стежок-якорь
+        на пересечении. Это другая рука, чем кагари.
+      </p>
+      <table>
+        <thead>
+          <tr><th></th><th>Дзивари</th><th>Кагари</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Путь</td>
+            <td>полный большой круг (меридиан, экватор, ребро деления)</td>
+            <td>короткий стежок от одной метки к соседней</td>
+          </tr>
+          <tr>
+            <td>Игла</td>
+            <td>прихват (tack) в пересечении; между ними нить лежит сверху</td>
+            <td>каждый стежок заходит <em>под</em> нить разметки и выходит у следующей</td>
+          </tr>
+          <tr>
+            <td>Булавка</td>
+            <td>полуоборот вокруг стержня — переход на следующую долю. Сторону не меняют</td>
+            <td>нить обматывает стержень слоями, пока шьют угол</td>
+          </tr>
+          <tr>
+            <td>Ряд</td>
+            <td>один проход по кругу, потом другой круг</td>
+            <td>ёлочка вокруг фигуры; следующий ряд к предыдущему (внутрь или наружу)</td>
+          </tr>
+          <tr>
+            <td>Толщина</td>
+            <td>тонкая контрастная (часто металлик / светлая на тёмной базе)</td>
+            <td>рабочая вышивальная, того же калибра что задумали для узора</td>
+          </tr>
+          <tr>
+            <td>Заливка</td>
+            <td>нет: это скелет, не заполнение грани</td>
+            <td>да, если контур замкнут</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="steps">
+        <figure>
+          <svg class="ball" viewBox="0 0 200 200" aria-label="Прихват дзивари на пересечении">
+            <circle cx="100" cy="100" r="78" fill="url(#g)" stroke="#0c0b09" stroke-width="1.15" />
+            <path class="mark-back" d="M100 22 a78 78 0 0 0 0 156" fill="none" stroke-width="1.5" />
+            <path class="mark-front" d="M100 22 a78 78 0 0 1 0 156" fill="none" stroke-width="1.5" />
+            <path class="mark-back" d="M22 100 A78 22 0 0 1 178 100" fill="none" stroke-width="1.5" />
+            <path class="mark-front" d="M22 100 A78 22 0 0 0 178 100" fill="none" stroke-width="1.5" />
+            <circle cx="100" cy="22" r="3.2" class="pin" />
+            <circle cx="100" cy="100" r="2.2" class="pin" />
+            <path d="M94 94 l12 12 m0 -12 l-12 12" stroke="#8f3d32" stroke-width="1.3" fill="none" />
+          </svg>
+          <figcaption>Пересечение: нить уже лежит. Крошечный прихват крестиком — и дальше по кругу. Булавку не вынимать до прихвата.</figcaption>
+        </figure>
+        <figure>
+          <svg class="ball" viewBox="0 0 200 200" aria-label="Полуоборот дзивари вокруг булавки">
+            <circle cx="100" cy="100" r="78" fill="url(#g)" stroke="#0c0b09" stroke-width="1.15" />
+            <path class="mark-front" d="M100 22 L 100 100" fill="none" stroke-width="1.6" />
+            <path class="mark-front" d="M100 22 L 148 70" fill="none" stroke-width="1.6" />
+            <path class="mark-back" d="M100 22 L 52 70" fill="none" stroke-width="1.4" />
+            <circle cx="100" cy="22" r="3.4" class="pin" />
+            <path d="M108 18 A10 10 0 0 1 92 26" fill="none" stroke="#8f3d32" stroke-width="1.8" />
+            <path d="M86 30 l8 -6" stroke="#8f3d32" stroke-width="1.2" fill="none" />
+          </svg>
+          <figcaption>У полюса: не разворачивать базу. Полуоборот вокруг стержня — и на соседний меридиан, всё с той же стороны булавок.</figcaption>
+        </figure>
+      </div>
+
       <h3>Угловая линейка</h3>
       <p>
         C10 на десять не складывается. Инструмент Японской ассоциации темари —
@@ -566,13 +638,52 @@
 
       <h2>4. Кагари — вышивка</h2>
       <p>
-        Стежок ходит по уже лежащим линиям. Ряд вокруг фигуры, следующий ряд к предыдущему:
+        Стежок ходит по уже лежащим линиям. Это не второй дзивари:
+        нить не обхватывает шар по большому кругу, а <em>шьёт грань</em>.
+        Игла каждый раз заходит под дзивари и выходит у соседней метки.
+        Ряд вокруг фигуры, следующий ряд к предыдущему:
         наружу (лепесток растёт) или внутрь (фигура густеет). Нить лежит на мари, не хордой в воздухе.
       </p>
       <p>
         Два режима руки, оба идеальные: игрок ведёт <b>стежок за стежком</b> в правильном порядке —
-        или просит <b>заполнение</b>, и мастер кладёт ряды сам. Как именно заполняется
-        (шаг, нахлёст, длина) — прописано нами, не выводится из кривого пальца.
+        или просит <b>заполнение</b>, и мастер кладёт ряды сам. Заливка только если контур замкнут.
+        Как именно заполняется (шаг, нахлёст, длина) — прописано нами, не выводится из кривого пальца.
+      </p>
+
+      <div class="steps">
+        <figure>
+          <svg class="ball" viewBox="0 0 200 200" aria-label="Ёлочка кагари ловит дзивари">
+            <circle cx="100" cy="100" r="78" fill="url(#g)" stroke="#0c0b09" stroke-width="1.15" />
+            <path class="mark-front" d="M100 28 L 62 150" fill="none" stroke-width="1.35" />
+            <path class="mark-front" d="M100 28 L 138 150" fill="none" stroke-width="1.35" />
+            <path class="beni-front" d="M72 60 L 128 72" fill="none" stroke-width="2" />
+            <path class="beni-front" d="M128 72 L 70 84" fill="none" stroke-width="2" />
+            <path class="beni-front" d="M70 84 L 130 96" fill="none" stroke-width="2" />
+            <path class="beni-front" d="M130 96 L 68 108" fill="none" stroke-width="2" />
+            <circle cx="100" cy="28" r="3" class="pin" />
+            <circle cx="72" cy="60" r="1.6" fill="#8f3d32" />
+            <circle cx="128" cy="72" r="1.6" fill="#8f3d32" />
+          </svg>
+          <figcaption>Ёлочка (chidori): левая метка → правая чуть дальше от полюса → снова левая. Каждый конец — под дзивари.</figcaption>
+        </figure>
+        <figure>
+          <svg class="ball" viewBox="0 0 200 200" aria-label="Ряды внутрь и наружу">
+            <circle cx="100" cy="100" r="78" fill="url(#g)" stroke="#0c0b09" stroke-width="1.15" />
+            <path class="mark-front" d="M40 100 A60 60 0 0 1 160 100" fill="none" stroke-width="1.2" />
+            <path class="mark-front" d="M52 78 A48 48 0 0 1 148 78" fill="none" stroke-width="1.2" />
+            <path class="mark-front" d="M64 58 A36 36 0 0 1 136 58" fill="none" stroke-width="1.2" />
+            <path class="beni-front" d="M100 28 L 40 100" fill="none" stroke-width="1.1" />
+            <path class="beni-front" d="M100 28 L 160 100" fill="none" stroke-width="1.1" />
+            <circle cx="100" cy="28" r="3" class="pin" />
+            <text x="84" y="172" font-size="11" fill="#8a847c" font-family="IBM Plex Sans, sans-serif">наружу ↑ · внутрь ↓</text>
+          </svg>
+          <figcaption>Наружу — от полюса к краю фигуры. Внутрь (сакаса) — от большого края к центру. Те же стежки, другой порядок.</figcaption>
+        </figure>
+      </div>
+
+      <p>
+        Мало рядов — те же края фигуры, больший шаг (воздушно). Много рядов — плотнее, пока влезает
+        толщина нити от контура до полюса. Не три стежка в куче у старта.
       </p>
 
       <div class="grid">
