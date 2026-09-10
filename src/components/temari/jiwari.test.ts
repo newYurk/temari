@@ -1,7 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  isGreatCircle,
   jiwariNormals,
+  jiwariStitches,
   simplePins,
   simpleStitches,
   SIMPLE_THREADS,
@@ -24,5 +26,16 @@ describe("simple jiwari", () => {
     assert.equal(simpleStitches(0, 1).length, 0);
     assert.equal(simpleStitches(1, 1).length, 1);
     assert.equal(simpleStitches(5, 1).length, 5);
+  });
+
+  it("every marking thread is a great circle of length C", () => {
+    const loops = [...jiwariStitches("simple"), ...simpleStitches(5, 1)];
+    for (const stitch of loops) {
+      if (stitch.kind !== "loop") {
+        assert.fail("marking thread must be a closed loop");
+        continue;
+      }
+      assert.equal(isGreatCircle(stitch.points), true);
+    }
   });
 });

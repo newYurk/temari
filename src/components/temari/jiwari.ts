@@ -30,6 +30,22 @@ function circle(normal: Vec3, count = 96): Vec3[] {
   return pts;
 }
 
+export function isGreatCircle(points: Vec3[], eps = 2e-3): boolean {
+  if (points.length < 8) return false;
+  for (const p of points) {
+    if (Math.abs(Math.hypot(p[0], p[1], p[2]) - 1) > eps) return false;
+  }
+  const a = points[0];
+  const b = points[Math.floor(points.length / 4)] ?? points[1];
+  if (!a || !b) return false;
+  const n = norm(cross(a, b));
+  if (Math.hypot(n[0], n[1], n[2]) < 0.5) return false;
+  for (const p of points) {
+    if (Math.abs(p[0] * n[0] + p[1] * n[1] + p[2] * n[2]) > eps) return false;
+  }
+  return true;
+}
+
 function uniqueNormals(raw: Vec3[]): Vec3[] {
   const out: Vec3[] = [];
   for (const v of raw) {
