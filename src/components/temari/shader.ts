@@ -284,27 +284,41 @@ varying vec3 vL;
 void main() {
   vec3 p = normalize(vL);
   vec3 n = normalize(vN);
-  vec3 an = abs(p);
-  vec3 tw = an / max(an.x + an.y + an.z, 0.001);
-  float scale = mix(28.0, 12.0, clamp(uWidth, 0.0, 1.0));
-  float hair = texture2D(uThread, p.yz * scale + 0.5).r * tw.x
-             + texture2D(uThread, p.xz * scale + 0.5).r * tw.y
-             + texture2D(uThread, p.xy * scale + 0.5).r * tw.z;
-  float hair2 = texture2D(uThread, p.yz * scale * 2.4 + 0.13).r * tw.x
-              + texture2D(uThread, p.xz * scale * 2.2 + 0.21).r * tw.y
-              + texture2D(uThread, p.xy * scale * 2.3 + 0.07).r * tw.z;
-  float fiber = mix(hair, hair2, 0.42);
-  vec3 col = uColor * (0.74 + 0.32 * fiber);
-  n = normalize(n + p * ((fiber - 0.5) * 0.22));
+  float thick = clamp(uWidth, 0.0, 1.0);
+  float w = mix(0.0028, 0.0095, thick);
+  float ply = mix(240.0, 88.0, thick);
+  float acc = 0.0;
+  vec3 bump = vec3(0.0);
+  const int N = 80;
+  for (int i = 0; i < N; i++) {
+    float fi = float(i) + 0.5;
+    float y = 1.0 - 2.0 * fi / float(N);
+    float rr = sqrt(max(0.0, 1.0 - y * y));
+    float th = fi * 2.399963229728653;
+    vec3 ax = normalize(vec3(cos(th) * rr, y, sin(th) * rr));
+    float d = dot(p, ax);
+    vec3 dir = normalize(cross(ax, p) + vec3(1e-6));
+    float twist = 0.58 + 0.42 * sin(dot(p, dir) * ply);
+    for (int k = -1; k <= 1; k++) {
+      float off = float(k) * w * 1.7;
+      float e = exp(-((d - off) * (d - off)) / (w * w));
+      acc += e * twist;
+      bump += dir * ((twist - 0.5) * e);
+    }
+  }
+  float cover = clamp(acc * 0.42, 0.0, 1.0);
+  float fuzz = fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+  vec3 col = uColor * (0.7 + 0.36 * cover) * (0.96 + 0.08 * fuzz);
+  n = normalize(n + bump * 0.4);
   vec3 L = normalize(vec3(0.46, 0.82, 0.52));
   vec3 L2 = normalize(vec3(-0.55, 0.22, -0.28));
   vec3 V = normalize(uCamPos - vW);
   vec3 H = normalize(L + V);
   float ndl = max(dot(n, L), 0.0);
   float ndl2 = max(dot(n, L2), 0.0);
-  float spec = pow(max(dot(n, H), 0.0), 56.0) * 0.04;
-  float lit = 0.4 + 0.5 * ndl + 0.16 * ndl2;
-  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.6) * 0.08;
+  float spec = pow(max(dot(n, H), 0.0), 64.0) * 0.045 * cover;
+  float lit = 0.38 + 0.52 * ndl + 0.16 * ndl2;
+  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.6) * 0.07;
   gl_FragColor = vec4(col * lit + spec + rim * col, 1.0);
 }
 `;

@@ -135,6 +135,7 @@ export function Ball() {
   const hoverSlot = useTemari((s) => s.hoverSlot);
   const selectedColor = useTemari((s) => s.selectedColor);
   const wrapColor = useTemari((s) => s.wrapColor);
+  const wrapHex = useTemari((s) => s.wrapHex);
   const peeking = useTemari((s) => s.peeking);
   const puzzleIndex = useTemari((s) => s.puzzleIndex);
   const viewNonce = useTemari((s) => s.viewNonce);
@@ -606,7 +607,7 @@ export function Ball() {
 
       {mode === "title" || layerDone ? (
         <WrapCover
-          color={palette.colors[wrapColor] ?? palette.thread}
+          color={wrapHex}
           width={threadWidth}
         />
       ) : null}

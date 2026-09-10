@@ -13,7 +13,7 @@ import {
   type Pin,
   type PinArc,
 } from "./craft";
-import { isPaletteId, type PaletteId } from "./palettes";
+import { isPaletteId, PALETTES, type PaletteId } from "./palettes";
 import {
   fillKikuSewn,
   isMotifId,
@@ -151,6 +151,7 @@ type TemariState = {
   craft: Craft;
   selectedColor: number;
   wrapColor: number;
+  wrapHex: string;
   fills: number[];
   sewn: SewnEntry[];
   pins: Pin[];
@@ -251,6 +252,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   craft: "wind",
   selectedColor: 0,
   wrapColor: 0,
+  wrapHex: "#8f3d32",
   fills: emptyFills("simple"),
   sewn: [],
   pins: [],
@@ -292,6 +294,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       craft: "pin",
       selectedColor: studioDraft.selectedColor,
       wrapColor: get().wrapColor,
+      wrapHex: get().wrapHex,
       fills: hasPaint ? padFills(studioDraft.fills, division) : emptyFills(division),
       sewn: [],
       pins: [],
@@ -423,7 +426,11 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   setPalette: (id) => {
     if (get().mode === "kata") return;
-    set({ paletteId: id, wrapResetNonce: get().wrapResetNonce + 1 });
+    const wrapLocked = get().mode === "studio" && get().layerDone;
+    set({
+      paletteId: id,
+      ...(wrapLocked ? {} : { wrapHex: PALETTES[id].colors[get().wrapColor] }),
+    });
     rememberStudio(get());
   },
 
@@ -452,12 +459,10 @@ export const useTemari = create<TemariState>((set, get) => ({
     rememberStudio(get());
   },
   setWrapColor: (index) => {
+    if (get().mode === "studio" && get().layerDone) return;
     const wrapColor = Math.min(3, Math.max(0, index));
-    set({
-      wrapColor,
-      wrapResetNonce: get().wrapResetNonce + 1,
-      wrapSeed: "full",
-    });
+    const wrapHex = PALETTES[get().paletteId].colors[wrapColor] ?? "#8f3d32";
+    set({ wrapColor, wrapHex });
     rememberStudio(get());
   },
 
