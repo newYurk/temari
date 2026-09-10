@@ -272,13 +272,27 @@ def simple8():
 
 
 def c8():
-    bits = [circle_paths(gc_samples((0, 1, 0)), "mark-front", "mark-back", 1.3)]
+    # Same camera as Simple 8, plus the spherical square around north
+    # (northern cube vertices). That square is what C8 is, not another meridian.
+    bits = [circle_paths(gc_samples((0, 1, 0)), "mark-front", "mark-back", 1.25)]
     for lam in (0.0, math.pi / 4, math.pi / 2, 3 * math.pi / 4):
-        bits.append(circle_paths(gc_samples(meridian_axis(lam)), "mark-front", "mark-back", 1.15))
-    # extra combination GC: equator of X (gives the square at the side poles)
-    bits.append(circle_paths(gc_samples((1, 0, 0)), "mark-front", "mark-back", 1.15))
+        bits.append(circle_paths(gc_samples(meridian_axis(lam)), "mark-front", "mark-back", 1.1))
+    cube_n = [norm((sx, 1.0, sz)) for sx in (-1, 1) for sz in (-1, 1)]
+    _, u, v = basis((0, 1, 0))
+
+    def ang(p):
+        return math.atan2(
+            p[0] * v[0] + p[1] * v[1] + p[2] * v[2],
+            p[0] * u[0] + p[1] * u[1] + p[2] * u[2],
+        )
+
+    cube_n.sort(key=ang)
+    for i, a in enumerate(cube_n):
+        b = cube_n[(i + 1) % 4]
+        bits.append(front_only(arc_samples(a, b, 32), "mark-front", 1.55))
+        bits.append(pin(a, 2.55))
     for p in ((0, 1, 0), (0, -1, 0), (1, 0, 0), (-1, 0, 0), (0, 0, 1), (0, 0, -1)):
-        bits.append(pin(p, 3.0))
+        bits.append(pin(p, 3.05))
     return svg("C8", "\n            ".join(x for x in bits if x))
 
 
