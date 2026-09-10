@@ -257,6 +257,81 @@ export function createTemariMaterial() {
   });
 }
 
+const wrapCoverVert = /* glsl */ `
+varying vec3 vN;
+varying vec3 vW;
+varying vec3 vL;
+
+void main() {
+  vec4 world = modelMatrix * vec4(position, 1.0);
+  vW = world.xyz;
+  vN = normalize(mat3(modelMatrix) * normal);
+  vL = normalize(position);
+  gl_Position = projectionMatrix * viewMatrix * world;
+}
+`;
+
+const wrapCoverFrag = /* glsl */ `
+uniform vec3 uCamPos;
+uniform vec3 uColor;
+uniform float uWidth;
+uniform sampler2D uThread;
+
+varying vec3 vN;
+varying vec3 vW;
+varying vec3 vL;
+
+void main() {
+  vec3 p = normalize(vL);
+  vec3 n = normalize(vN);
+  vec3 an = abs(p);
+  vec3 tw = an / max(an.x + an.y + an.z, 0.001);
+  float scale = mix(28.0, 12.0, clamp(uWidth, 0.0, 1.0));
+  float hair = texture2D(uThread, p.yz * scale + 0.5).r * tw.x
+             + texture2D(uThread, p.xz * scale + 0.5).r * tw.y
+             + texture2D(uThread, p.xy * scale + 0.5).r * tw.z;
+  float hair2 = texture2D(uThread, p.yz * scale * 2.4 + 0.13).r * tw.x
+              + texture2D(uThread, p.xz * scale * 2.2 + 0.21).r * tw.y
+              + texture2D(uThread, p.xy * scale * 2.3 + 0.07).r * tw.z;
+  float fiber = mix(hair, hair2, 0.42);
+  vec3 col = uColor * (0.74 + 0.32 * fiber);
+  n = normalize(n + p * ((fiber - 0.5) * 0.22));
+  vec3 L = normalize(vec3(0.46, 0.82, 0.52));
+  vec3 L2 = normalize(vec3(-0.55, 0.22, -0.28));
+  vec3 V = normalize(uCamPos - vW);
+  vec3 H = normalize(L + V);
+  float ndl = max(dot(n, L), 0.0);
+  float ndl2 = max(dot(n, L2), 0.0);
+  float spec = pow(max(dot(n, H), 0.0), 56.0) * 0.04;
+  float lit = 0.4 + 0.5 * ndl + 0.16 * ndl2;
+  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.6) * 0.08;
+  gl_FragColor = vec4(col * lit + spec + rim * col, 1.0);
+}
+`;
+
+export function createWrapCoverMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uCamPos: { value: new THREE.Vector3(0, 0.35, 3.35) },
+      uColor: { value: new THREE.Color("#c4a574") },
+      uWidth: { value: 0.42 },
+      uThread: { value: getThreadTex() },
+    },
+    vertexShader: wrapCoverVert,
+    fragmentShader: wrapCoverFrag,
+    toneMapped: true,
+  });
+}
+
+export function syncWrapCoverMaterial(
+  material: THREE.ShaderMaterial,
+  opts: { color: string; width: number; camera: THREE.Vector3 },
+) {
+  (material.uniforms.uColor.value as THREE.Color).set(opts.color);
+  material.uniforms.uWidth.value = opts.width;
+  (material.uniforms.uCamPos.value as THREE.Vector3).copy(opts.camera);
+}
+
 export function syncTemariMaterial(
   material: THREE.ShaderMaterial,
   opts: {

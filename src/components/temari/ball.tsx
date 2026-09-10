@@ -15,11 +15,11 @@ import {
   type Stitch,
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
-import { createTemariMaterial, syncTemariMaterial } from "./shader";
-import { createMotifGeometry, createWrapGeometry, getWrapYarnTexture, getYarnTexture } from "./stitches";
+import { createTemariMaterial, syncTemariMaterial, createWrapCoverMaterial, syncWrapCoverMaterial } from "./shader";
+import { createMotifGeometry, getYarnTexture } from "./stitches";
 import { useTemari } from "./store";
 import * as feel from "./feel";
-import { DEFAULT_KIND, threadMetalness, threadRoughness, wrapRibbonWidth, type ThreadKind } from "./thread";
+import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
 import { jiwariMarkColor, jiwariStitches } from "./jiwari";
 
 const pointer = { x: 0, y: 0, down: false, dragged: false };
@@ -85,61 +85,16 @@ function ThreadLayer({
   );
 }
 
-function WrapYarn({
-  wrap,
-  color,
-  width,
-}: {
-  wrap: WrapBuffer;
-  color: string;
-  width: number;
-}) {
-  const mesh = useRef<THREE.Mesh>(null);
-  const yarn = useMemo(() => getWrapYarnTexture(), []);
-  const last = useRef("");
+function WrapCover({ color, width }: { color: string; width: number }) {
+  const material = useMemo(() => createWrapCoverMaterial(), []);
+  const { camera } = useThree();
   useFrame(() => {
-    const meshObj = mesh.current;
-    if (!meshObj) return;
-    const strands = wrap.yarn().map((s) => s.points);
-    const key = `${strands.length}:${strands.reduce((n, pts) => n + pts.length, 0)}:${width.toFixed(4)}`;
-    if (key === last.current) return;
-    last.current = key;
-    const geo = createWrapGeometry(strands, width);
-    const prev = meshObj.geometry;
-    meshObj.geometry = geo ?? new THREE.BufferGeometry();
-    if (prev && prev !== meshObj.geometry) prev.dispose();
+    syncWrapCoverMaterial(material, { color, width, camera: camera.position });
   });
-  useEffect(() => {
-    return () => {
-      mesh.current?.geometry.dispose();
-    };
-  }, []);
-  return (
-    <mesh ref={mesh} frustumCulled={false} renderOrder={2}>
-      <meshStandardMaterial
-        map={yarn}
-        color={color}
-        roughness={threadRoughness("serger")}
-        metalness={threadMetalness("serger")}
-        polygonOffset
-        polygonOffsetFactor={2}
-        polygonOffsetUnits={2}
-      />
-    </mesh>
-  );
-}
-
-function WrapCover({ color }: { color: string }) {
-  const yarn = useMemo(() => getWrapYarnTexture(), []);
   return (
     <mesh frustumCulled={false} renderOrder={3}>
-      <sphereGeometry args={[0.998, 96, 64]} />
-      <meshStandardMaterial
-        map={yarn}
-        color={color}
-        roughness={threadRoughness("serger")}
-        metalness={threadMetalness("serger")}
-      />
+      <sphereGeometry args={[0.999, 128, 96]} />
+      <primitive object={material} attach="material" />
     </mesh>
   );
 }
@@ -285,12 +240,9 @@ export function Ball() {
     const st = useTemari.getState();
     mari.current.reset(st.threadWidth);
     if (st.wrapSeed === "full") {
-      wrap.strokeWidth = strokePx(st.mode === "title" ? 0.82 : st.threadWidth);
-      const hex = PALETTES[st.paletteId].colors[st.wrapColor] ?? "#8f3d32";
-      mari.current.fill(wrap, st.wrapColor, hex);
       feel.resetTurns();
-      setWrapCount(wrap.strandCount);
-      setWrapProgress(mari.current.progress);
+      setWrapCount(1);
+      setWrapProgress(1);
       return;
     }
     feel.resetTurns();
@@ -307,11 +259,8 @@ export function Ball() {
 
   useLayoutEffect(() => {
     if (!layerDone) return;
-    const st = useTemari.getState();
-    const hex = PALETTES[st.paletteId].colors[st.wrapColor] ?? "#8f3d32";
-    if (mari.current.progress < 0.999) mari.current.fill(wrap, st.wrapColor, hex);
     setWrapProgress(1);
-  }, [layerDone, setWrapProgress, wrap]);
+  }, [layerDone, setWrapProgress]);
 
   useLayoutEffect(() => {
     const shaft = shafts.current;
@@ -656,13 +605,11 @@ export function Ball() {
       </mesh>
 
       {mode === "title" || layerDone ? (
-        <WrapCover color={palette.colors[wrapColor] ?? palette.thread} />
+        <WrapCover
+          color={palette.colors[wrapColor] ?? palette.thread}
+          width={threadWidth}
+        />
       ) : null}
-      <WrapYarn
-        wrap={wrap}
-        color={palette.colors[wrapColor] ?? palette.thread}
-        width={wrapRibbonWidth(threadWidth)}
-      />
 
       {markStitches.length > 0 ? (
         <ThreadLayer
