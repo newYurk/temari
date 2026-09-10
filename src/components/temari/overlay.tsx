@@ -45,6 +45,10 @@ function RecenterButton({ className }: { className?: string }) {
 
 function TitleLayer() {
   const enterStudio = useTemari((s) => s.enterStudio);
+  const paletteId = useTemari((s) => s.paletteId);
+  const wrapColor = useTemari((s) => s.wrapColor);
+  const setWrapColor = useTemari((s) => s.setWrapColor);
+  const palette = PALETTES[paletteId];
 
   return (
     <div className="flex h-full flex-col px-5 py-6 md:px-10 md:py-10">
@@ -62,6 +66,21 @@ function TitleLayer() {
       </div>
       <div className="min-h-0 flex-1" aria-hidden />
       <div className="temari-rise temari-rise-3 pointer-events-auto max-w-md pb-[env(safe-area-inset-bottom)]">
+        <div className="mb-3 flex gap-2">
+          {palette.colors.map((color, i) => (
+            <button
+              key={color}
+              type="button"
+              aria-label={`Цвет базы ${i + 1}`}
+              onClick={() => setWrapColor(i)}
+              className={cn(
+                "size-8 rounded-full",
+                wrapColor === i ? "ring-2 ring-ink ring-offset-2 ring-offset-linen" : "ring-1 ring-line",
+              )}
+              style={{ backgroundColor: color }}
+            />
+          ))}
+        </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <Button
             onPointerDown={() => unlock()}
@@ -142,6 +161,7 @@ function Workbench() {
   const motif = useTemari((s) => s.motif);
   const craft = useTemari((s) => s.craft);
   const selectedColor = useTemari((s) => s.selectedColor);
+  const wrapColor = useTemari((s) => s.wrapColor);
   const fills = useTemari((s) => s.fills);
   const pins = useTemari((s) => s.pins);
   const puzzleIndex = useTemari((s) => s.puzzleIndex);
@@ -165,6 +185,7 @@ function Workbench() {
   const setMotif = useTemari((s) => s.setMotif);
   const setCraft = useTemari((s) => s.setCraft);
   const setColor = useTemari((s) => s.setColor);
+  const setWrapColor = useTemari((s) => s.setWrapColor);
   const undo = useTemari((s) => s.undo);
   const reset = useTemari((s) => s.reset);
   const finishLayer = useTemari((s) => s.finishLayer);
@@ -208,7 +229,7 @@ function Workbench() {
             ? isClosedContour(pins.map((pin) => pin.p))
               ? "замкнутый контур — можно залить кагари, или стежками"
               : "дзивари поверх базы — булавка метит угол. кагари заливать, только если контур замкнут"
-            : "шар без разметки — простое, C8 или C10, либо оставить так"
+            : "цвет и толщина — нить базы"
           : motif === "kiku"
             ? MOTIF_META.kiku.hint
             : CRAFT_META[craft].hint
@@ -307,6 +328,18 @@ function Workbench() {
                   </Seg>
                 ))}
               </div>
+              {craft === "pin" && !jiwariOn ? (
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={threadWidth}
+                  aria-label="Толщина нити базы"
+                  onChange={(e) => setThreadWidth(Number(e.target.value))}
+                  className="h-10 min-w-0 w-full accent-ink"
+                />
+              ) : null}
               {craft === "pin" && isClosedContour(pins.map((pin) => pin.p)) ? (
                 <>
                   <div className="flex items-center gap-1">
@@ -415,19 +448,23 @@ function Workbench() {
 
           <div className="flex items-center gap-2">
             <div className="flex flex-1 gap-2">
-              {palette.colors.map((color, i) => (
+              {palette.colors.map((color, i) => {
+                const pickingWrap = craft === "pin" && !jiwariOn;
+                const active = pickingWrap ? wrapColor === i : selectedColor === i;
+                return (
                 <button
                   key={color}
                   type="button"
-                  aria-label={`Нить ${i + 1}`}
-                  onClick={() => setColor(i)}
+                  aria-label={pickingWrap ? `Нить базы ${i + 1}` : `Нить ${i + 1}`}
+                  onClick={() => (pickingWrap ? setWrapColor(i) : setColor(i))}
                   className={cn(
                     "size-8 rounded-full transition-transform duration-150 active:scale-[0.96]",
-                    selectedColor === i ? "ring-2 ring-ink ring-offset-2 ring-offset-linen" : "ring-1 ring-line",
+                    active ? "ring-2 ring-ink ring-offset-2 ring-offset-linen" : "ring-1 ring-line",
                   )}
                   style={{ backgroundColor: color }}
                 />
-              ))}
+                );
+              })}
             </div>
             <div className="flex gap-1">
               {mode === "kata" ? (

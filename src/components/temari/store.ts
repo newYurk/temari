@@ -188,6 +188,7 @@ type TemariState = {
   setMotif: (id: MotifId) => void;
   setCraft: (craft: Craft) => void;
   setColor: (index: number) => void;
+  setWrapColor: (index: number) => void;
   paint: (region: number) => void;
   sew: (slot: KikuSlot) => void;
   placePin: (local: Vec3) => void;
@@ -290,7 +291,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       motif: "none",
       craft: "pin",
       selectedColor: studioDraft.selectedColor,
-      wrapColor: studioDraft.selectedColor,
+      wrapColor: get().wrapColor,
       fills: hasPaint ? padFills(studioDraft.fills, division) : emptyFills(division),
       sewn: [],
       pins: [],
@@ -422,7 +423,7 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   setPalette: (id) => {
     if (get().mode === "kata") return;
-    set({ paletteId: id });
+    set({ paletteId: id, wrapResetNonce: get().wrapResetNonce + 1 });
     rememberStudio(get());
   },
 
@@ -448,6 +449,15 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   setColor: (index) => {
     set({ selectedColor: Math.min(3, Math.max(0, index)) });
+    rememberStudio(get());
+  },
+  setWrapColor: (index) => {
+    const wrapColor = Math.min(3, Math.max(0, index));
+    set({
+      wrapColor,
+      wrapResetNonce: get().wrapResetNonce + 1,
+      wrapSeed: "full",
+    });
     rememberStudio(get());
   },
 
@@ -659,7 +669,6 @@ export const useTemari = create<TemariState>((set, get) => ({
     set({ wrapStarted: true });
   },
   setThreadWidth: (n) => {
-    if (get().wrapStarted) return;
     set({ threadWidth: Math.max(0, Math.min(1, n)) });
   },
   finishLayer: () => {

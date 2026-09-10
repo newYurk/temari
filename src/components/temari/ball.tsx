@@ -285,9 +285,9 @@ export function Ball() {
     const st = useTemari.getState();
     mari.current.reset(st.threadWidth);
     if (st.wrapSeed === "full") {
-      wrap.strokeWidth = strokePx(st.mode === "title" ? 0.82 : 0.58);
-      const hex = PALETTES[st.paletteId].colors[0] ?? "#8f3d32";
-      mari.current.fill(wrap, 0, hex);
+      wrap.strokeWidth = strokePx(st.mode === "title" ? 0.82 : st.threadWidth);
+      const hex = PALETTES[st.paletteId].colors[st.wrapColor] ?? "#8f3d32";
+      mari.current.fill(wrap, st.wrapColor, hex);
       feel.resetTurns();
       setWrapCount(wrap.strandCount);
       setWrapProgress(mari.current.progress);
@@ -308,8 +308,8 @@ export function Ball() {
   useLayoutEffect(() => {
     if (!layerDone) return;
     const st = useTemari.getState();
-    const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
-    if (mari.current.progress < 0.999) mari.current.fill(wrap, st.selectedColor, hex);
+    const hex = PALETTES[st.paletteId].colors[st.wrapColor] ?? "#8f3d32";
+    if (mari.current.progress < 0.999) mari.current.fill(wrap, st.wrapColor, hex);
     setWrapProgress(1);
   }, [layerDone, setWrapProgress, wrap]);
 
