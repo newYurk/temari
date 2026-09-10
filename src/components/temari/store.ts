@@ -311,7 +311,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       hoverSlot: null,
       wrapProgress: 1,
       layerDone: true,
-      wrapPass: 1,
+      wrapPass: 3,
       wrapStarted: true,
       wrapResetNonce: get().wrapResetNonce + 1,
       wrapCount: 1,
@@ -524,6 +524,23 @@ export const useTemari = create<TemariState>((set, get) => ({
       activePin: state.activePin,
     };
     if (hit >= 0) {
+      if (state.activePin === hit) {
+        const gone = state.pins[hit];
+        if (!gone) return;
+        feel.pin();
+        set({
+          pins: state.pins.filter((_, i) => i !== hit),
+          pinArcs: state.pinArcs.filter((arc) => {
+            const same = (a: Vec3, b: Vec3) =>
+              a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+            return !same(arc.a, gone.p) && !same(arc.b, gone.p);
+          }),
+          activePin: null,
+          pinHistory: [...state.pinHistory, snap].slice(-40),
+        });
+        rememberStudio(get());
+        return;
+      }
       if (state.activePin !== null && state.activePin !== hit) {
         const from = state.pins[state.activePin];
         const to = state.pins[hit];
@@ -686,7 +703,7 @@ export const useTemari = create<TemariState>((set, get) => ({
     feel.layer();
     set({
       layerDone: true,
-      wrapPass: 1,
+      wrapPass: 3,
       craft: "pin",
       wrapSeed: "full",
       wrapProgress: 1,

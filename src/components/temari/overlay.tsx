@@ -201,8 +201,6 @@ function Workbench() {
   const threadWidth = useTemari((s) => s.threadWidth);
   const wrapStarted = useTemari((s) => s.wrapStarted);
   const layerDone = useTemari((s) => s.layerDone);
-  const wrapPass = useTemari((s) => s.wrapPass);
-  const setWrapPass = useTemari((s) => s.setWrapPass);
   const jiwariOn = useTemari((s) => s.jiwariOn);
   const kikuLayers = useTemari((s) => s.kikuLayers);
   const kagariDir = useTemari((s) => s.kagariDir);
@@ -257,7 +255,7 @@ function Workbench() {
             ? isClosedContour(pins.map((pin) => pin.p))
               ? "замкнутый контур — можно залить кагари, или стежками"
               : "дзивари поверх базы — булавка метит угол. кагари заливать, только если контур замкнут"
-            : "разметка или кагари. цвет базы уже выбран"
+              : "разметка или кагари"
           : motif === "kiku"
             ? MOTIF_META.kiku.hint
             : CRAFT_META[craft].hint
@@ -272,11 +270,13 @@ function Workbench() {
           <button
             type="button"
             onClick={toTitle}
-            className="pointer-events-auto font-display text-xl font-medium tracking-tight text-ink"
+            className="pointer-events-auto relative z-20 font-display text-xl font-medium tracking-tight text-ink"
           >
             Темари
           </button>
-          <p className="mt-0.5 max-w-[16rem] text-xs tracking-wide text-stone">{hint}</p>
+          <p className="relative z-0 mt-0.5 max-w-[14rem] text-xs tracking-wide text-stone line-clamp-2">
+            {hint}
+          </p>
         </div>
         <div className="flex items-start gap-2 pt-[env(safe-area-inset-top)]">
           {mode === "kata" && puzzle ? (
@@ -293,7 +293,7 @@ function Workbench() {
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
         <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-linen from-55% via-linen/95 to-transparent" />
-        <div className="pointer-events-auto relative px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:px-8">
+        <div className="pointer-events-auto relative px-3 pb-[max(1.25rem,calc(env(safe-area-inset-bottom)+0.85rem))] md:px-8">
         <div className="mx-auto flex max-w-lg flex-col gap-1.5">
           {mode === "studio" && !layerDone ? (
             <>
@@ -336,13 +336,6 @@ function Workbench() {
           {mode === "studio" && layerDone ? (
             <>
               <div className="flex gap-1">
-                {([1, 2, 3] as const).map((n) => (
-                  <Seg key={n} active={wrapPass === n} onClick={() => setWrapPass(n)}>
-                    {n === 1 ? "Пряжа" : n === 2 ? "Тоньше" : "Нить"}
-                  </Seg>
-                ))}
-              </div>
-              <div className="flex gap-1">
                 {(["pin", "stitch"] as Craft[]).map((id) => (
                   <Seg key={id} active={craft === id} onClick={() => setCraft(id)}>
                     {CRAFT_META[id].label}
@@ -363,7 +356,7 @@ function Workbench() {
                   </Seg>
                 ))}
               </div>
-              {craft === "pin" && isClosedContour(pins.map((pin) => pin.p)) ? (
+              {craft === "stitch" && isClosedContour(pins.map((pin) => pin.p)) ? (
                 <>
                   <div className="flex items-center gap-1">
                     {(["in", "out"] as KagariDir[]).map((id) => (

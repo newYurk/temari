@@ -9,16 +9,17 @@ const FOV = 32;
 const BALL_R = 1.05;
 const FIT_MARGIN = 1.16;
 
-function framingDistance(width: number, height: number) {
+function framingDistance(width: number, height: number, mode: Mode) {
   const halfH = Math.tan(THREE.MathUtils.degToRad(FOV) / 2);
   const halfW = halfH * (width / Math.max(height, 1));
-  return (BALL_R * FIT_MARGIN) / Math.min(halfW, halfH);
+  const margin = mode === "studio" ? 1.34 : FIT_MARGIN;
+  return (BALL_R * margin) / Math.min(halfW, halfH);
 }
 
 function aimY(width: number, height: number, mode: Mode) {
   const portrait = height > width * 1.15;
-  if (mode === "title") return portrait ? 0.02 : 0;
-  return portrait ? -0.38 : -0.16;
+  if (mode === "title") return portrait ? 0.06 : 0;
+  return portrait ? -0.78 : -0.32;
 }
 
 function CameraRig() {
@@ -36,8 +37,8 @@ function CameraRig() {
   } | null>(null);
 
   const dist = useMemo(
-    () => framingDistance(size.width, size.height),
-    [size.height, size.width],
+    () => framingDistance(size.width, size.height, mode),
+    [mode, size.height, size.width],
   );
 
   useLayoutEffect(() => {
@@ -98,7 +99,7 @@ export function TemariScene() {
   return (
     <SceneGuard>
     <Canvas
-      className="absolute inset-0 z-0 touch-none"
+      className="absolute inset-0 z-[8] touch-none"
       camera={{ position: [0, 0.2, 3.6], fov: FOV, near: 0.1, far: 60 }}
       dpr={[1, 1.5]}
       gl={{

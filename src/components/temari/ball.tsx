@@ -184,7 +184,6 @@ export function Ball() {
   const wrapUndoNonce = useTemari((s) => s.wrapUndoNonce);
   const wrapResetNonce = useTemari((s) => s.wrapResetNonce);
   const layerDone = useTemari((s) => s.layerDone);
-  const wrapPass = useTemari((s) => s.wrapPass);
   const jiwariOn = useTemari((s) => s.jiwariOn);
   const wrapSeed = useTemari((s) => s.wrapSeed);
   const threadWidth = useTemari((s) => s.threadWidth);
@@ -657,7 +656,7 @@ export function Ball() {
         wrap={wrap}
         color={wrapHex}
         width={threadWidth}
-        pass={mode === "title" ? 3 : wrapPass}
+        pass={3}
       />
 
       {markStitches.length > 0 ? (
