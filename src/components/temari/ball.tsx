@@ -31,16 +31,9 @@ const _q = new THREE.Quaternion();
 const _feed = new THREE.Vector3();
 const _inv = new THREE.Quaternion();
 const _local = new THREE.Vector3();
-const _binormal = new THREE.Vector3();
-const _tPrev = new THREE.Vector3();
-const _axisT = new THREE.Vector3();
-const _left = new THREE.Vector3();
-const _rgt = new THREE.Vector3();
 const Y_UP = new THREE.Vector3(0, 1, 0);
-const Z_FWD = new THREE.Vector3(0, 0, 1);
 
 const DAMP = 0.46;
-const YARN_MAX = 800;
 
 function ThreadLayer({
   stitches,
@@ -89,136 +82,6 @@ function ThreadLayer({
   );
 }
 
-function LiveThread() {
-  const obj = useMemo(() => {
-    const n = YARN_MAX;
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
-    geo.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
-    geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
-    const idx = new Uint32Array(Math.max(1, n - 1) * 6);
-    geo.setIndex(new THREE.BufferAttribute(idx, 1));
-    geo.setDrawRange(0, 0);
-    const mat = new THREE.MeshLambertMaterial({
-      vertexColors: true,
-      side: THREE.DoubleSide,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.frustumCulled = false;
-    return mesh;
-  }, []);
-  const wrap = getWrapBuffer();
-  const _col = useMemo(() => new THREE.Color(), []);
-
-  useEffect(() => {
-    return () => {
-      obj.geometry.dispose();
-      (obj.material as THREE.MeshLambertMaterial).dispose();
-    };
-  }, [obj]);
-
-  useFrame(() => {
-    if (useTemari.getState().layerDone) {
-      obj.geometry.setDrawRange(0, 0);
-      return;
-    }
-    const live = wrap.live;
-    const strands = live.length > 1 ? [{ points: live, hex: wrap.liveColor }] : [];
-    const geo = obj.geometry;
-    const pos = geo.getAttribute("position") as THREE.BufferAttribute;
-    const nrm = geo.getAttribute("normal") as THREE.BufferAttribute;
-    const col = geo.getAttribute("color") as THREE.BufferAttribute;
-    const idx = geo.getIndex() as THREE.BufferAttribute;
-    const half = Math.max(0.006, (wrap.strokeWidth / 768) * Math.PI * 0.26);
-    let total = 0;
-    for (const s of strands) total += s.points.length;
-    let skip = 0;
-    if (total > YARN_MAX) {
-      let acc = 0;
-      const extra = total - YARN_MAX;
-      for (const s of strands) {
-        if (acc + s.points.length <= extra) {
-          acc += s.points.length;
-          skip++;
-        } else break;
-      }
-    }
-    let v = 0;
-    let ii = 0;
-    for (let s = skip; s < strands.length; s++) {
-      const pts = strands[s]?.points;
-      if (!pts || pts.length < 2) continue;
-      const room = YARN_MAX - v / 2;
-      if (room < 2) break;
-      const n = Math.min(pts.length, room);
-      const start = pts.length - n;
-      _col.set(strands[s]?.hex ?? "#8f3d32");
-      const v0 = v;
-      const lift = 1.012 + (s - skip) * 0.00035;
-      for (let i = 0; i < n; i++) {
-        const p = pts[start + i];
-        if (!p) continue;
-        const prev = pts[start + Math.max(0, i - 1)] ?? p;
-        const next = pts[start + Math.min(n - 1, i + 1)] ?? p;
-        _feed.copy(next).sub(prev);
-        if (_feed.lengthSq() < 1e-12) {
-          _local.copy(p).normalize();
-          _feed.crossVectors(_local, _binormal.lengthSq() > 0.5 ? _binormal : Y_UP);
-        }
-        _feed.normalize();
-        _local.copy(p).normalize();
-        if (i === 0) {
-          _right.crossVectors(_feed, _local);
-          if (_right.lengthSq() < 1e-10) _right.set(0, 1, 0).cross(_feed);
-          _right.normalize();
-          _binormal.copy(_right);
-          _tPrev.copy(_feed);
-        } else {
-          _axisT.crossVectors(_tPrev, _feed);
-          if (_axisT.lengthSq() > 1e-12) {
-            const ang = Math.acos(Math.min(1, Math.max(-1, _tPrev.dot(_feed))));
-            _binormal.applyAxisAngle(_axisT.normalize(), ang);
-          }
-          _binormal.addScaledVector(_feed, -_binormal.dot(_feed)).normalize();
-          _right.copy(_binormal);
-          _tPrev.copy(_feed);
-        }
-        _left.copy(_local).addScaledVector(_right, half).normalize().multiplyScalar(lift);
-        _rgt.copy(_local).addScaledVector(_right, -half).normalize().multiplyScalar(lift);
-        const vi = v / 2;
-        pos.setXYZ(vi * 2, _left.x, _left.y, _left.z);
-        pos.setXYZ(vi * 2 + 1, _rgt.x, _rgt.y, _rgt.z);
-        nrm.setXYZ(vi * 2, _local.x, _local.y, _local.z);
-        nrm.setXYZ(vi * 2 + 1, _local.x, _local.y, _local.z);
-        col.setXYZ(vi * 2, _col.r, _col.g, _col.b);
-        col.setXYZ(vi * 2 + 1, _col.r, _col.g, _col.b);
-        v += 2;
-      }
-      const used = (v - v0) / 2;
-      for (let i = 0; i < used - 1; i++) {
-        const a = v0 + i * 2;
-        idx.setX(ii, a);
-        idx.setX(ii + 1, a + 1);
-        idx.setX(ii + 2, a + 2);
-        idx.setX(ii + 3, a + 1);
-        idx.setX(ii + 4, a + 3);
-        idx.setX(ii + 5, a + 2);
-        ii += 6;
-      }
-    }
-    pos.needsUpdate = true;
-    nrm.needsUpdate = true;
-    col.needsUpdate = true;
-    idx.needsUpdate = true;
-    geo.setDrawRange(0, ii);
-  });
-
-  return <primitive object={obj} />;
-}
-
 export function Ball() {
   const matRef = useRef<THREE.ShaderMaterial>(null);
   const guidesMat = useRef<THREE.MeshStandardMaterial>(null);
@@ -235,7 +98,6 @@ export function Ball() {
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const mari = useRef(new MariWinder());
   const snapGhost = useRef<THREE.Mesh>(null);
-  const wrapRail = useRef<THREE.Mesh>(null);
   const nodesMesh = useRef<THREE.InstancedMesh>(null);
 
   const gl = useThree((s) => s.gl);
@@ -647,9 +509,6 @@ export function Ball() {
     });
     if (guidesMat.current) guidesMat.current.color.set(palette.thread);
     if (beadMat.current) beadMat.current.color.set(palette.thread);
-
-    const rail = wrapRail.current;
-    if (rail) rail.visible = false;
   });
 
   const canWork = mode !== "title";
@@ -755,17 +614,7 @@ export function Ball() {
         <ThreadLayer stitches={ghostStitches} colors={palette.colors} opacity={0.42} />
       ) : null}
 
-      {mode === "studio" ? <LiveThread /> : null}
 
-      <mesh ref={wrapRail} visible={false} renderOrder={7}>
-        <torusGeometry args={[1.01, 0.007, 8, 96]} />
-        <meshStandardMaterial
-          color={threadHex}
-          roughness={0.42}
-          metalness={0.08}
-          depthWrite={false}
-        />
-      </mesh>
 
       <mesh ref={needle} visible={false}>
         <sphereGeometry args={[0.018, 12, 10]} />

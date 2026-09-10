@@ -99,8 +99,7 @@ function stampDot(
   const [u, v] = toUV(p);
   ctx.fillStyle = hex;
   ctx.globalAlpha = 1;
-  const polar = Math.abs(p.y) > 0.82;
-  const r = polar ? Math.max(1.6, width * 0.22) : Math.max(2.0, width * 0.48);
+  const r = Math.max(1.8, width * 0.5);
   for (const shift of [-1, 0, 1]) {
     ctx.beginPath();
     ctx.arc((u + shift) * W, v * H, r, 0, Math.PI * 2);
@@ -115,34 +114,10 @@ function strokeSeg(
   hex: string,
   width: number,
 ) {
-  let [u0, v0] = toUV(a);
-  let [u1, v1] = toUV(b);
-  if (u1 - u0 > 0.5) u1 -= 1;
-  else if (u0 - u1 > 0.5) u1 += 1;
-  const pole = Math.max(Math.abs(a.y), Math.abs(b.y));
-  // Equirect U is unstable only at the geographic poles. Stamp there.
-  // Do not skip the rest of the cap — that left the holes we could not fill.
-  if (pole > 0.97) {
-    stampDot(ctx, a, hex, width);
-    stampDot(ctx, b, hex, width);
-    return;
-  }
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  const draw = (alpha: number, w: number) => {
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = hex;
-    ctx.lineWidth = w;
-    for (const shift of [-1, 0, 1]) {
-      ctx.beginPath();
-      ctx.moveTo((u0 + shift) * W, v0 * H);
-      ctx.lineTo((u1 + shift) * W, v1 * H);
-      ctx.stroke();
-    }
-  };
-  draw(1, width);
-  draw(0.38, width * 0.36);
-  ctx.globalAlpha = 1;
+  // Equirect lines near the geographic poles are not great circles — they
+  // fold. Stamp along the 3D geodesic instead of stroking UV chords.
+  stampDot(ctx, a, hex, width);
+  stampDot(ctx, b, hex, width);
 }
 
 function stroke(
@@ -154,12 +129,12 @@ function stroke(
 ) {
   const theta = Math.acos(clamp(a.dot(b), -1, 1));
   const poleish = Math.max(Math.abs(a.y), Math.abs(b.y));
-  const step = poleish > 0.65 ? 0.01 : 0.028;
+  const step = poleish > 0.72 ? 0.008 : 0.018;
   const steps = Math.max(1, Math.ceil(theta / step));
   _slerpA.copy(a);
   for (let i = 1; i <= steps; i++) {
     slerpOnto(a, b, i / steps, _slerpB);
-    strokeSeg(ctx, _slerpA, _slerpB, hex, width);
+    stampDot(ctx, _slerpB, hex, width);
     _slerpA.copy(_slerpB);
   }
 }
@@ -585,8 +560,10 @@ export class MariWinder {
       if (this.arc >= TWO_PI) {
         this.arc -= TWO_PI;
         this.nextWrap();
+        buffer.relocate(this.dir, color, hex);
+      } else {
+        buffer.addPoint(this.dir, color, hex, true);
       }
-      buffer.addPoint(this.dir, color, hex, true);
       this.s += h;
       this.sinceCover += h;
       left -= h;
@@ -633,8 +610,10 @@ export class MariWinder {
         this.arc -= TWO_PI;
         this.nextWrap();
         this.cover = buffer.sampleCoverage();
+        buffer.relocate(this.dir, color, hex);
+      } else {
+        buffer.addPoint(this.dir, color, hex, true);
       }
-      buffer.addPoint(this.dir, color, hex, true);
       this.s += h;
       left -= h;
       this.wrapCount = Math.floor(this.s / TWO_PI);

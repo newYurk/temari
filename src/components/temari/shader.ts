@@ -222,20 +222,6 @@ function makeWoolTex() {
     }
   }
   ctx.putImageData(img, 0, 0);
-  ctx.lineCap = "round";
-  for (let k = 0; k < 90; k++) {
-    const x0 = rnd(k + 0.4) * W;
-    const y0 = rnd(k + 2.7) * H;
-    const ang = rnd(k + 5.1) * Math.PI * 2;
-    const len = 28 + rnd(k + 8.8) * 70;
-    const shade = 0.7 + rnd(k + 11) * 0.22;
-    ctx.strokeStyle = `rgba(${Math.floor(170 * shade)},${Math.floor(158 * shade)},${Math.floor(140 * shade)},0.55)`;
-    ctx.lineWidth = 3 + rnd(k + 14) * 7;
-    ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    ctx.lineTo(x0 + Math.cos(ang) * len, y0 + Math.sin(ang) * len * 0.55);
-    ctx.stroke();
-  }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
