@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { DIV_INDEX, ICOSA_FACE_NORMALS, type Division } from "./division";
 import { PALETTES, type PaletteId } from "./palettes";
-import { unitFromMm, WRAP_THREAD_MM } from "./measure";
+import { sewCover, WRAP_GPU_MAX } from "./measure";
 
 const vertexShader = /* glsl */ `
 varying vec3 vN;
@@ -273,53 +273,66 @@ void main() {
 }
 `;
 
+const wrapLoop = /* glsl */ `
+vec3 wrapAxis(int i, int n) {
+  float z = 1.0 - (float(i) + 0.5) / float(n);
+  float rr = sqrt(max(0.0, 1.0 - z * z));
+  float th = float(i) * 2.399963229728653;
+  return vec3(cos(th) * rr, z, sin(th) * rr);
+}
+
+vec3 wrapAlbedo(vec3 p, vec3 color, float w, int wraps) {
+  vec3 col = color * 0.93;
+  for (int i = 0; i < 512; i++) {
+    if (i >= wraps) break;
+    vec3 ax = wrapAxis(i, wraps);
+    float t = abs(dot(p, ax)) / max(w, 0.0004);
+    float mask = 1.0 - smoothstep(0.90, 1.0, t);
+    float round = sqrt(max(0.0, 1.0 - min(t * t, 1.0)));
+    float dye = mix(0.90, 1.06, fract(sin(float(i) * 419.2) * 43758.5453));
+    vec3 thread = color * dye * mix(0.92, 1.05, round);
+    col = mix(col, thread, mask);
+  }
+  return col;
+}
+`;
+
+const wrapBakeVert = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}
+`;
+
+const wrapBakeFrag = /* glsl */ `
+uniform vec3 uColor;
+uniform float uSewW;
+uniform float uWraps;
+varying vec2 vUv;
+${wrapLoop}
+void main() {
+  float theta = (vUv.x - 0.5) * 6.28318530718;
+  float phi = vUv.y * 3.14159265359;
+  vec3 p = vec3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta));
+  int wraps = int(uWraps + 0.5);
+  gl_FragColor = vec4(wrapAlbedo(p, uColor, uSewW, wraps), 1.0);
+}
+`;
+
 const wrapCoverFrag = /* glsl */ `
 uniform vec3 uCamPos;
-uniform vec3 uColor;
-uniform float uWidth;
-uniform float uSewW;
-uniform sampler2D uThread;
+uniform sampler2D uBake;
 
 varying vec3 vN;
 varying vec3 vW;
 varying vec3 vL;
 
-vec3 wrapAxis(int i, int n, float seed) {
-  float z = 1.0 - (float(i) + 0.5) / float(n);
-  float rr = sqrt(max(0.0, 1.0 - z * z));
-  float th = (float(i) + seed) * 2.399963229728653;
-  vec3 a = vec3(cos(th) * rr, z, sin(th) * rr);
-  float h = fract(sin((float(i) + seed) * 127.1) * 43758.5453);
-  float k = fract(sin((float(i) + seed) * 269.5) * 43758.5453);
-  vec3 t = normalize(cross(a, vec3(0.17, 0.93, 0.31)));
-  vec3 b = normalize(cross(a, t));
-  return normalize(a + (t * (h - 0.5) + b * (k - 0.5)) * 0.07);
-}
-
-void paintLayer(inout vec3 col, vec3 p, int n, float w, float seed, float lo, float hi) {
-  for (int i = 0; i < 128; i++) {
-    if (i >= n) break;
-    vec3 ax = wrapAxis(i, n, seed);
-    float d = abs(dot(p, ax));
-    float t = d / max(w, 0.0004);
-    float mask = 1.0 - smoothstep(0.90, 1.0, t);
-    float round = sqrt(max(0.0, 1.0 - min(t * t, 1.0)));
-    float dye = mix(lo, hi, fract(sin((float(i) + seed) * 419.2) * 43758.5453));
-    vec3 thread = uColor * dye * mix(0.92, 1.05, round);
-    col = mix(col, thread, mask);
-  }
-}
-
 void main() {
   vec3 p = normalize(vL);
   vec3 n = normalize(vN);
-  float slider = clamp(uWidth, 0.0, 1.0);
-  float w = uSewW * mix(0.92, 1.12, slider);
-  vec3 col = uColor * 0.93;
-  paintLayer(col, p, 128, w * 1.15, 0.13, 0.88, 0.98);
-  paintLayer(col, p, 128, w, 1.71, 0.90, 1.02);
-  paintLayer(col, p, 128, w * 0.95, 2.94, 0.92, 1.06);
-  paintLayer(col, p, 128, w * 0.88, 4.17, 0.94, 1.08);
+  vec2 uv = vec2(atan(p.z, p.x) / 6.28318530718 + 0.5, acos(clamp(p.y, -1.0, 1.0)) / 3.14159265359);
+  vec3 col = texture2D(uBake, uv).rgb;
   vec3 L = normalize(vec3(0.46, 0.82, 0.52));
   vec3 L2 = normalize(vec3(-0.55, 0.22, -0.28));
   vec3 V = normalize(uCamPos - vW);
@@ -331,15 +344,62 @@ void main() {
 }
 `;
 
+export type WrapBaker = {
+  texture: THREE.Texture;
+  bake: (gl: THREE.WebGLRenderer, color: string) => void;
+  dispose: () => void;
+};
+
+export function createWrapBaker(): WrapBaker {
+  const sew = sewCover();
+  const rt = new THREE.WebGLRenderTarget(2048, 1024, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    generateMipmaps: false,
+  });
+  rt.texture.wrapS = THREE.RepeatWrapping;
+  rt.texture.wrapT = THREE.ClampToEdgeWrapping;
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color("#c4a574") },
+      uSewW: { value: sew.halfWidth },
+      uWraps: { value: Math.min(sew.wraps, WRAP_GPU_MAX) },
+    },
+    vertexShader: wrapBakeVert,
+    fragmentShader: wrapBakeFrag,
+    toneMapped: false,
+  });
+  const scene = new THREE.Scene();
+  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat));
+  let key = "";
+  return {
+    texture: rt.texture,
+    bake(gl, color) {
+      const spec = sewCover();
+      const next = `${color}:${spec.wraps}:${spec.halfWidth.toFixed(6)}`;
+      if (next === key) return;
+      key = next;
+      (mat.uniforms.uColor.value as THREE.Color).set(color);
+      mat.uniforms.uSewW.value = spec.halfWidth;
+      mat.uniforms.uWraps.value = Math.min(spec.wraps, WRAP_GPU_MAX);
+      const prev = gl.getRenderTarget();
+      gl.setRenderTarget(rt);
+      gl.render(scene, cam);
+      gl.setRenderTarget(prev);
+    },
+    dispose() {
+      rt.dispose();
+      mat.dispose();
+    },
+  };
+}
+
 export function createWrapCoverMaterial() {
-  const sewW = unitFromMm(WRAP_THREAD_MM.sew.mm) * 0.5;
   return new THREE.ShaderMaterial({
     uniforms: {
       uCamPos: { value: new THREE.Vector3(0, 0.35, 3.35) },
-      uColor: { value: new THREE.Color("#c4a574") },
-      uWidth: { value: 0.42 },
-      uSewW: { value: sewW },
-      uThread: { value: getThreadTex() },
+      uBake: { value: null },
     },
     vertexShader: wrapCoverVert,
     fragmentShader: wrapCoverFrag,
@@ -349,12 +409,10 @@ export function createWrapCoverMaterial() {
 
 export function syncWrapCoverMaterial(
   material: THREE.ShaderMaterial,
-  opts: { color: string; width: number; camera: THREE.Vector3 },
+  opts: { color: string; width: number; camera: THREE.Vector3; bake?: THREE.Texture | null },
 ) {
-  (material.uniforms.uColor.value as THREE.Color).set(opts.color);
-  material.uniforms.uWidth.value = opts.width;
-  material.uniforms.uSewW.value = unitFromMm(WRAP_THREAD_MM.sew.mm) * 0.5;
   (material.uniforms.uCamPos.value as THREE.Vector3).copy(opts.camera);
+  if (opts.bake) material.uniforms.uBake.value = opts.bake;
 }
 
 export function syncTemariMaterial(

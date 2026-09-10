@@ -48,6 +48,23 @@ export function unitFromMm(mm: number, Ccm = MARI_C_CM) {
   return mm / 10 / (Ccm / (2 * Math.PI));
 }
 
+export function wrapHalfWidth(mm: number, Ccm = MARI_C_CM) {
+  return unitFromMm(mm, Ccm) * 0.5;
+}
+
+/** Visible maki layer: sewing thread, N from the cover formula — not a visual guess. */
+export function sewCover(Ccm = MARI_C_CM) {
+  const mm = WRAP_THREAD_MM.sew.mm;
+  return {
+    mm,
+    wraps: wrapsToCover(Ccm, mm),
+    halfWidth: wrapHalfWidth(mm, Ccm),
+  };
+}
+
+/** GPU loop ceiling. 24 cm sew = 449. Do not invent extra passes past this. */
+export const WRAP_GPU_MAX = 512;
+
 export function wrapLengthM(Ccm: number, wraps: number) {
   return (wraps * Ccm) / 100;
 }

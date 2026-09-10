@@ -15,7 +15,7 @@ import {
   type Stitch,
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
-import { createTemariMaterial, createWrapCoverMaterial, syncTemariMaterial, syncWrapCoverMaterial } from "./shader";
+import { createTemariMaterial, createWrapBaker, createWrapCoverMaterial, syncTemariMaterial, syncWrapCoverMaterial } from "./shader";
 import { createMotifGeometry, getYarnTexture } from "./stitches";
 import { useTemari } from "./store";
 import * as feel from "./feel";
@@ -87,11 +87,22 @@ function ThreadLayer({
 
 function WrapSurface({ color, width }: { color: string; width: number }) {
   const mat = useMemo(() => createWrapCoverMaterial(), []);
+  const baker = useMemo(() => createWrapBaker(), []);
+  const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
   useLayoutEffect(() => {
-    syncWrapCoverMaterial(mat, { color, width, camera: camera.position });
+    baker.bake(gl, color);
+  }, [baker, color, gl]);
+  useLayoutEffect(() => {
+    syncWrapCoverMaterial(mat, { color, width, camera: camera.position, bake: baker.texture });
   });
-  useEffect(() => () => mat.dispose(), [mat]);
+  useEffect(
+    () => () => {
+      mat.dispose();
+      baker.dispose();
+    },
+    [mat, baker],
+  );
   return (
     <mesh frustumCulled={false} renderOrder={3} material={mat} raycast={() => {}}>
       <sphereGeometry args={[1.0, 96, 64]} />
