@@ -87,8 +87,8 @@
       }
       .steps figure { position: relative; padding-top: 0.2rem; }
       .steps figcaption { text-align: left; }
-      ol.how { padding-left: 1.2rem; margin: 0.8rem 0 1rem; }
-      ol.how li { margin: 0.45rem 0; }
+      ol.how, ul.how { padding-left: 1.2rem; margin: 0.8rem 0 1rem; }
+      ol.how li, ul.how li { margin: 0.45rem 0; }
       .pin { fill: #0c0b09; }
       .paper { fill: #f7f3ea; stroke: #0c0b09; }
       figure { margin: 0; text-align: center; }
@@ -155,7 +155,7 @@
           </tr>
           <tr>
             <td>Дзивари</td>
-            <td>какое деление, полоска как ритуал</td>
+            <td>какое деление, полоска или V</td>
             <td>полюса точно Simple / октаэдр / икосаэдр; нить с одной стороны булавок</td>
           </tr>
           <tr>
@@ -308,11 +308,13 @@
       <h2>3. Дзивари — разметка</h2>
       <p>
         Тонкие нити поверх готовой базы. Это территория, не вышивка.
-        Размечают не линейкой по столу: шар не плоский, спрямление даст ошибку.
-        Инструмент — <b>бумажная полоска</b>, вырезанная из обычного листа.
-        Ею измеряют обхват по большому кругу, её же складывают — и получают доли.
-        В игре это будет отдельный жест, не «на глаз».
+        Не линейкой по столу: шар не плоский.
+        Два инструмента, оба с шара — часто из одного листа бумаги.
       </p>
+      <ul class="how">
+        <li><b>Полоска</b> — обхват <code>C</code>. Simple 4/6/8: сложил, надрезал, поставил полюса и экватор.</li>
+        <li><b>Угловая линейка (V)</b> — C10. Угол <code>72°</code>. Ноги ложатся на мари, расстояние между соседними центрами <code>V = C/6 + C/100</code>. Нечётные доли (5…) — бумажный шаблон <code>360°/n</code>.</li>
+      </ul>
 
       <h3>Полоска</h3>
       <p>
@@ -421,15 +423,52 @@
           </svg>
           <figcaption>Нить полным кругом, всё время с одной стороны булавок. У полюса — частичный оборот вокруг стержня, на следующую долю.</figcaption>
         </figure>
+      </div>
+
+      <h3>Угловая линейка</h3>
+      <p>
+        C10 на десять не складывается. Инструмент Японской ассоциации темари —
+        пластиковая V с внутренним углом 72°. Ту же V вырезают из бумаги.
+        Вершина на булавке, ноги по шару — два соседних центра пентагона.
+      </p>
+      <div class="steps">
         <figure>
-          <svg class="ball" viewBox="0 0 220 150" aria-label="V-линейка">
-            <path d="M40 130 L 110 28 L 180 130" fill="none" stroke="#0c0b09" stroke-width="1.4" />
-            <path d="M52 112 L 110 40 L 168 112" fill="#f7f3ea" stroke="#0c0b09" stroke-width="1" />
-            <path d="M110 40 L 110 28" stroke="#8f3d32" stroke-width="1.2" />
-            <text x="96" y="22" font-size="11" fill="#8a847c" font-family="IBM Plex Sans, sans-serif">72°</text>
-            <text x="88" y="84" font-size="12" fill="#8f3d32" font-family="IBM Plex Sans, sans-serif">V</text>
+          <svg class="ball" viewBox="0 0 220 150" aria-label="V-линейка 72 градуса">
+            <path d="M28 132 L 110 22 L 192 132" fill="none" stroke="#0c0b09" stroke-width="1.5" />
+            <path d="M44 112 L 110 36 L 176 112" fill="#f7f3ea" stroke="#0c0b09" stroke-width="1" />
+            <path d="M110 36 L 110 22" stroke="#8f3d32" stroke-width="1.3" />
+            <path d="M92 58 A 28 28 0 0 1 128 58" fill="none" stroke="#8f3d32" stroke-width="1.1" />
+            <text x="100" y="18" font-size="12" fill="#8f3d32" font-family="IBM Plex Sans, sans-serif">72°</text>
+            <g stroke="#9a8b6a" stroke-width="0.7">
+              <path d="M78 76 L 142 76" />
+              <path d="M70 90 L 150 90" />
+              <path d="M62 104 L 158 104" />
+            </g>
+            <text x="78" y="142" font-size="11" fill="#8a847c" font-family="IBM Plex Sans, sans-serif">ноги в мм · V = C/6 + C/100</text>
           </svg>
-          <figcaption>C10: не складывать на 10. Расстояние между соседними центрами — V-линейка, часто из той же бумаги уголками.</figcaption>
+          <figcaption>1. Вырезать уголок 72°. Деления на ногах — дуга по мари, не по столу.</figcaption>
+        </figure>
+        <figure>
+          <svg class="ball" viewBox="0 0 200 200" aria-label="V на мари">
+            <circle cx="100" cy="100" r="78" fill="url(#g)" stroke="#0c0b09" stroke-width="1.15" />
+            <path d="M100 27 L 58 92" fill="none" stroke="#f7f3ea" stroke-width="8" stroke-linecap="round" />
+            <path d="M100 27 L 142 92" fill="none" stroke="#f7f3ea" stroke-width="8" stroke-linecap="round" />
+            <path d="M100 27 L 58 92" fill="none" stroke="#0c0b09" stroke-width="1.2" stroke-linecap="round" />
+            <path d="M100 27 L 142 92" fill="none" stroke="#0c0b09" stroke-width="1.2" stroke-linecap="round" />
+            <circle cx="100" cy="27" r="3.4" class="pin" />
+            <circle cx="58" cy="92" r="2.7" class="pin" />
+            <circle cx="142" cy="92" r="2.7" class="pin" />
+          </svg>
+          <figcaption>2. Вершина на северную булавку. Ноги по поверхности — два соседних центра C10.</figcaption>
+        </figure>
+        <figure>
+          <svg class="ball" viewBox="0 0 220 150" aria-label="Шаблон нечётных долей">
+            <path d="M40 128 L 110 28 L 148 128" fill="#f7f3ea" stroke="#0c0b09" stroke-width="1" />
+            <path d="M110 28 L 110 18" stroke="#8f3d32" stroke-width="1.2" />
+            <text x="92" y="80" font-size="12" fill="#8f3d32" font-family="IBM Plex Sans, sans-serif">360°/n</text>
+            <text x="48" y="144" font-size="11" fill="#8a847c" font-family="IBM Plex Sans, sans-serif">5 долей → 72° · 6 → 60°</text>
+          </svg>
+          <figcaption>3. Нечётные меридианы: тот же бумажный угол, но 360/n. Это не C10.</figcaption>
         </figure>
       </div>
 
