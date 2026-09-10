@@ -282,24 +282,47 @@ varying vec3 vN;
 varying vec3 vW;
 varying vec3 vL;
 
+vec3 fibAxis(int i, int n, float seed) {
+  float z = 1.0 - (float(i) + 0.5) / float(n);
+  float r = sqrt(max(0.0, 1.0 - z * z));
+  float th = (float(i) + seed) * 2.399963229728653;
+  return vec3(cos(th) * r, z, sin(th) * r);
+}
+
+float band(vec3 p, int n, float w, float seed) {
+  float acc = 0.0;
+  for (int i = 0; i < 96; i++) {
+    if (i >= n) break;
+    float d = abs(dot(p, fibAxis(i, n, seed)));
+    acc += smoothstep(w, w * 0.22, d);
+  }
+  return acc;
+}
+
 void main() {
   vec3 p = normalize(vL);
   vec3 n = normalize(vN);
+  float slider = clamp(uWidth, 0.0, 1.0);
+  float yarn = band(p, 64, mix(0.018, 0.012, slider), 0.17);
+  float sew = band(p, 96, mix(0.009, 0.006, slider), 1.91);
+  float hit = yarn + sew;
+  float cover = 1.0 - exp(-hit * 0.55);
+  vec3 under = uColor * 0.38;
+  vec3 strand = uColor * 1.06;
+  vec3 col = mix(under, strand, cover);
   vec3 an = abs(p);
   vec3 tw = an / max(an.x + an.y + an.z, 0.001);
-  float scale = mix(28.0, 18.0, clamp(uWidth, 0.0, 1.0));
-  float nap = texture2D(uThread, p.yz * scale).r * tw.x
-            + texture2D(uThread, p.xz * scale).r * tw.y
-            + texture2D(uThread, p.xy * scale).r * tw.z;
-  float fiber = 0.9 + 0.14 * nap;
-  vec3 col = uColor * fiber;
-  vec3 Nn = normalize(n + p * ((nap - 0.5) * 0.22));
+  float nap = texture2D(uThread, p.yz * 36.0).r * tw.x
+            + texture2D(uThread, p.xz * 36.0).r * tw.y
+            + texture2D(uThread, p.xy * 36.0).r * tw.z;
+  col *= 0.94 + 0.08 * nap;
+  vec3 Nn = normalize(n + p * ((cover - 0.5) * 0.16));
   vec3 L = normalize(vec3(0.46, 0.82, 0.52));
   vec3 L2 = normalize(vec3(-0.55, 0.22, -0.28));
   vec3 V = normalize(uCamPos - vW);
   float ndl = max(dot(Nn, L), 0.0);
   float ndl2 = max(dot(Nn, L2), 0.0);
-  float lit = 0.56 + 0.36 * ndl + 0.12 * ndl2;
+  float lit = 0.54 + 0.36 * ndl + 0.12 * ndl2;
   float rim = pow(1.0 - max(dot(n, V), 0.0), 2.6) * 0.05;
   gl_FragColor = vec4(col * lit + rim * col, 1.0);
 }
