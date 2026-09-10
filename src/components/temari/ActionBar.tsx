@@ -2,35 +2,33 @@ import { useMemo, useState } from "react";
 import { RotateCcw, Undo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PALETTE_LIST, PALETTES } from "./palettes";
-import { kikuCapacity, KAGARI_SPACING_META } from "./patterns";
 import { useTemari } from "./store";
 import {
-  GAME_ACTIONS,
+  CRAFT_ACTIONS,
   dispatchCommand,
-  snapshotFromStore,
-  type GameAction,
-  type WorldSnapshot,
+  getCraftState,
+  type CraftAction,
+  type TemariCraftState,
 } from "./actions";
 
-function byCategory(category: GameAction["category"]) {
-  return GAME_ACTIONS.filter((action) => action.category === category);
+function clusterOf(cluster: CraftAction["cluster"]) {
+  return CRAFT_ACTIONS.filter((action) => action.cluster === cluster);
 }
 
 function ActionBtn({
   action,
-  snapshot,
+  state,
   onBlocked,
   wide,
 }: {
-  action: GameAction;
-  snapshot: WorldSnapshot;
+  action: CraftAction;
+  state: TemariCraftState;
   onBlocked: (reason: string) => void;
   wide?: boolean;
 }) {
-  const available = action.isAvailable(snapshot);
-  const active = action.isActive?.(snapshot) ?? false;
-  const busy = action.isBusy?.(snapshot) ?? false;
-  const reason = action.getDisabledReason(snapshot);
+  const available = action.canExecute(state);
+  const active = action.isActive?.(state) ?? false;
+  const reason = action.getDisabledReason(state);
 
   return (
     <button
@@ -44,13 +42,12 @@ function ActionBtn({
           if (reason) onBlocked(reason);
           return;
         }
-        dispatchCommand(action.command);
+        dispatchCommand(action.id);
       }}
       className={cn(
-        "min-h-8 rounded-full px-2 text-[0.68rem] tracking-wide ring-1 transition-opacity duration-150",
-        wide ? "flex-[1.3]" : "flex-1",
-        busy && "opacity-70",
-        !available && "cursor-not-allowed opacity-35",
+        "min-h-8 flex-1 rounded-full px-2 text-[0.68rem] tracking-wide ring-1 transition-opacity duration-150",
+        wide && "flex-[1.4]",
+        !available && "cursor-not-allowed opacity-40",
         available && active && "bg-ink/8 text-ink ring-line-strong",
         available && !active && "text-stone ring-line hover:text-ink",
       )}
@@ -60,168 +57,90 @@ function ActionBtn({
   );
 }
 
-function Row({ children }: { children: React.ReactNode }) {
-  return <div className="flex gap-0.5">{children}</div>;
-}
-
-function markBlocked(s: WorldSnapshot) {
-  if (!(s.mode === "studio" && s.layerDone)) return "Сначала намотайте базу";
-  if (s.craft !== "stitch") return "Сначала кагари";
-  return null;
-}
-
 export function ActionBar() {
-  const mode = useTemari((s) => s.mode);
   const paletteId = useTemari((s) => s.paletteId);
   const selectedColor = useTemari((s) => s.selectedColor);
   const wrapHex = useTemari((s) => s.wrapHex);
   const layerDone = useTemari((s) => s.layerDone);
-  const pins = useTemari((s) => s.pins);
-  const threadWidth = useTemari((s) => s.threadWidth);
-  const kikuLayers = useTemari((s) => s.kikuLayers);
-  const kagariSpacing = useTemari((s) => s.kagariSpacing);
-  const wrapProgress = useTemari((s) => s.wrapProgress);
-  const wrapCount = useTemari((s) => s.wrapCount);
   const craft = useTemari((s) => s.craft);
-  const history = useTemari((s) => s.history);
-  const sewnHistory = useTemari((s) => s.sewnHistory);
-  const pinHistory = useTemari((s) => s.pinHistory);
   const jiwariOn = useTemari((s) => s.jiwariOn);
   const division = useTemari((s) => s.division);
   const motif = useTemari((s) => s.motif);
+  const pins = useTemari((s) => s.pins);
   const kagariDir = useTemari((s) => s.kagariDir);
+  const kagariSpacing = useTemari((s) => s.kagariSpacing);
+  const history = useTemari((s) => s.history);
+  const sewnHistory = useTemari((s) => s.sewnHistory);
+  const pinHistory = useTemari((s) => s.pinHistory);
+  const mode = useTemari((s) => s.mode);
   const setPalette = useTemari((s) => s.setPalette);
   const setColor = useTemari((s) => s.setColor);
-  const setKikuLayers = useTemari((s) => s.setKikuLayers);
 
   const [tip, setTip] = useState<string | null>(null);
 
-  const snapshot = useMemo(
-    () => snapshotFromStore(),
+  const state = useMemo(
+    () => getCraftState(),
     [
       mode,
       layerDone,
-      wrapProgress,
-      wrapCount,
       craft,
       jiwariOn,
       division,
       motif,
       pins,
+      kagariDir,
+      kagariSpacing,
       history,
       sewnHistory,
       pinHistory,
-      kagariDir,
-      kagariSpacing,
+      selectedColor,
+      paletteId,
     ],
   );
 
   const palette = PALETTES[paletteId];
-  const cap = kikuCapacity(
-    pins.map((pin) => pin.p),
-    threadWidth,
-    KAGARI_SPACING_META[kagariSpacing].density,
+  const jiwari = clusterOf("jiwari");
+  const kagariMain = clusterOf("kagari").filter(
+    (a) => a.id === "stitch" || a.id.startsWith("motif-"),
   );
-  const rowsLocked = Boolean(markBlocked(snapshot) || !snapshot.closedContour);
-
-  const wrapActs = byCategory("wrap");
-  const mark = byCategory("mark");
-  const stitchMotif = byCategory("stitch").filter((a) => a.id.startsWith("motif-"));
-  const stitchFill = byCategory("stitch").filter(
-    (a) => a.id === "fill" || a.id.startsWith("kagari-"),
+  const kagariFill = clusterOf("kagari").filter(
+    (a) => a.id === "fill" || a.id.startsWith("kagari-") || a.id.startsWith("space-"),
   );
-  const stitchSpace = byCategory("stitch").filter((a) => a.id.startsWith("space-"));
-  const edit = byCategory("edit");
+  const correction = clusterOf("correction");
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
-      <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-linen from-35% via-linen/75 to-transparent" />
-      <div className="pointer-events-auto relative px-3 pb-[max(0.75rem,calc(env(safe-area-inset-bottom)+0.5rem))] md:px-8">
+      <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-linen from-30% via-linen/70 to-transparent" />
+      <div className="pointer-events-auto relative px-3 pb-[max(0.7rem,calc(env(safe-area-inset-bottom)+0.45rem))] md:px-8">
         <div className="mx-auto flex max-w-lg flex-col gap-1">
-          <p className="min-h-4 px-1 text-[0.65rem] tracking-wide text-stone" aria-live="polite">
+          <p
+            className="min-h-4 px-1 text-[0.65rem] tracking-wide text-stone"
+            aria-live="polite"
+          >
             {tip ?? ""}
           </p>
-          <Row>
-            {mark.map((action) => (
-              <ActionBtn key={action.id} action={action} snapshot={snapshot} onBlocked={setTip} />
+          <div className="flex gap-0.5">
+            {jiwari.map((action) => (
+              <ActionBtn key={action.id} action={action} state={state} onBlocked={setTip} />
             ))}
-          </Row>
-          <Row>
-            {stitchMotif.map((action) => (
-              <ActionBtn key={action.id} action={action} snapshot={snapshot} onBlocked={setTip} />
+          </div>
+          <div className="flex gap-0.5">
+            {kagariMain.map((action) => (
+              <ActionBtn key={action.id} action={action} state={state} onBlocked={setTip} />
             ))}
-          </Row>
-          <Row>
-            {stitchFill.map((action) => (
+          </div>
+          <div className="flex gap-0.5">
+            {kagariFill.map((action) => (
               <ActionBtn
                 key={action.id}
                 action={action}
-                snapshot={snapshot}
+                state={state}
                 onBlocked={setTip}
                 wide={action.id === "fill"}
               />
             ))}
-            <button
-              type="button"
-              aria-label="Меньше рядов"
-              className={cn(
-                "flex size-8 items-center justify-center rounded-full text-stone ring-1 ring-line",
-                rowsLocked && "cursor-not-allowed opacity-35",
-              )}
-              onClick={() => {
-                const blocked = markBlocked(snapshot);
-                if (blocked || !snapshot.closedContour) {
-                  setTip(blocked ?? "Залить можно, только если контур замкнут");
-                  return;
-                }
-                setKikuLayers(kikuLayers - 1);
-              }}
-            >
-              −
-            </button>
-            <span className="min-w-8 self-center text-center text-[0.65rem] tabular-nums text-ink">
-              {Math.min(kikuLayers, cap.max)}/{cap.max}
-            </span>
-            <button
-              type="button"
-              aria-label="Больше рядов"
-              className={cn(
-                "flex size-8 items-center justify-center rounded-full text-stone ring-1 ring-line",
-                rowsLocked && "cursor-not-allowed opacity-35",
-              )}
-              onClick={() => {
-                const blocked = markBlocked(snapshot);
-                if (blocked || !snapshot.closedContour) {
-                  setTip(blocked ?? "Залить можно, только если контур замкнут");
-                  return;
-                }
-                setKikuLayers(kikuLayers + 1);
-              }}
-            >
-              +
-            </button>
-            {stitchSpace.map((action) => (
-              <ActionBtn key={action.id} action={action} snapshot={snapshot} onBlocked={setTip} />
-            ))}
-          </Row>
-          <div className="flex items-center gap-1.5">
-            <div className="flex min-w-0 flex-1 gap-1">
-              {PALETTE_LIST.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setPalette(item.id)}
-                  className={cn(
-                    "min-h-8 flex-1 rounded-full px-1 text-[0.65rem] tracking-wide",
-                    paletteId === item.id ? "text-ink" : "text-stone",
-                  )}
-                >
-                  {item.name}
-                </button>
-              ))}
-            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <div
               className="size-7 shrink-0 rounded-full ring-1 ring-line"
               style={{ backgroundColor: wrapHex }}
@@ -245,23 +164,30 @@ export function ActionBar() {
                 />
               ))}
             </div>
-            {wrapActs.map((action) => (
-              <ActionBtn
-                key={action.id}
-                action={action}
-                snapshot={snapshot}
-                onBlocked={setTip}
-              />
-            ))}
-            {edit.map((action) =>
+            <div className="flex min-w-0 gap-0.5">
+              {PALETTE_LIST.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setPalette(item.id)}
+                  className={cn(
+                    "min-h-8 rounded-full px-2 text-[0.65rem] tracking-wide",
+                    paletteId === item.id ? "text-ink" : "text-stone",
+                  )}
+                >
+                  {item.name}
+                </button>
+              ))}
+            </div>
+            {correction.map((action) =>
               action.id === "undo" ? (
                 <IconAction
                   key={action.id}
                   label={action.label}
-                  disabled={!action.isAvailable(snapshot)}
-                  reason={action.getDisabledReason(snapshot)}
+                  disabled={!action.canExecute(state)}
+                  reason={action.getDisabledReason(state)}
                   onBlocked={setTip}
-                  onClick={() => dispatchCommand(action.command)}
+                  onClick={() => dispatchCommand(action.id)}
                 >
                   <Undo2 className="size-3.5" />
                 </IconAction>
@@ -269,7 +195,7 @@ export function ActionBar() {
                 <IconAction
                   key={action.id}
                   label={action.label}
-                  onClick={() => dispatchCommand(action.command)}
+                  onClick={() => dispatchCommand(action.id)}
                 >
                   <RotateCcw className="size-3.5" />
                 </IconAction>
@@ -277,7 +203,7 @@ export function ActionBar() {
                 <ActionBtn
                   key={action.id}
                   action={action}
-                  snapshot={snapshot}
+                  state={state}
                   onBlocked={setTip}
                 />
               ),
@@ -318,8 +244,8 @@ function IconAction({
         onClick();
       }}
       className={cn(
-        "flex size-8 items-center justify-center rounded-full text-ink ring-1 ring-line",
-        disabled && "cursor-not-allowed opacity-35",
+        "flex size-8 shrink-0 items-center justify-center rounded-full text-ink ring-1 ring-line",
+        disabled && "cursor-not-allowed opacity-40",
       )}
     >
       {children}

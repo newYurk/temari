@@ -3,308 +3,293 @@ import type { Craft } from "./craft";
 import type { Division } from "./division";
 import type { Mode } from "./store";
 import { useTemari } from "./store";
+import type { PaletteId } from "./palettes";
 
-export type ActionCategory = "wrap" | "mark" | "stitch" | "edit";
+export type CraftCluster = "jiwari" | "kagari" | "correction";
 
-export type TemariCommand =
-  | { type: "finishLayer" }
-  | { type: "clearJiwari" }
-  | { type: "setDivision"; division: Division }
-  | { type: "setCraft"; craft: Craft }
-  | { type: "setMotif"; motif: MotifId }
-  | { type: "setKagariDir"; dir: KagariDir }
-  | { type: "setKagariSpacing"; spacing: KagariSpacing }
-  | { type: "fillKiku" }
-  | { type: "showExample" }
-  | { type: "undo" }
-  | { type: "reset" }
-  | { type: "setKikuLayers"; delta: number };
-
-export type WorldSnapshot = {
+export type TemariCraftState = {
   mode: Mode;
   layerDone: boolean;
-  wrapStarted: boolean;
-  wrapProgress: number;
   craft: Craft;
   jiwariOn: boolean;
   division: Division;
   motif: MotifId;
   closedContour: boolean;
+  hasPin: boolean;
   undoEmpty: boolean;
   kagariDir: KagariDir;
   kagariSpacing: KagariSpacing;
+  selectedColor: number;
+  paletteId: PaletteId;
 };
 
-export type GameAction = {
+export interface CraftAction {
   id: string;
   label: string;
-  category: ActionCategory;
-  isAvailable: (state: WorldSnapshot) => boolean;
-  isActive?: (state: WorldSnapshot) => boolean;
-  isBusy?: (state: WorldSnapshot) => boolean;
-  getDisabledReason: (state: WorldSnapshot) => string | null;
-  command: TemariCommand;
-};
+  cluster: CraftCluster;
+  canExecute: (state: TemariCraftState) => boolean;
+  isActive?: (state: TemariCraftState) => boolean;
+  getDisabledReason: (state: TemariCraftState) => string | null;
+}
 
-const afterWrap = (s: WorldSnapshot) =>
+const needWrap = (s: TemariCraftState) =>
   s.mode === "studio" && s.layerDone ? null : "Сначала намотайте базу";
 
-const afterMark = (s: WorldSnapshot) =>
-  afterWrap(s) ??
-  (s.craft === "stitch" ? null : "Сначала кагари");
+const needKagari = (s: TemariCraftState) =>
+  needWrap(s) ?? (s.craft === "stitch" ? null : "Сначала стежок");
 
-export function snapshotFromStore(): WorldSnapshot {
+export function getCraftState(): TemariCraftState {
   const s = useTemari.getState();
   const undoEmpty =
     s.mode === "kata"
       ? s.history.length === 0
-      : s.craft === "wind"
-        ? s.wrapCount === 0
-        : s.craft === "pin"
-          ? s.pinHistory.length === 0
-          : s.sewnHistory.length === 0;
+      : s.craft === "pin"
+        ? s.pinHistory.length === 0
+        : s.sewnHistory.length === 0;
   return {
     mode: s.mode,
     layerDone: s.layerDone,
-    wrapStarted: s.wrapStarted,
-    wrapProgress: s.wrapProgress,
     craft: s.craft,
     jiwariOn: s.jiwariOn,
     division: s.division,
     motif: s.motif,
     closedContour: isClosedContour(s.pins.map((pin) => pin.p)),
+    hasPin: s.pins.length > 0,
     undoEmpty,
     kagariDir: s.kagariDir,
     kagariSpacing: s.kagariSpacing,
+    selectedColor: s.selectedColor,
+    paletteId: s.paletteId,
   };
 }
 
-export const GAME_ACTIONS: GameAction[] = [
+export const CRAFT_ACTIONS: CraftAction[] = [
   {
-    id: "finish-wrap",
-    label: "База",
-    category: "wrap",
-    isAvailable: (s) => s.mode === "studio" && !s.layerDone,
-    isBusy: (s) => s.mode === "studio" && !s.layerDone && s.wrapProgress > 0 && s.wrapProgress < 1,
-    isActive: (s) => s.layerDone,
-    getDisabledReason: (s) =>
-      s.layerDone ? "База уже намотана" : null,
-    command: { type: "finishLayer" },
-  },
-  {
-    id: "craft-pin",
-    label: "Дзивари",
-    category: "mark",
-    isAvailable: (s) => !afterWrap(s),
+    id: "pin",
+    label: "Булавки",
+    cluster: "jiwari",
+    canExecute: (s) => !needWrap(s),
     isActive: (s) => s.craft === "pin" && s.layerDone,
-    getDisabledReason: afterWrap,
-    command: { type: "setCraft", craft: "pin" },
-  },
-  {
-    id: "craft-stitch",
-    label: "Кагари",
-    category: "mark",
-    isAvailable: (s) => !afterWrap(s),
-    isActive: (s) => s.craft === "stitch" && s.layerDone,
-    getDisabledReason: afterWrap,
-    command: { type: "setCraft", craft: "stitch" },
+    getDisabledReason: needWrap,
   },
   {
     id: "jiwari-off",
     label: "Нет",
-    category: "mark",
-    isAvailable: (s) => !afterWrap(s),
+    cluster: "jiwari",
+    canExecute: (s) => !needWrap(s),
     isActive: (s) => s.layerDone && !s.jiwariOn,
-    getDisabledReason: afterWrap,
-    command: { type: "clearJiwari" },
+    getDisabledReason: needWrap,
   },
   {
     id: "jiwari-simple",
     label: "Простое",
-    category: "mark",
-    isAvailable: (s) => !afterWrap(s),
+    cluster: "jiwari",
+    canExecute: (s) => !needWrap(s),
     isActive: (s) => s.jiwariOn && s.division === "simple",
-    getDisabledReason: afterWrap,
-    command: { type: "setDivision", division: "simple" },
+    getDisabledReason: needWrap,
   },
   {
     id: "jiwari-c8",
     label: "C8",
-    category: "mark",
-    isAvailable: (s) => !afterWrap(s),
+    cluster: "jiwari",
+    canExecute: (s) => !needWrap(s),
     isActive: (s) => s.jiwariOn && s.division === "c8",
-    getDisabledReason: afterWrap,
-    command: { type: "setDivision", division: "c8" },
+    getDisabledReason: needWrap,
   },
   {
     id: "jiwari-c10",
     label: "C10",
-    category: "mark",
-    isAvailable: (s) => !afterWrap(s),
+    cluster: "jiwari",
+    canExecute: (s) => !needWrap(s),
     isActive: (s) => s.jiwariOn && s.division === "c10",
-    getDisabledReason: afterWrap,
-    command: { type: "setDivision", division: "c10" },
+    getDisabledReason: needWrap,
+  },
+  {
+    id: "stitch",
+    label: "Стежок",
+    cluster: "kagari",
+    canExecute: (s) => !needWrap(s) && (s.jiwariOn || s.hasPin),
+    isActive: (s) => s.craft === "stitch",
+    getDisabledReason: (s) =>
+      needWrap(s) ??
+      (s.jiwariOn || s.hasPin
+        ? null
+        : "Сначала выберите опорную булавку или линию разметки"),
   },
   {
     id: "motif-none",
     label: "Ряд",
-    category: "stitch",
-    isAvailable: (s) => !afterMark(s),
+    cluster: "kagari",
+    canExecute: (s) => !needKagari(s),
     isActive: (s) => s.motif === "none",
-    getDisabledReason: afterMark,
-    command: { type: "setMotif", motif: "none" },
+    getDisabledReason: needKagari,
   },
   {
     id: "motif-kiku",
     label: "Кику",
-    category: "stitch",
-    isAvailable: (s) => !afterMark(s),
+    cluster: "kagari",
+    canExecute: (s) => !needKagari(s),
     isActive: (s) => s.motif === "kiku",
-    getDisabledReason: afterMark,
-    command: { type: "setMotif", motif: "kiku" },
+    getDisabledReason: needKagari,
   },
   {
     id: "motif-hoshi",
     label: "Хоси",
-    category: "stitch",
-    isAvailable: (s) => !afterMark(s),
+    cluster: "kagari",
+    canExecute: (s) => !needKagari(s),
     isActive: (s) => s.motif === "hoshi",
-    getDisabledReason: afterMark,
-    command: { type: "setMotif", motif: "hoshi" },
+    getDisabledReason: needKagari,
   },
   {
     id: "motif-hishi",
     label: "Хиси",
-    category: "stitch",
-    isAvailable: (s) => !afterMark(s),
+    cluster: "kagari",
+    canExecute: (s) => !needKagari(s),
     isActive: (s) => s.motif === "hishi",
-    getDisabledReason: afterMark,
-    command: { type: "setMotif", motif: "hishi" },
+    getDisabledReason: needKagari,
   },
   {
     id: "motif-obi",
     label: "Оби",
-    category: "stitch",
-    isAvailable: (s) => !afterMark(s),
+    cluster: "kagari",
+    canExecute: (s) => !needKagari(s),
     isActive: (s) => s.motif === "obi",
-    getDisabledReason: afterMark,
-    command: { type: "setMotif", motif: "obi" },
+    getDisabledReason: needKagari,
   },
   {
     id: "kagari-in",
     label: "Внутрь",
-    category: "stitch",
-    isAvailable: (s) => !afterMark(s) && s.closedContour,
+    cluster: "kagari",
+    canExecute: (s) => !needKagari(s) && s.closedContour,
     isActive: (s) => s.kagariDir === "in",
     getDisabledReason: (s) =>
-      afterMark(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
-    command: { type: "setKagariDir", dir: "in" },
+      needKagari(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
   },
   {
     id: "kagari-out",
     label: "Наружу",
-    category: "stitch",
-    isAvailable: (s) => !afterMark(s) && s.closedContour,
+    cluster: "kagari",
+    canExecute: (s) => !needKagari(s) && s.closedContour,
     isActive: (s) => s.kagariDir === "out",
     getDisabledReason: (s) =>
-      afterMark(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
-    command: { type: "setKagariDir", dir: "out" },
+      needKagari(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
   },
   {
     id: "fill",
     label: "Залить",
-    category: "stitch",
-    isAvailable: (s) => !afterMark(s) && s.closedContour,
+    cluster: "kagari",
+    canExecute: (s) => !needKagari(s) && s.closedContour,
     getDisabledReason: (s) =>
-      afterMark(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
-    command: { type: "fillKiku" },
+      needKagari(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
   },
   {
     id: "space-open",
     label: "Реже",
-    category: "stitch",
-    isAvailable: (s) => !afterMark(s) && s.closedContour,
+    cluster: "kagari",
+    canExecute: (s) => !needKagari(s) && s.closedContour,
     isActive: (s) => s.kagariSpacing === "open",
     getDisabledReason: (s) =>
-      afterMark(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
-    command: { type: "setKagariSpacing", spacing: "open" },
+      needKagari(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
   },
   {
     id: "space-even",
     label: "Так",
-    category: "stitch",
-    isAvailable: (s) => !afterMark(s) && s.closedContour,
+    cluster: "kagari",
+    canExecute: (s) => !needKagari(s) && s.closedContour,
     isActive: (s) => s.kagariSpacing === "even",
     getDisabledReason: (s) =>
-      afterMark(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
-    command: { type: "setKagariSpacing", spacing: "even" },
+      needKagari(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
   },
   {
     id: "space-tight",
     label: "Плотнее",
-    category: "stitch",
-    isAvailable: (s) => !afterMark(s) && s.closedContour,
+    cluster: "kagari",
+    canExecute: (s) => !needKagari(s) && s.closedContour,
     isActive: (s) => s.kagariSpacing === "tight",
     getDisabledReason: (s) =>
-      afterMark(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
-    command: { type: "setKagariSpacing", spacing: "tight" },
+      needKagari(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
+  },
+  {
+    id: "undo",
+    label: "Распороть",
+    cluster: "correction",
+    canExecute: (s) => !s.undoEmpty,
+    getDisabledReason: (s) => (s.undoEmpty ? "Нет стежка, который можно распороть" : null),
+  },
+  {
+    id: "reset",
+    label: "Сброс слоя",
+    cluster: "correction",
+    canExecute: () => true,
+    getDisabledReason: () => null,
   },
   {
     id: "example",
     label: "Пример",
-    category: "edit",
-    isAvailable: (s) => s.mode === "studio" && s.layerDone,
+    cluster: "correction",
+    canExecute: (s) => s.mode === "studio" && s.layerDone,
     getDisabledReason: (s) =>
       s.mode === "studio" && s.layerDone ? null : "Сначала намотайте базу",
-    command: { type: "showExample" },
-  },
-  {
-    id: "undo",
-    label: "Отменить",
-    category: "edit",
-    isAvailable: (s) => !s.undoEmpty,
-    getDisabledReason: (s) => (s.undoEmpty ? "Нечего отменять" : null),
-    command: { type: "undo" },
-  },
-  {
-    id: "reset",
-    label: "Сбросить",
-    category: "edit",
-    isAvailable: () => true,
-    getDisabledReason: () => null,
-    command: { type: "reset" },
   },
 ];
 
-export function dispatchCommand(command: TemariCommand) {
+export function dispatchCommand(actionId: string, payload?: unknown) {
+  const action = CRAFT_ACTIONS.find((item) => item.id === actionId);
+  const state = getCraftState();
+  if (!action || !action.canExecute(state)) return;
+
   const s = useTemari.getState();
-  switch (command.type) {
-    case "finishLayer":
-      s.finishLayer();
+  switch (actionId) {
+    case "pin":
+      s.setCraft("pin");
       return;
-    case "clearJiwari":
+    case "jiwari-off":
       s.clearJiwari();
       return;
-    case "setDivision":
-      s.setDivision(command.division);
+    case "jiwari-simple":
+      s.setDivision("simple");
       return;
-    case "setCraft":
-      s.setCraft(command.craft);
+    case "jiwari-c8":
+      s.setDivision("c8");
       return;
-    case "setMotif":
-      s.setMotif(command.motif);
+    case "jiwari-c10":
+      s.setDivision("c10");
       return;
-    case "setKagariDir":
-      s.setKagariDir(command.dir);
+    case "stitch":
+      s.setCraft("stitch");
       return;
-    case "setKagariSpacing":
-      s.setKagariSpacing(command.spacing);
+    case "motif-none":
+      s.setMotif("none");
       return;
-    case "fillKiku":
+    case "motif-kiku":
+      s.setMotif("kiku");
+      return;
+    case "motif-hoshi":
+      s.setMotif("hoshi");
+      return;
+    case "motif-hishi":
+      s.setMotif("hishi");
+      return;
+    case "motif-obi":
+      s.setMotif("obi");
+      return;
+    case "kagari-in":
+      s.setKagariDir("in");
+      return;
+    case "kagari-out":
+      s.setKagariDir("out");
+      return;
+    case "fill":
       s.fillKiku();
       return;
-    case "showExample":
-      s.showExample();
+    case "space-open":
+      s.setKagariSpacing("open");
+      return;
+    case "space-even":
+      s.setKagariSpacing("even");
+      return;
+    case "space-tight":
+      s.setKagariSpacing("tight");
       return;
     case "undo":
       s.undo();
@@ -312,8 +297,13 @@ export function dispatchCommand(command: TemariCommand) {
     case "reset":
       s.reset();
       return;
-    case "setKikuLayers":
-      s.setKikuLayers(s.kikuLayers + command.delta);
+    case "example":
+      s.showExample();
+      return;
+    case "layer":
+      if (typeof payload === "number") s.setKikuLayers(s.kikuLayers + payload);
+      return;
+    default:
       return;
   }
 }
