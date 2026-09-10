@@ -66,8 +66,13 @@ export function getCraftState(): TemariCraftState {
   };
 }
 
-const jiwariReady = (s: TemariCraftState) =>
-  s.jiwariOn && (s.division !== "simple" || s.jiwariPhase === "done");
+const jiwariReady = (s: TemariCraftState) => s.jiwariOn && s.jiwariPhase === "done";
+
+const simpleDone = (s: TemariCraftState) =>
+  s.jiwariOn && s.division === "simple" && s.jiwariPhase === "done";
+
+const c8Done = (s: TemariCraftState) =>
+  s.jiwariOn && s.division === "c8" && s.jiwariPhase === "done";
 
 export const CRAFT_ACTIONS: CraftAction[] = [
   {
@@ -98,29 +103,34 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "jiwari-c8",
     label: "C8",
     cluster: "jiwari",
-    canExecute: (s) => !needWrap(s),
+    canExecute: (s) => !needWrap(s) && (simpleDone(s) || s.division === "c8"),
     isActive: (s) => s.jiwariOn && s.division === "c8",
-    getDisabledReason: needWrap,
+    getDisabledReason: (s) =>
+      needWrap(s) ??
+      (simpleDone(s) || s.division === "c8"
+        ? null
+        : "Сначала Простое — C8 из него"),
   },
   {
     id: "jiwari-c10",
     label: "C10",
     cluster: "jiwari",
-    canExecute: (s) => !needWrap(s),
+    canExecute: (s) => !needWrap(s) && c8Done(s),
     isActive: (s) => s.jiwariOn && s.division === "c10",
-    getDisabledReason: needWrap,
+    getDisabledReason: (s) =>
+      needWrap(s) ?? (c8Done(s) ? null : "C10 — после C8, линейка V"),
   },
   {
     id: "stitch",
     label: "Стежок",
     cluster: "kagari",
-    canExecute: (s) => !needWrap(s) && (jiwariReady(s) || s.hasPin),
+    canExecute: (s) => !needWrap(s) && (s.jiwariOn ? jiwariReady(s) : s.hasPin),
     isActive: (s) => s.craft === "stitch",
     getDisabledReason: (s) =>
       needWrap(s) ??
       (jiwariReady(s) || s.hasPin
         ? null
-        : s.jiwariOn && s.division === "simple"
+        : s.jiwariOn
           ? "Сначала доведите разметку полоской"
           : "Сначала выберите опорную булавку или линию разметки"),
   },

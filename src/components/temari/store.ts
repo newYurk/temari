@@ -32,7 +32,7 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import * as feel from "./feel";
-import { jiwariVisiblePins, simplePins, type JiwariPhase } from "./jiwari";
+import { c8Pins, jiwariVisiblePins, simplePins, type JiwariPhase } from "./jiwari";
 
 export type Mode = "title" | "studio" | "kata";
 
@@ -394,8 +394,12 @@ export const useTemari = create<TemariState>((set, get) => ({
   setDivision: (division) => {
     if (get().mode === "kata") return;
     const on = get().jiwariOn;
+    const phase = get().jiwariPhase;
     if (on && get().division === division) {
-      if (division === "simple" && get().jiwariPhase !== "done" && get().jiwariPhase !== "off") {
+      if (
+        (division === "simple" && phase !== "done" && phase !== "off") ||
+        (division === "c8" && phase === "combine")
+      ) {
         get().advanceJiwari();
         return;
       }
@@ -413,6 +417,25 @@ export const useTemari = create<TemariState>((set, get) => ({
       return;
     }
     const motif = get().motif;
+    if (division === "c8") {
+      set({
+        division: "c8",
+        jiwariOn: true,
+        jiwariPhase: "combine",
+        jiwariLaid: 1,
+        fills: emptyFills("c8"),
+        sewn: motif === "kiku" ? fillKikuSewn("c8") : [],
+        history: [],
+        sewnHistory: [],
+        hover: -1,
+        hoverSlot: null,
+        pins: get().layerDone ? c8Pins() : [],
+        pinArcs: [],
+        activePin: null,
+      });
+      rememberStudio(get());
+      return;
+    }
     const simple = division === "simple";
     set({
       division,
@@ -434,7 +457,18 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   advanceJiwari: () => {
     const state = get();
-    if (!state.jiwariOn || state.division !== "simple") return;
+    if (!state.jiwariOn) return;
+    if (state.division === "c8" && state.jiwariPhase === "combine") {
+      const next = state.jiwariLaid + 1;
+      feel.stitch();
+      if (next >= 4) {
+        set({ jiwariPhase: "done", jiwariLaid: 4, pins: c8Pins() });
+      } else {
+        set({ jiwariLaid: next });
+      }
+      return;
+    }
+    if (state.division !== "simple") return;
     if (state.jiwariPhase === "strip") {
       feel.pin();
       set({ jiwariPhase: "poles", pins: simplePins("poles"), jiwariLaid: 0 });

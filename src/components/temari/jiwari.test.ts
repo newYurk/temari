@@ -1,6 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  C8_EXTRA,
+  c8Pins,
+  c8Stitches,
   isGreatCircle,
   jiwariNormals,
   jiwariStitches,
@@ -31,6 +34,37 @@ describe("simple jiwari", () => {
   it("every marking thread is a great circle of length C", () => {
     const loops = [...jiwariStitches("simple"), ...simpleStitches(5, 1)];
     for (const stitch of loops) {
+      if (stitch.kind !== "loop") {
+        assert.fail("marking thread must be a closed loop");
+        continue;
+      }
+      assert.equal(isGreatCircle(stitch.points), true);
+    }
+  });
+});
+
+describe("c8 jiwari", () => {
+  it("is Simple plus four extra great circles", () => {
+    assert.equal(C8_EXTRA.length, 4);
+    assert.equal(jiwariNormals("c8").length, 9);
+    assert.equal(c8Stitches(4, 1).length, 9);
+    assert.equal(c8Stitches(1, 1).length, 6);
+  });
+
+  it("extra circles miss the poles — they are the squares", () => {
+    const np = [0, 1, 0];
+    for (const n of C8_EXTRA) {
+      const dot = n[0] * np[0] + n[1] * np[1] + n[2] * np[2];
+      assert.ok(Math.abs(dot) > 0.2, `extra through north: ${n}`);
+    }
+  });
+
+  it("has six 8-point centers and eight 6-point", () => {
+    assert.equal(c8Pins().length, 18);
+  });
+
+  it("every C8 thread is a great circle", () => {
+    for (const stitch of c8Stitches(4, 1)) {
       if (stitch.kind !== "loop") {
         assert.fail("marking thread must be a closed loop");
         continue;

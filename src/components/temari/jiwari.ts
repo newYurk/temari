@@ -59,7 +59,14 @@ function uniqueNormals(raw: Vec3[]): Vec3[] {
   return out;
 }
 
-export type JiwariPhase = "off" | "strip" | "poles" | "equator" | "meridians" | "done";
+export type JiwariPhase =
+  | "off"
+  | "strip"
+  | "poles"
+  | "equator"
+  | "meridians"
+  | "combine"
+  | "done";
 
 const S = Math.SQRT1_2;
 
@@ -72,6 +79,14 @@ export const SIMPLE_THREADS: Vec3[] = [
   [0, 1, 0],
 ];
 
+/** C8 extras: squares around the poles. Do not pass NP/SP. */
+export const C8_EXTRA: Vec3[] = [
+  [1, 1, 0],
+  [1, -1, 0],
+  [0, 1, 1],
+  [0, 1, -1],
+];
+
 export function jiwariPhaseHint(phase: JiwariPhase, laid = 0): string {
   if (phase === "strip") return "Полоска: полный обхват";
   if (phase === "poles") return "Сгиб пополам — север и юг";
@@ -79,6 +94,7 @@ export function jiwariPhaseHint(phase: JiwariPhase, laid = 0): string {
   if (phase === "meridians") {
     return laid < 4 ? "Нить: полюс — экватор — полюс" : "Нить по экватору";
   }
+  if (phase === "combine") return "Квадрат у полюса — ещё большой круг";
   return "";
 }
 
@@ -92,10 +108,31 @@ export function simplePins(phase: JiwariPhase): Pin[] {
   if (phase === "poles") {
     return [np, sp].map((p, i) => ({ id: `j${i}`, p: norm(p) }));
   }
-  if (phase === "equator" || phase === "meridians" || phase === "done") {
+  if (
+    phase === "equator" ||
+    phase === "meridians" ||
+    phase === "combine" ||
+    phase === "done"
+  ) {
     return [np, sp, ...eq].map((p, i) => ({ id: `j${i}`, p: norm(p) }));
   }
   return [];
+}
+
+/** Six 8-point centers (octahedron) plus eight 6-point (cube verts). */
+export function c8Pins(): Pin[] {
+  const cube: Vec3[] = [];
+  for (const x of [-1, 1] as const) {
+    for (const y of [-1, 1] as const) {
+      for (const z of [-1, 1] as const) {
+        cube.push(norm([x, y, z]));
+      }
+    }
+  }
+  return [
+    ...simplePins("done"),
+    ...cube.map((p, i) => ({ id: `c8t${i}`, p })),
+  ];
 }
 
 export function simpleStitches(laid: number, color: number): Stitch[] {
@@ -107,47 +144,47 @@ export function simpleStitches(laid: number, color: number): Stitch[] {
   }));
 }
 
+export function c8Stitches(extraLaid: number, color: number): Stitch[] {
+  const extra = C8_EXTRA.slice(0, Math.max(0, Math.min(4, extraLaid))).map((n) => ({
+    kind: "loop" as const,
+    points: circle(n),
+    color,
+    lift: 0.006,
+  }));
+  return [...simpleStitches(5, color), ...extra];
+}
+
 export function jiwariVisibleStitches(
   division: Division,
   color: number,
   phase: JiwariPhase,
   laid: number,
 ): Stitch[] {
-  if (division !== "simple") return jiwariStitches(division, color);
-  if (phase === "done") return simpleStitches(5, color);
-  if (phase === "meridians") return simpleStitches(laid, color);
-  return [];
+  if (division === "simple") {
+    if (phase === "done") return simpleStitches(5, color);
+    if (phase === "meridians") return simpleStitches(laid, color);
+    return [];
+  }
+  if (division === "c8") {
+    if (phase === "combine") return c8Stitches(laid, color);
+    if (phase === "done") return c8Stitches(4, color);
+    return simpleStitches(5, color);
+  }
+  return jiwariStitches(division, color);
 }
 
 export function jiwariVisiblePins(division: Division, phase: JiwariPhase): Pin[] {
-  if (division !== "simple") return jiwariPins(division);
-  return simplePins(phase);
+  if (division === "simple") return simplePins(phase);
+  if (division === "c8") {
+    if (phase === "combine" || phase === "done") return c8Pins();
+    return simplePins("done");
+  }
+  return jiwariPins(division);
 }
 
 export function jiwariNormals(division: Division): Vec3[] {
-  if (division === "simple") {
-    const s = Math.SQRT1_2;
-    return uniqueNormals([
-      [0, 1, 0],
-      [1, 0, 0],
-      [0, 0, 1],
-      [s, 0, s],
-      [s, 0, -s],
-    ]);
-  }
-  if (division === "c8") {
-    return uniqueNormals([
-      [1, 0, 0],
-      [0, 1, 0],
-      [0, 0, 1],
-      [1, 1, 0],
-      [1, -1, 0],
-      [1, 0, 1],
-      [1, 0, -1],
-      [0, 1, 1],
-      [0, 1, -1],
-    ]);
-  }
+  if (division === "simple") return uniqueNormals(SIMPLE_THREADS);
+  if (division === "c8") return uniqueNormals([...SIMPLE_THREADS, ...C8_EXTRA]);
   const raw: Vec3[] = [];
   for (const [i, j] of ICOSA_EDGES) {
     const a = ICOSA_VERTS[i];
