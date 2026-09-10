@@ -154,10 +154,12 @@ function Workbench() {
   const threadWidth = useTemari((s) => s.threadWidth);
   const wrapStarted = useTemari((s) => s.wrapStarted);
   const layerDone = useTemari((s) => s.layerDone);
+  const jiwariOn = useTemari((s) => s.jiwariOn);
   const kikuLayers = useTemari((s) => s.kikuLayers);
   const kagariDir = useTemari((s) => s.kagariDir);
   const toTitle = useTemari((s) => s.toTitle);
   const setDivision = useTemari((s) => s.setDivision);
+  const clearJiwari = useTemari((s) => s.clearJiwari);
   const setPalette = useTemari((s) => s.setPalette);
   const setMotif = useTemari((s) => s.setMotif);
   const setCraft = useTemari((s) => s.setCraft);
@@ -195,7 +197,9 @@ function Workbench() {
           ? "можно ещё мотать, или завершите слой"
           : "полный круг, потом чуть повернуть — в середине витка нельзя"
         : craft === "pin"
-          ? "дзивари поверх базы — булавка только метит угол"
+          ? jiwariOn
+            ? "дзивари поверх базы — булавка только метит угол"
+            : "шар без разметки — простое, C8 или C10, либо оставить так"
           : motif === "kiku"
             ? MOTIF_META.kiku.hint
             : CRAFT_META[craft].hint
@@ -281,10 +285,13 @@ function Workbench() {
                 ))}
               </div>
               <div className="flex gap-1">
+                <Seg active={!jiwariOn} onClick={clearJiwari}>
+                  Нет
+                </Seg>
                 {DIVISIONS.map((id) => (
                   <Seg
                     key={id}
-                    active={division === id}
+                    active={jiwariOn && division === id}
                     onClick={() => setDivision(id)}
                   >
                     {DIVISION_META[id].label}

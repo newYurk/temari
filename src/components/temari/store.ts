@@ -172,10 +172,12 @@ type TemariState = {
   startPin: Vec3 | null;
   originNonce: number;
   wrapSeed: "empty" | "full";
+  jiwariOn: boolean;
   enterStudio: () => void;
   enterKata: (index?: number) => void;
   toTitle: () => void;
   setDivision: (division: Division) => void;
+  clearJiwari: () => void;
   setPalette: (id: PaletteId) => void;
   setMotif: (id: MotifId) => void;
   setCraft: (craft: Craft) => void;
@@ -258,26 +260,23 @@ export const useTemari = create<TemariState>((set, get) => ({
   startPin: null,
   originNonce: 0,
   wrapSeed: "full",
+  jiwariOn: false,
 
   enterStudio: () => {
     feel.unlock();
     const division = studioDraft.division;
     const hasPaint = studioDraft.fills.some((v) => v >= 0);
-    const motif =
-      studioDraft.motif === "kiku" && !studioDraft.sewn?.length
-        ? "none"
-        : (studioDraft.motif ?? "none");
     set({
       mode: "studio",
       division,
       paletteId: studioDraft.paletteId,
-      motif,
-      craft: "wind",
+      motif: "none",
+      craft: "pin",
       selectedColor: studioDraft.selectedColor,
       fills: hasPaint ? padFills(studioDraft.fills, division) : emptyFills(division),
-      sewn: isSewn(studioDraft.sewn) ? studioDraft.sewn : [],
-      pins: isPins(studioDraft.pins) ? studioDraft.pins : [],
-      pinArcs: isArcs(studioDraft.pinArcs) ? studioDraft.pinArcs : [],
+      sewn: [],
+      pins: [],
+      pinArcs: [],
       activePin: null,
       history: [],
       sewnHistory: [],
@@ -285,14 +284,15 @@ export const useTemari = create<TemariState>((set, get) => ({
       peeking: false,
       hover: -1,
       hoverSlot: null,
-      wrapProgress: 0,
-      layerDone: false,
-      wrapStarted: false,
+      wrapProgress: 1,
+      layerDone: true,
+      wrapStarted: true,
       wrapResetNonce: get().wrapResetNonce + 1,
-      wrapCount: 0,
+      wrapCount: 1,
       startPin: null,
       originNonce: get().originNonce + 1,
-      wrapSeed: "empty",
+      wrapSeed: "full",
+      jiwariOn: false,
     });
   },
 
@@ -359,16 +359,45 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   setDivision: (division) => {
     if (get().mode === "kata") return;
+    const on = get().jiwariOn;
+    if (on && get().division === division) {
+      set({
+        jiwariOn: false,
+        pins: [],
+        pinArcs: [],
+        activePin: null,
+        hover: -1,
+        hoverSlot: null,
+      });
+      rememberStudio(get());
+      return;
+    }
     const motif = get().motif;
     set({
       division,
+      jiwariOn: true,
       fills: emptyFills(division),
       sewn: motif === "kiku" ? fillKikuSewn(division) : [],
       history: [],
       sewnHistory: [],
       hover: -1,
       hoverSlot: null,
-      pins: get().layerDone ? jiwariPins(division) : get().pins,
+      pins: get().layerDone ? jiwariPins(division) : [],
+      pinArcs: [],
+      activePin: null,
+    });
+    rememberStudio(get());
+  },
+
+  clearJiwari: () => {
+    if (get().mode === "kata") return;
+    set({
+      jiwariOn: false,
+      pins: [],
+      pinArcs: [],
+      activePin: null,
+      hover: -1,
+      hoverSlot: null,
     });
     rememberStudio(get());
   },
@@ -549,14 +578,15 @@ export const useTemari = create<TemariState>((set, get) => ({
       activePin: null,
       pinHistory: [...state.pinHistory, { pins: state.pins, pinArcs: state.pinArcs, activePin: state.activePin }].slice(-40),
       wrapResetNonce: state.wrapResetNonce + 1,
-      wrapCount: 0,
-      wrapProgress: 0,
-      wrapStarted: false,
-      layerDone: false,
-      craft: "wind",
+      wrapCount: 1,
+      wrapProgress: 1,
+      wrapStarted: true,
+      layerDone: true,
+      craft: "pin",
       startPin: null,
       originNonce: state.originNonce + 1,
-      wrapSeed: "empty",
+      wrapSeed: "full",
+      jiwariOn: false,
     });
     rememberStudio(get());
   },
@@ -617,11 +647,13 @@ export const useTemari = create<TemariState>((set, get) => ({
   finishLayer: () => {
     if (get().mode !== "studio") return;
     feel.layer();
-    const division = get().division;
     set({
       layerDone: true,
       craft: "pin",
-      pins: jiwariPins(division),
+      wrapSeed: "full",
+      wrapProgress: 1,
+      jiwariOn: false,
+      pins: [],
     });
   },
   setKikuLayers: (n) => set({ kikuLayers: Math.max(3, Math.min(14, Math.round(n))) }),

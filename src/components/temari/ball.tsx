@@ -41,11 +41,13 @@ function ThreadLayer({
   colors,
   opacity = 1,
   kind = DEFAULT_KIND.stitch,
+  order = 6,
 }: {
   stitches: Stitch[];
   colors: [string, string, string, string];
   opacity?: number;
   kind?: ThreadKind;
+  order?: number;
 }) {
   const geos = useMemo(() => {
     return [0, 1, 2, 3].map((i) => createMotifGeometry(stitches, i, kind));
@@ -62,7 +64,7 @@ function ThreadLayer({
     <group>
       {geos.map((geo, i) =>
         geo ? (
-          <mesh key={i} geometry={geo}>
+          <mesh key={i} geometry={geo} renderOrder={order}>
             <meshStandardMaterial
               map={yarn}
               color={colors[i]}
@@ -73,8 +75,8 @@ function ThreadLayer({
               depthWrite={opacity >= 1}
               side={THREE.DoubleSide}
               polygonOffset
-              polygonOffsetFactor={-2}
-              polygonOffsetUnits={-2}
+              polygonOffsetFactor={-8}
+              polygonOffsetUnits={-8}
             />
           </mesh>
         ) : null,
@@ -168,6 +170,7 @@ export function Ball() {
   const wrapUndoNonce = useTemari((s) => s.wrapUndoNonce);
   const wrapResetNonce = useTemari((s) => s.wrapResetNonce);
   const layerDone = useTemari((s) => s.layerDone);
+  const jiwariOn = useTemari((s) => s.jiwariOn);
   const wrapSeed = useTemari((s) => s.wrapSeed);
   const threadWidth = useTemari((s) => s.threadWidth);
   const paint = useTemari((s) => s.paint);
@@ -219,9 +222,9 @@ export function Ball() {
   );
   const markStitches = useMemo(() => {
     if (mode === "title") return stitchesOn ? jiwariStitches("simple", 1) : [];
-    if (mode === "studio" && !layerDone) return [];
+    if (mode !== "studio" || !layerDone || !jiwariOn) return [];
     return jiwariStitches(division, jiwariMarkColor(selectedColor));
-  }, [division, layerDone, mode, selectedColor, stitchesOn]);
+  }, [division, jiwariOn, layerDone, mode, selectedColor, stitchesOn]);
   const ghostStitches = useMemo(() => {
     if (mode !== "studio" || craft !== "stitch" || !hoverSlot) return [];
     return stitchesForSlot(division, hoverSlot, selectedColor);
@@ -375,7 +378,7 @@ export function Ball() {
       const g = group.current;
       if (!g || (rx === 0 && ry === 0)) return;
       const st = useTemari.getState();
-      const winding = st.mode === "studio" && st.craft === "wind" && !st.layerDone;
+      const winding = false;
       _right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
       _up.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
 
@@ -498,7 +501,7 @@ export function Ball() {
     const spd = omega.current.length();
     if (g && !spinning.current && spd > 0.0007) {
       const st = useTemari.getState();
-      const winding = st.mode === "studio" && st.craft === "wind" && !st.layerDone;
+      const winding = false;
       if (winding) {
         mari.current.copyAxis(_local);
         _axis.copy(_local).applyQuaternion(g.quaternion).normalize();
@@ -514,22 +517,7 @@ export function Ball() {
 
     const state = useTemari.getState();
     if (!state.wrapStarted) wrap.strokeWidth = strokePx(state.threadWidth);
-    feel.setSpin(state.mode === "studio" && state.craft === "wind" ? spd : 0);
-    if (state.mode === "studio" && state.craft === "wind" && !state.layerDone) {
-      if (!spinning.current && spd > 0.12 && g) {
-        const hex = PALETTES[state.paletteId].colors[state.selectedColor] ?? "#8f3d32";
-        mari.current.spin(spd * d, wrap, state.selectedColor, hex);
-        if (!state.wrapStarted) setWrapStarted();
-        feel.wrapTurn(mari.current.wrapCount);
-      }
-      const next = mari.current.progress;
-      if (wrap.strandCount !== state.wrapCount) setWrapCount(wrap.strandCount);
-      if (Math.abs(next - state.wrapProgress) > 0.002) setWrapProgress(next);
-    } else if (state.layerDone && wrap.covered < 0.985) {
-      const hex = PALETTES[state.paletteId].colors[state.selectedColor] ?? "#8f3d32";
-      mari.current.advance(wrap, 7.5, state.selectedColor, hex, 0.1);
-      setWrapProgress(wrap.covered);
-    }
+    feel.setSpin(0);
 
     const tip = needle.current;
     if (tip) tip.visible = false;
@@ -651,33 +639,32 @@ export function Ball() {
         />
       </mesh>
 
-      {markStitches.length > 0 ? (
-        <ThreadLayer
-          stitches={markStitches}
-          colors={palette.colors}
-          kind={DEFAULT_KIND.mark}
-        />
-      ) : null}
-      {presetStitches.length > 0 ? (
-        <ThreadLayer stitches={presetStitches} colors={palette.colors} />
-      ) : null}
-      {sewnStitches.length > 0 ? (
-        <ThreadLayer stitches={sewnStitches} colors={palette.colors} />
-      ) : null}
-      {pinStitches.length > 0 ? (
-        <ThreadLayer stitches={pinStitches} colors={palette.colors} />
-      ) : null}
-      {ghostStitches.length > 0 ? (
-        <ThreadLayer stitches={ghostStitches} colors={palette.colors} opacity={0.42} />
-      ) : null}
-
       <WrapYarn
         wrap={wrap}
         color={palette.colors[selectedColor] ?? palette.thread}
         width={wrapRibbonWidth(threadWidth)}
       />
 
-
+      {markStitches.length > 0 ? (
+        <ThreadLayer
+          stitches={markStitches}
+          colors={palette.colors}
+          kind={DEFAULT_KIND.mark}
+          order={12}
+        />
+      ) : null}
+      {presetStitches.length > 0 ? (
+        <ThreadLayer stitches={presetStitches} colors={palette.colors} order={10} />
+      ) : null}
+      {sewnStitches.length > 0 ? (
+        <ThreadLayer stitches={sewnStitches} colors={palette.colors} order={10} />
+      ) : null}
+      {pinStitches.length > 0 ? (
+        <ThreadLayer stitches={pinStitches} colors={palette.colors} order={10} />
+      ) : null}
+      {ghostStitches.length > 0 ? (
+        <ThreadLayer stitches={ghostStitches} colors={palette.colors} opacity={0.42} order={11} />
+      ) : null}
 
       <mesh ref={needle} visible={false}>
         <sphereGeometry args={[0.018, 12, 10]} />
