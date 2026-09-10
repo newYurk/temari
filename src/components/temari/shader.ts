@@ -282,19 +282,27 @@ varying vec3 vN;
 varying vec3 vW;
 varying vec3 vL;
 
-vec3 fibAxis(int i, int n, float seed) {
+vec3 jitterAxis(int i, int n, float seed) {
   float z = 1.0 - (float(i) + 0.5) / float(n);
-  float r = sqrt(max(0.0, 1.0 - z * z));
+  float rr = sqrt(max(0.0, 1.0 - z * z));
   float th = (float(i) + seed) * 2.399963229728653;
-  return vec3(cos(th) * r, z, sin(th) * r);
+  vec3 a = vec3(cos(th) * rr, z, sin(th) * rr);
+  float h = fract(sin((float(i) + seed) * 127.1) * 43758.5453);
+  float k = fract(sin((float(i) + seed) * 269.5) * 43758.5453);
+  vec3 t = normalize(cross(a, vec3(0.17, 0.93, 0.31)));
+  vec3 b = normalize(cross(a, t));
+  return normalize(a + (t * (h - 0.5) + b * (k - 0.5)) * 0.28);
 }
 
-float filament(vec3 p, int n, float w, float seed) {
+float tangle(vec3 p, int n, float w, float seed) {
   float acc = 0.0;
   for (int i = 0; i < 96; i++) {
     if (i >= n) break;
-    float d = abs(dot(p, fibAxis(i, n, seed)));
-    acc += exp(-d * d / (w * w));
+    vec3 ax = jitterAxis(i, n, seed);
+    float d = abs(dot(p, ax));
+    float s = exp(-d * d / (w * w));
+    float shade = mix(0.55, 1.2, fract(sin((float(i) + seed) * 419.2) * 43758.5453));
+    acc += s * shade;
   }
   return acc;
 }
@@ -303,27 +311,25 @@ void main() {
   vec3 p = normalize(vL);
   vec3 n = normalize(vN);
   float slider = clamp(uWidth, 0.0, 1.0);
-  float yarn = filament(p, 72, mix(0.013, 0.019, slider), 0.11);
-  float mid = filament(p, 96, mix(0.0075, 0.011, slider), 1.63);
-  float sew = filament(p, 96, mix(0.0042, 0.0065, slider), 2.87);
-  float layers = yarn + mid + sew;
-  float stroke = 1.0 - exp(-layers * 0.2);
-  vec3 col = uColor * mix(0.9, 0.58, stroke);
-  col *= 1.0 - 0.07 * (1.0 - exp(-layers * 0.07));
+  float yarn = tangle(p, 72, mix(0.0054, 0.008, slider), 0.41);
+  float sew = tangle(p, 96, mix(0.003, 0.0048, slider), 1.87);
+  float acc = yarn * 0.7 + sew;
+  float pack = 1.0 - exp(-acc * 0.42);
+  vec3 col = uColor * mix(0.88, 1.06, pack);
   vec3 an = abs(p);
   vec3 tw = an / max(an.x + an.y + an.z, 0.001);
-  float nap = texture2D(uThread, p.yz * 48.0).r * tw.x
-            + texture2D(uThread, p.xz * 48.0).r * tw.y
-            + texture2D(uThread, p.xy * 48.0).r * tw.z;
-  col *= 0.96 + 0.06 * nap * stroke;
-  vec3 Nn = normalize(n + p * (stroke * 0.2));
+  float nap = texture2D(uThread, p.yz * 56.0).r * tw.x
+            + texture2D(uThread, p.xz * 56.0).r * tw.y
+            + texture2D(uThread, p.xy * 56.0).r * tw.z;
+  col *= 0.97 + 0.05 * nap * pack;
+  vec3 Nn = normalize(n + p * (pack * 0.16));
   vec3 L = normalize(vec3(0.46, 0.82, 0.52));
   vec3 L2 = normalize(vec3(-0.55, 0.22, -0.28));
   vec3 V = normalize(uCamPos - vW);
   float ndl = max(dot(Nn, L), 0.0);
   float ndl2 = max(dot(Nn, L2), 0.0);
-  float lit = 0.56 + 0.34 * ndl + 0.12 * ndl2;
-  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.6) * 0.04;
+  float lit = 0.72 + 0.22 * ndl + 0.08 * ndl2;
+  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.8) * 0.03;
   gl_FragColor = vec4(col * lit + rim * col, 1.0);
 }
 `;
