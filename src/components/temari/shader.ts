@@ -282,47 +282,25 @@ varying vec3 vN;
 varying vec3 vW;
 varying vec3 vL;
 
-vec3 fibAxis(int i, int n, float seed) {
-  float z = 1.0 - (float(i) + 0.5) / float(n);
-  float r = sqrt(max(0.0, 1.0 - z * z));
-  float th = (float(i) + seed) * 2.399963229728653;
-  return vec3(cos(th) * r, z, sin(th) * r);
-}
-
-float ribbons(vec3 p, int n, float w, float seed) {
-  float acc = 0.0;
-  for (int i = 0; i < 48; i++) {
-    if (i >= n) break;
-    vec3 ax = fibAxis(i, n, seed);
-    float d = abs(dot(p, ax));
-    acc += exp(-d * d / (w * w * 0.45));
-  }
-  return acc;
-}
-
 void main() {
   vec3 p = normalize(vL);
   vec3 n = normalize(vN);
-  float slider = clamp(uWidth, 0.0, 1.0);
-  float yarn = ribbons(p, 28, 0.07 - slider * 0.012, 0.4);
-  float sew = ribbons(p, 48, 0.022 - slider * 0.006, 2.1);
-  float acc = yarn * 0.85 + sew * 1.15;
-  float pack = 1.0 - exp(-acc * 0.42);
-  float ridge = acc / (acc + 2.4);
-  vec3 groove = uColor * 0.72;
-  vec3 col = mix(groove, uColor, 0.38 + 0.62 * pack);
-  col *= 0.9 + 0.12 * ridge;
-  float nap = texture2D(uThread, p.yz * 22.0).r;
-  col *= 0.96 + 0.08 * nap;
-  float h = ridge * 0.045;
-  vec3 Nn = normalize(n - dFdx(h) * dFdx(p) - dFdy(h) * dFdy(p));
+  vec3 an = abs(p);
+  vec3 tw = an / max(an.x + an.y + an.z, 0.001);
+  float scale = mix(28.0, 18.0, clamp(uWidth, 0.0, 1.0));
+  float nap = texture2D(uThread, p.yz * scale).r * tw.x
+            + texture2D(uThread, p.xz * scale).r * tw.y
+            + texture2D(uThread, p.xy * scale).r * tw.z;
+  float fiber = 0.9 + 0.14 * nap;
+  vec3 col = uColor * fiber;
+  vec3 Nn = normalize(n + p * ((nap - 0.5) * 0.22));
   vec3 L = normalize(vec3(0.46, 0.82, 0.52));
   vec3 L2 = normalize(vec3(-0.55, 0.22, -0.28));
   vec3 V = normalize(uCamPos - vW);
   float ndl = max(dot(Nn, L), 0.0);
   float ndl2 = max(dot(Nn, L2), 0.0);
-  float lit = 0.62 + 0.32 * ndl + 0.12 * ndl2;
-  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.6) * 0.06;
+  float lit = 0.56 + 0.36 * ndl + 0.12 * ndl2;
+  float rim = pow(1.0 - max(dot(n, V), 0.0), 2.6) * 0.05;
   gl_FragColor = vec4(col * lit + rim * col, 1.0);
 }
 `;

@@ -690,7 +690,7 @@ export function Ball() {
         ref={shafts}
         args={[undefined, undefined, 48]}
         frustumCulled={false}
-        visible={pins.length > 0}
+        visible={jiwariOn && pins.length > 0}
         count={pins.length}
       >
         <cylinderGeometry args={[0.007, 0.007, 0.068, 8]} />
@@ -700,7 +700,7 @@ export function Ball() {
         ref={heads}
         args={[undefined, undefined, 48]}
         frustumCulled={false}
-        visible={pins.length > 0}
+        visible={jiwariOn && pins.length > 0}
         count={pins.length}
       >
         <sphereGeometry args={[0.02, 12, 10]} />
