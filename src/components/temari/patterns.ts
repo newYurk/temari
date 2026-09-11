@@ -350,12 +350,13 @@ function starSkip(division: Division) {
  * Upper marks sit ~1 cm from the pole (Barbara / TemariKai beginner).
  * Lower of round 0: recipe.outerFromEquator of the pole–equator path, up from the equator.
  * Next rounds: inner moves one thread toward the equator (parallel).
- * Outer moves one thread plus cornerMm so the V point stays sharp (растяжка).
+ * Outer moves one thread plus one extra thread so the V point stays sharp.
  */
 export function kikuSpec(division: Division, spacing: KagariSpacing = "even") {
   const recipe = kikuRecipe(division);
   const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
-  const stretch = unitFromMm(recipe?.cornerMm ?? STITCH_THREAD_MM.pearl5);
+  // One extra thread at the point — not cornerMm (2 mm) stacked on pitch.
+  const stretch = pitch;
   const inner = unitFromMm(recipe?.innerMm ?? 10);
   const outer = recipe
     ? (Math.PI / 2) * (1 - recipe.outerFromEquator)
@@ -535,7 +536,7 @@ export function stitchesFromOps(ops: KagariOp[]): Stitch[] {
     a: op.lay.from,
     b: op.lay.to,
     color: op.color,
-    lift: 0.003 + op.kai * 0.00055 + op.over.length * 0.0007,
+    lift: 0.003 + op.kai * 0.00055 + op.over.length * 0.0007 + (op.set === 1 ? 0.0006 : 0),
     bite: op.bite,
     via: op.lay.via,
   }));

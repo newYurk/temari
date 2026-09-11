@@ -24,8 +24,8 @@ export type PatternRecipe = {
   crossing: Crossing;
   /**
    * Bite width across the mark, millimetres on the mari.
-   * The same length is the extra drop at the lower V each round so the point stays sharp.
-   * (Pearl #5 is ~0.7 mm; 2 mm is a few threads, as TemariKai "drop a little" at the point.)
+   * Stretch at the lower V is one thread more than the inner step — not this
+   * number on top of the pitch, or petals run to the equator in six rounds.
    */
   cornerMm: number;
 };
