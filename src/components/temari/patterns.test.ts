@@ -157,7 +157,7 @@ describe("kiku on Simple 8", () => {
     assert.equal(nextKagariPole("c8", "kiku", north, []), null);
   });
 
-  it("later rounds move out; outer drops extra (stretch)", () => {
+  it("later rounds pack parallel; flanks keep the same angle", () => {
     const pole: [number, number, number] = [0, 1, 0];
     const a = stitchesForSlot("simple", { pole: 0, ring: 0, sector: 0 }, 1)[0];
     const b = stitchesForSlot("simple", { pole: 0, ring: 3, sector: 0 }, 1)[0];
@@ -169,10 +169,18 @@ describe("kiku on Simple 8", () => {
     const bOut = Math.max(polar(pole, b.a).theta, polar(pole, b.b).theta);
     assert.ok(bIn > aIn + 0.02, "inner moves out with the round");
     assert.ok(bOut > aOut + 0.02, "outer moves toward the equator");
+    const dIn = bIn - aIn;
+    const dOut = bOut - aOut;
     assert.ok(
-      bOut - aOut > bIn - aIn + 0.02,
-      "outer drops extra (растяжка) so the V point stays sharp",
+      Math.abs(dOut - dIn) < 1e-6,
+      `parallel flanks: outer step ${dOut} matches inner ${dIn}`,
     );
+    const slope = (leg: typeof a) => {
+      const A = polar(pole, leg.a);
+      const B = polar(pole, leg.b);
+      return wrapDelta(A.phi, B.phi) / (B.theta - A.theta);
+    };
+    assert.ok(Math.abs(slope(a) - slope(b)) < 0.04, "side lines keep the first V's angle");
   });
 
   it("hitKikuSlot asks kikuThetas, not an inward band", () => {
@@ -211,9 +219,14 @@ describe("kiku on Simple 8", () => {
 
   it("fit packs thread-to-thread toward the obi, not four nested outlines", () => {
     const spec = kikuSpec("simple", "even", "fit");
-    assert.ok(spec.fit >= 5 && spec.fit <= 14, `fit=${spec.fit}`);
+    assert.ok(spec.fit >= 12 && spec.fit <= 24, `fit=${spec.fit}`);
     const last = kikuThetas(spec, spec.fit - 1);
     assert.ok(last.tOuter <= spec.ceiling + 1e-9, "never past the obi mark");
-    assert.ok(last.tOuter > spec.outer + spec.stretch, "later rounds stretch past the first pin");
+    assert.ok(last.tOuter > spec.outer + spec.pitch * 8, "later rounds pack past the first pin");
+    const first = kikuThetas(spec, 0);
+    assert.ok(
+      Math.abs((last.tOuter - last.tInner) - (first.tOuter - first.tInner)) < spec.pitch * 1.1,
+      "V depth stays; flanks don't fan",
+    );
   });
 });

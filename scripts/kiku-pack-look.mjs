@@ -19,7 +19,23 @@ async function freezeAll(page) {
     const t = window.__temari;
     t.freezeKagari(t.kagari().n);
   });
-  await page.waitForTimeout(280);
+  await page.waitForTimeout(120);
+}
+
+async function packMax(page) {
+  await page.getByRole("button", { name: "Кику" }).click();
+  await page.waitForTimeout(200);
+  await freezeAll(page);
+  await page.evaluate(() => {
+    const t = window.__temari;
+    for (let i = 0; i < 24; i++) {
+      const before = t.kagari().layers;
+      t.fillKiku();
+      t.freezeKagari(t.kagari().n);
+      if (t.kagari().layers === before) break;
+    }
+  });
+  await page.waitForTimeout(200);
 }
 
 async function info(page) {
@@ -95,17 +111,7 @@ await page.goto("http://127.0.0.1:8080/?kiku=1", {
 });
 await waitKagari(page);
 await freezeAll(page);
-await page.getByRole("button", { name: "Кику" }).click();
-await page.waitForTimeout(400);
-await freezeAll(page);
-for (let i = 0; i < 10; i++) {
-  const before = await info(page);
-  await page.getByRole("button", { name: "Залить" }).click();
-  await page.waitForTimeout(80);
-  await freezeAll(page);
-  const after = await info(page);
-  if (after.layers === before.layers && after.n === before.n) break;
-}
+await packMax(page);
 console.log("max", JSON.stringify(await info(page)));
 await page.screenshot({ path: `${out}/kiku-pack-max-pole.png` });
 await grazing(page);
@@ -127,17 +133,7 @@ await page.goto("http://127.0.0.1:8080/?kiku=1", {
 });
 await waitKagari(page);
 await freezeAll(page);
-await page.getByRole("button", { name: "Кику" }).click();
-await page.waitForTimeout(400);
-await freezeAll(page);
-for (let i = 0; i < 10; i++) {
-  const before = await info(page);
-  await page.getByRole("button", { name: "Залить" }).click();
-  await page.waitForTimeout(80);
-  await freezeAll(page);
-  const after = await info(page);
-  if (after.layers === before.layers && after.n === before.n) break;
-}
+await packMax(page);
 await page.screenshot({ path: `${out}/kiku-pack-desktop.png` });
 
 await browser.close();

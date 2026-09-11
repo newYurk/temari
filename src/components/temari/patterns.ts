@@ -387,9 +387,11 @@ function starSkip(division: Division) {
 
 /**
  * GT14 / TemariKai beginner: enter ~5 mm from the pole; first outer stitch
- * sits just below the pin ⅓ up from the equator. Later rounds pack beside
- * that V — inner drops one pearl #5, outer stretches ~2 mm (Ozaki) toward
- * the equator. `outer` is the first pin, not a short-V ceiling.
+ * sits just below the pin ⅓ up from the equator. Later rounds pack *parallel*
+ * to that V (GT14: "laying thread parallel to first round"). Both ends of
+ * the flank step one pearl #5. Ozaki's ~2 mm is the volume of the turn at
+ * the point — not a wider V, which made the side lines sit at changing
+ * angles. `outer` is the first pin, not a short-V ceiling.
  * Default wanted is 3 kai (tests); studio starts at 1; title uses "fit".
  */
 export function kikuSpec(
@@ -409,7 +411,7 @@ export function kikuSpec(
   // Room for a thin maki obi. GT14 works toward the equator, not past it.
   const ceiling = Math.min(Math.PI / 2 - unitFromMm(8), Math.PI * 0.49);
   const vDepth = Math.max(pitch, outer - inner);
-  const packed = 1 + Math.floor(Math.max(0, ceiling - outer) / Math.max(stretch, 1e-9));
+  const packed = 1 + Math.floor(Math.max(0, ceiling - outer) / Math.max(pitch, 1e-9));
   const fit = Math.max(1, packed);
   const rounds =
     wanted === "fit" ? fit : Math.max(1, Math.min(fit, Math.round(wanted)));
@@ -448,7 +450,7 @@ export function kikuThetas(
 ) {
   const ceiling = spec.ceiling ?? Math.min(Math.PI / 2 - unitFromMm(8), Math.PI * 0.49);
   const tInner = spec.inner + ring * spec.pitch;
-  const tOuter = Math.min(ceiling, spec.outer + ring * spec.stretch);
+  const tOuter = Math.min(ceiling, spec.outer + ring * spec.pitch);
   return { tInner, tOuter };
 }
 

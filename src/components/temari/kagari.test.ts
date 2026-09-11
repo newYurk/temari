@@ -25,8 +25,8 @@ describe("kagari recipe atom", () => {
     assert.equal(spec.sets, 2);
     assert.ok(Math.abs(spec.inner - unitFromMm(KIKU_8_POINT.innerMm)) < 1e-9);
     assert.ok(Math.abs(spec.outer - (Math.PI / 2) * (1 - KIKU_8_POINT.outerFromEquator)) < 1e-9);
-    assert.ok(Math.abs(spec.stretch - unitFromMm(2)) < 1e-9, "Ozaki stretch is 2 mm, not one thread");
-    assert.ok(spec.stretch > spec.pitch * 1.5, "outer drop is larger than the inner pitch");
+    assert.ok(Math.abs(spec.stretch - unitFromMm(2)) < 1e-9, "Ozaki 2 mm is the corner turn, recorded on the recipe");
+    assert.ok(Math.abs(spec.pitch - unitFromMm(0.71)) < 1e-6, "flanks pack at one pearl #5");
   });
 
   it("bite sits across the mark, not along the meridian", () => {
@@ -128,17 +128,21 @@ describe("kagari recipe atom", () => {
     }
   });
 
-  it("outer of later kai drops extra so the V point stretches", () => {
-    const pole: [number, number, number] = [0, 1, 0];
+  it("later kai pack parallel: outer steps one thread, same as inner", () => {
     const spec = kikuSpec("simple", "even");
     const ops = compileKiku("simple", "out", "even", 0);
     const outer0 = ops.find((op) => op.kai === 0 && op.mark.t === "outer");
     const outer1 = ops.find((op) => op.kai === 1 && op.mark.t === "outer");
-    assert.ok(outer0 && outer1);
-    if (!outer0 || !outer1) return;
+    const inner0 = ops.find((op) => op.kai === 0 && op.mark.t === "inner");
+    const inner1 = ops.find((op) => op.kai === 1 && op.mark.t === "inner");
+    assert.ok(outer0 && outer1 && inner0 && inner1);
+    if (!outer0 || !outer1 || !inner0 || !inner1) return;
     const th = (p: [number, number, number]) => Math.acos(Math.min(1, Math.max(-1, p[1])));
-    const d = th(outer1.mark.at) - th(outer0.mark.at);
-    assert.ok(d > spec.stretch * 0.8, `outer step ${d} is the Ozaki stretch`);
+    const dOut = th(outer1.mark.at) - th(outer0.mark.at);
+    const dIn = th(inner1.mark.at) - th(inner0.mark.at);
+    assert.ok(Math.abs(dOut - spec.pitch) < 1e-6, `outer step ${dOut} is one thread`);
+    assert.ok(Math.abs(dIn - spec.pitch) < 1e-6, `inner step ${dIn} is one thread`);
+    assert.ok(Math.abs(dOut - dIn) < 1e-9, "same step so the flanks stay parallel");
   });
 
   it("player color is every kai until they pick another", () => {

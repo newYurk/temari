@@ -28,10 +28,9 @@ export type PatternRecipe = {
    */
   cornerMm: number;
   /**
-   * Outer step after round 0, millimetres. Ozaki / TemariKai Stretch Points:
-   * ~2 mm for pearl #5 so the thread can turn the corner *along the mark*.
-   * Round 0 already reaches the pin (⅓ up from the equator). Each later kai
-   * stretches that point toward the equator; the inner mark drops one thread.
+   * Ozaki / TemariKai Stretch Points: ~2 mm of *turn* at an acute corner
+   * for pearl #5, so the point lays flat. The flanks of later kai pack
+   * parallel at one thread — not this amount as a growing-V outer step.
    */
   stretchMm: number;
 };
