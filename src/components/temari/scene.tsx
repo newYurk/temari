@@ -16,10 +16,8 @@ function framingDistance(width: number, height: number, mode: Mode) {
   return (BALL_R * margin) / Math.min(halfW, halfH);
 }
 
-function aimY(width: number, height: number, mode: Mode) {
-  const portrait = height > width * 1.15;
-  if (mode === "title") return portrait ? 0.06 : 0;
-  return portrait ? -0.12 : -0.04;
+function aimY(_width: number, _height: number, _mode: Mode) {
+  return 0;
 }
 
 function CameraRig() {
@@ -53,7 +51,6 @@ function CameraRig() {
     const y = aimY(size.width, size.height, mode);
     const dir = new THREE.Vector3(0, 0.08, 1).normalize();
     camera.position.copy(dir.multiplyScalar(dist));
-    camera.position.y += 0.12;
     camera.up.set(0, 1, 0);
     camera.lookAt(0, y, 0);
     const controls = controlsRef.current;

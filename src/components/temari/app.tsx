@@ -15,7 +15,13 @@ export function TemariApp() {
       className="relative h-dvh overflow-hidden bg-linen text-ink"
       onPointerDownCapture={() => unlock()}
     >
-      <div className="absolute inset-0">
+      <div
+        className="absolute inset-x-0 z-0"
+        style={{
+          top: "var(--temari-chrome-top, 0px)",
+          bottom: "var(--temari-chrome-bottom, 0px)",
+        }}
+      >
         {on ? (
           <TemariScene />
         ) : (

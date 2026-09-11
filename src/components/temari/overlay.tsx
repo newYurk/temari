@@ -1,5 +1,5 @@
 import { LocateFixed } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { THREAD_COLORS } from "./palettes";
@@ -8,6 +8,29 @@ import { fillsMatch } from "./division";
 import { useTemari } from "./store";
 import { unlock } from "./feel";
 import { ActionBar } from "./ActionBar";
+
+function useChromeVar(
+  name: "--temari-chrome-top" | "--temari-chrome-bottom",
+  ref: RefObject<HTMLElement | null>,
+) {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const apply = () => {
+      document.documentElement.style.setProperty(
+        name,
+        `${Math.round(el.getBoundingClientRect().height)}px`,
+      );
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.removeProperty(name);
+    };
+  }, [name]);
+}
 
 export function Overlay() {
   const mode = useTemari((s) => s.mode);
@@ -49,10 +72,14 @@ function TitleLayer() {
   const enterStudio = useTemari((s) => s.enterStudio);
   const wrapColor = useTemari((s) => s.wrapColor);
   const setWrapColor = useTemari((s) => s.setWrapColor);
+  const topRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  useChromeVar("--temari-chrome-top", topRef);
+  useChromeVar("--temari-chrome-bottom", bottomRef);
 
   return (
     <div className="flex h-full flex-col px-5 py-6 md:px-10 md:py-10">
-      <div className="flex items-start justify-between gap-4 pt-[env(safe-area-inset-top)]">
+      <div ref={topRef} className="flex items-start justify-between gap-4 pt-[env(safe-area-inset-top)]">
         <div className="max-w-md">
           <h1 className="temari-rise font-display text-4xl font-medium tracking-tight text-ink md:text-5xl">
             Темари
@@ -65,7 +92,7 @@ function TitleLayer() {
         <RecenterButton />
       </div>
       <div className="min-h-0 flex-1" aria-hidden />
-      <div className="temari-rise temari-rise-3 pointer-events-auto max-w-md pb-[env(safe-area-inset-bottom)]">
+      <div ref={bottomRef} className="temari-rise temari-rise-3 pointer-events-auto max-w-md pb-[env(safe-area-inset-bottom)]">
         <div className="mb-3 flex items-center gap-2">
           {THREAD_COLORS.map((color, i) => (
             <button
@@ -112,9 +139,17 @@ function Workbench() {
   const puzzle = PUZZLES[puzzleIndex];
   const complete = mode === "kata" && puzzle ? fillsMatch(fills, puzzle.target) : false;
 
+  const headerRef = useRef<HTMLElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  useChromeVar("--temari-chrome-top", headerRef);
+  useChromeVar("--temari-chrome-bottom", dockRef);
+
   return (
     <>
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-4 pt-4 md:px-8 md:pt-8">
+      <header
+        ref={headerRef}
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-4 pt-4 md:px-8 md:pt-8"
+      >
         <div className="pt-[env(safe-area-inset-top)]">
           <button
             type="button"
@@ -165,7 +200,7 @@ function Workbench() {
           ) : null}
         </div>
       ) : null}
-      <ActionBar />
+      <ActionBar chromeRef={dockRef} />
     </>
   );
 }

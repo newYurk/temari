@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode, type Ref } from "react";
 import { RotateCcw, Undo2, Pin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { THREAD_COLORS } from "./palettes";
@@ -89,7 +89,7 @@ function Slot({
   );
 }
 
-export function ActionBar() {
+export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const paletteId = useTemari((s) => s.paletteId);
   const selectedColor = useTemari((s) => s.selectedColor);
   const wrapHex = useTemari((s) => s.wrapHex);
@@ -176,14 +176,20 @@ export function ActionBar() {
 
   if (!layerDone) {
     return (
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-[max(0.8rem,calc(env(safe-area-inset-bottom)+0.5rem))]">
+      <div
+        ref={chromeRef}
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-[max(0.8rem,calc(env(safe-area-inset-bottom)+0.5rem))]"
+      >
         <p className="mx-auto max-w-sm text-center font-display text-sm text-stone">{hint}</p>
       </div>
     );
   }
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[max(0.6rem,calc(env(safe-area-inset-bottom)+0.35rem))] md:px-8">
+    <div
+      ref={chromeRef}
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[max(0.6rem,calc(env(safe-area-inset-bottom)+0.35rem))] md:px-8"
+    >
       <div className="pointer-events-auto mx-auto w-full max-w-md">
         <p
           className="mb-1.5 min-h-4 px-3 text-center font-display text-sm text-stone"
