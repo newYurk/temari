@@ -22,7 +22,7 @@ export type PatternRecipe = {
   /** Fraction of pole–equator measured up from the equator. */
   outerFromEquator: number;
   crossing: Crossing;
-  /** Open the lower V so the next round can sit. Pearl #5 ≈ 2 mm. */
+  /** Bite width across the mark. Also the extra drop at the lower V so it stays sharp. */
   cornerMm: number;
 };
 
@@ -83,14 +83,14 @@ function cross(a: Vec3, b: Vec3): Vec3 {
 
 /**
  * Tiny bite across the jiwari: enter one side, scoop wrap+mark, exit the other.
- * Length ≈ pearl #5 diameter. Not a tunnel under the mari.
+ * Length ≈ recipe.cornerMm. Not a tunnel under the mari.
  */
 export function biteAcross(pole: Vec3, mark: Vec3, mm = KIKU_8_POINT.cornerMm): KagariBite {
   const m = normalize(mark);
   const p = normalize(pole);
   const across = normalize(cross(m, p));
   if (hypot3(across) < 1e-6) return { enter: m, exit: m };
-  const half = unitFromMm(mm);
+  const half = unitFromMm(mm) * 0.5;
   const enter = normalize([
     m[0] - across[0] * half,
     m[1] - across[1] * half,
@@ -102,4 +102,11 @@ export function biteAcross(pole: Vec3, mark: Vec3, mm = KIKU_8_POINT.cornerMm): 
     m[2] + across[2] * half,
   ]);
   return { enter, exit };
+}
+
+/** Which previous inner ops this bite stacks, given the recipe crossing rule. */
+export function stackOver(previous: number[], crossing: Crossing): number[] {
+  if (crossing === "under" || previous.length === 0) return [];
+  if (crossing === "over-1") return previous.slice(-1);
+  return [...previous];
 }

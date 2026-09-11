@@ -1,6 +1,6 @@
 import { polePositions, type Division } from "./division.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
-import { biteAcross, type KagariOp } from "./kagari.ts";
+import { biteAcross, stackOver, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
 
 export type KikuSlot = { pole: number; ring: number; sector: number };
 
@@ -243,7 +243,7 @@ export function fillKikuSewn(
 ): SewnEntry[] {
   const n = petalCount(division);
   const spec = kikuSpec(division, spacing);
-  const skip = kikuSkip(n);
+  const skip = spec.sets;
   const rings = Array.from({ length: spec.rounds }, (_, i) => i);
   if (dir === "in") rings.reverse();
   const sewn: SewnEntry[] = [];
@@ -347,20 +347,28 @@ function starSkip(division: Division) {
 
 /**
  * Upper marks sit ~1 cm from the pole (Barbara / TemariKai beginner).
- * Lower of round 0: ⅓ of the pole–equator path, measured up from the equator.
+ * Lower of round 0: recipe.outerFromEquator of the pole–equator path, up from the equator.
  * Next rounds sit parallel, one thread-width toward the equator (uwagake).
- * 2 mm is the stretch at the lower point, equal to pearl-5 diameter.
+ * cornerMm is the bite across the mark, not a second pitch.
  */
 export function kikuSpec(division: Division, spacing: KagariSpacing = "even") {
+  const recipe = kikuRecipe(division);
   const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
-  const inner = unitFromMm(10);
-  const outer =
-    division === "simple" ? Math.PI / 3 : division === "c8" ? Math.PI / 4 : 0.52;
+  const inner = unitFromMm(recipe?.innerMm ?? 10);
+  const outer = recipe
+    ? (Math.PI / 2) * (1 - recipe.outerFromEquator)
+    : division === "c8"
+      ? Math.PI / 4
+      : 0.52;
   const room = Math.max(pitch, Math.PI / 2 - 0.1 - outer);
   const fit = Math.max(2, Math.floor(room / pitch));
   const density = KAGARI_SPACING_META[spacing].density;
   const rounds = Math.max(2, Math.min(fit, Math.round(2 + density * 12)));
-  return { inner, outer, pitch, rounds };
+  return { inner, outer, pitch, rounds, sets: recipe?.sets ?? kikuSkip(petalCount(division)), recipe };
+}
+
+export function kikuRecipe(division: Division): PatternRecipe | null {
+  return division === "simple" ? KIKU_8_POINT : null;
 }
 
 function kikuColor(ring: number) {
@@ -388,10 +396,11 @@ function kikuPetal(
   const a = around(pole, tInner, phi0);
   const b = around(pole, tOuter, phi1);
   const c = around(pole, tInner, phi2);
+  const cornerMm = KIKU_8_POINT.cornerMm;
   // Downward V: uppers on meridians sector and sector+2, point on sector+1.
   return [
-    { kind: "arc", a, b, color, lift, bite: biteAcross(pole, b) },
-    { kind: "arc", a: b, b: c, color, lift, bite: biteAcross(pole, c) },
+    { kind: "arc", a, b, color, lift, bite: biteAcross(pole, b, cornerMm) },
+    { kind: "arc", a: b, b: c, color, lift, bite: biteAcross(pole, c, cornerMm) },
   ];
 }
 
@@ -405,6 +414,7 @@ function pushKikuLeg(
   from: { line: number; t: "inner" | "outer"; at: Vec3 },
   to: { line: number; t: "inner" | "outer"; at: Vec3 },
   over: number[],
+  cornerMm: number,
 ) {
   ops.push({
     i: ops.length,
@@ -414,7 +424,7 @@ function pushKikuLeg(
     color,
     mark: { line: to.line, t: to.t, at: to.at },
     lay: { from: from.at, to: to.at },
-    bite: biteAcross(pole, to.at),
+    bite: biteAcross(pole, to.at, cornerMm),
     over,
   });
 }
@@ -431,7 +441,10 @@ export function compileKiku(
 ): KagariOp[] {
   const n = petalCount(division);
   const spec = kikuSpec(division, spacing);
-  const skip = kikuSkip(n);
+  const skip = spec.sets;
+  const recipe = spec.recipe;
+  const cornerMm = recipe?.cornerMm ?? 2;
+  const crossing = recipe?.crossing ?? "over-all";
   const rings = Array.from({ length: spec.rounds }, (_, i) => i);
   if (dir === "in") rings.reverse();
   const ops: KagariOp[] = [];
@@ -466,8 +479,9 @@ export function compileKiku(
             { line: line0, t: "inner", at: inner0 },
             { line: line1, t: "outer", at: outer1 },
             [],
+            cornerMm,
           );
-          const over = innerOver[line2] ? [...innerOver[line2]] : [];
+          const over = stackOver(innerOver[line2] ?? [], crossing);
           pushKikuLeg(
             ops,
             pole,
@@ -478,6 +492,7 @@ export function compileKiku(
             { line: line1, t: "outer", at: outer1 },
             { line: line2, t: "inner", at: inner2 },
             over,
+            cornerMm,
           );
           innerOver[line2]?.push(ops.length - 1);
         }

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { biteAcross, KIKU_8_POINT } from "./kagari.ts";
+import { biteAcross, KIKU_8_POINT, stackOver } from "./kagari.ts";
 import { compileKiku, fillKikuSewn, kikuSpec, stitchesFromOps } from "./patterns.ts";
 import { unitFromMm } from "./measure.ts";
 
@@ -18,6 +18,14 @@ describe("kagari recipe atom", () => {
     assert.equal(KIKU_8_POINT.outerFromEquator, 1 / 3);
   });
 
+  it("kikuSpec on Simple reads the recipe, not magic numbers", () => {
+    const spec = kikuSpec("simple", "even");
+    assert.equal(spec.recipe, KIKU_8_POINT);
+    assert.equal(spec.sets, 2);
+    assert.ok(Math.abs(spec.inner - unitFromMm(KIKU_8_POINT.innerMm)) < 1e-9);
+    assert.ok(Math.abs(spec.outer - (Math.PI / 2) * (1 - KIKU_8_POINT.outerFromEquator)) < 1e-9);
+  });
+
   it("bite sits across the mark, not along the meridian", () => {
     const pole: [number, number, number] = [0, 1, 0];
     const mark: [number, number, number] = [0, Math.cos(0.4), -Math.sin(0.4)];
@@ -30,10 +38,16 @@ describe("kagari recipe atom", () => {
     const len = Math.hypot(...mid) || 1;
     const m: [number, number, number] = [mid[0] / len, mid[1] / len, mid[2] / len];
     assert.ok(dist(m, mark) < 0.02, "bite centered on the mark");
-    assert.ok(dist(bite.enter, bite.exit) > unitFromMm(2), "bite has width");
-    const along = mark[1] - bite.enter[1];
+    assert.ok(dist(bite.enter, bite.exit) > unitFromMm(1), "bite has width");
+    const along = Math.abs(mark[1] - bite.enter[1]);
     const across = dist(bite.enter, bite.exit);
-    assert.ok(Math.abs(along) < across, "bite is across the jiwari, not down the ray");
+    assert.ok(along < across, "bite is across the jiwari, not down the ray");
+  });
+
+  it("stackOver follows the recipe crossing, not always every previous round", () => {
+    assert.deepEqual(stackOver([3, 7, 11], "over-all"), [3, 7, 11]);
+    assert.deepEqual(stackOver([3, 7, 11], "over-1"), [11]);
+    assert.deepEqual(stackOver([3, 7, 11], "under"), []);
   });
 
   it("compileKiku is one op per chidori leg, same count as the old petal walk", () => {

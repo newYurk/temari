@@ -65,7 +65,7 @@ describe("kiku on Simple 8", () => {
   it("upper marks sit ~1 cm from the pole, lower ⅓ up from the equator", () => {
     const spec = kikuSpec("simple");
     assert.ok(Math.abs(spec.inner - unitFromMm(10)) < 1e-6);
-    assert.ok(spec.outer === Math.PI / 3);
+    assert.ok(Math.abs(spec.outer - Math.PI / 3) < 1e-9);
     assert.ok(spec.inner + spec.rounds * spec.pitch <= spec.outer + spec.pitch);
     assert.ok(Math.abs(spec.pitch - unitFromMm(STITCH_THREAD_MM.pearl5)) < 1e-6);
   });
