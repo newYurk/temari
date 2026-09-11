@@ -251,19 +251,20 @@ export function fillKikuSewn(
   dir: KagariDir = "out",
   spacing: KagariSpacing = "even",
   which: number | "all" = "all",
+  wanted: number | "fit" = 3,
 ): SewnEntry[] {
   const n = petalCount(division);
-  const spec = kikuSpec(division, spacing);
+  const spec = kikuSpec(division, spacing, wanted);
   const skip = spec.sets;
   const rings = Array.from({ length: spec.rounds }, (_, i) => i);
   if (dir === "in") rings.reverse();
   const sewn: SewnEntry[] = [];
   // One pole, then the player turns the mari. "all" is the finished recipe (title / Пример).
-  // TemariKai 8-point: finish the flower on one pole before turning — we do not snatch the ball.
+  // Four petals all the way, then the other four — not a round of both sets mixed.
   for (const { index: pole } of kagariPolesToSew(division, which)) {
-    for (const ring of rings) {
-      const color = kikuColor(ring);
-      for (let pass = 0; pass < skip; pass++) {
+    for (let pass = 0; pass < skip; pass++) {
+      for (const ring of rings) {
+        const color = kikuColor(ring);
         for (let sector = 0; sector < n; sector++) {
           if (sector % skip !== pass) continue;
           sewn.push({ key: slotKey({ pole, ring, sector }), color });
@@ -382,11 +383,16 @@ function starSkip(division: Division) {
 
 /**
  * Upper marks sit ~1 cm from the pole (Barbara / TemariKai beginner).
- * Lower of round 0: recipe.outerFromEquator of the pole–equator path, up from the equator.
- * Next rounds: inner moves one thread toward the equator (parallel).
- * Outer moves one thread plus recipe.stretchMm (~2 mm, Ozaki) so the V stays sharp.
+ * Round 0 is a short V near the pole — the player decides how far the
+ * corners go (Fill adds a kai). `outer` is the ceiling (room for an obi),
+ * not the first stitch. Ozaki stretch is the outer step, not on top of pitch.
+ * Default wanted is 3 kai (tests); studio starts at 1.
  */
-export function kikuSpec(division: Division, spacing: KagariSpacing = "even") {
+export function kikuSpec(
+  division: Division,
+  spacing: KagariSpacing = "even",
+  wanted: number | "fit" = 3,
+) {
   const recipe = kikuRecipe(division);
   const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
   const stretch = unitFromMm(recipe?.stretchMm ?? STITCH_THREAD_MM.pearl5);
@@ -396,20 +402,22 @@ export function kikuSpec(division: Division, spacing: KagariSpacing = "even") {
     : division === "c8"
       ? Math.PI / 4
       : 0.52;
-  const stepOut = pitch + stretch;
-  const room = Math.max(stepOut, Math.PI / 2 - 0.08 - outer);
-  const fit = Math.max(2, Math.floor(room / stepOut));
-  const density = KAGARI_SPACING_META[spacing].density;
-  let rounds =
-    density <= 0.3 ? Math.max(2, Math.round(fit * 0.55)) : fit;
-  if (rounds % 2 === 1) rounds -= 1;
-  rounds = Math.max(2, rounds);
+  // First petal length ≈ the inner mark: 1 cm in, 1 cm of V. Corners sit
+  // around the pin, not at the obi.
+  const vDepth = inner;
+  const stepOut = stretch;
+  const room = Math.max(0, outer - inner - vDepth);
+  const fit = Math.max(1, 1 + Math.floor(room / Math.max(stepOut, 1e-9)));
+  const rounds =
+    wanted === "fit" ? fit : Math.max(1, Math.min(fit, Math.round(wanted)));
   return {
     inner,
     outer,
     pitch,
     stretch,
+    vDepth,
     rounds,
+    fit,
     sets: recipe?.sets ?? kikuSkip(petalCount(division)),
     recipe,
   };
@@ -424,18 +432,20 @@ function kikuColor(_ring: number, base = 0) {
 }
 
 export function kikuThetas(
-  spec: { inner: number; outer: number; pitch: number; stretch: number },
+  spec: { inner: number; outer: number; pitch: number; stretch: number; vDepth: number },
   ring: number,
 ) {
-  return {
-    tInner: spec.inner + ring * spec.pitch,
-    tOuter: spec.outer + ring * (spec.pitch + spec.stretch),
-  };
+  const tInner = spec.inner + ring * spec.pitch;
+  const tOuter = Math.min(
+    spec.outer,
+    spec.inner + spec.vDepth + ring * spec.stretch,
+  );
+  return { tInner, tOuter };
 }
 
 function kikuPetal(
   pole: Vec3,
-  spec: { inner: number; outer: number; pitch: number; stretch: number; rounds: number },
+  spec: { inner: number; outer: number; pitch: number; stretch: number; vDepth: number; rounds: number },
   ring: number,
   sector: number,
   n: number,
@@ -500,9 +510,11 @@ export function compileKiku(
   spacing: KagariSpacing = "even",
   which: number | "all" = "all",
   color = 0,
+  wanted: number | "fit" = 3,
+  onlySet: 0 | 1 | "all" = "all",
 ): KagariOp[] {
   const n = petalCount(division);
-  const spec = kikuSpec(division, spacing);
+  const spec = kikuSpec(division, spacing, wanted);
   const skip = spec.sets;
   const recipe = spec.recipe;
   const cornerMm = recipe?.cornerMm ?? 2;
@@ -513,13 +525,14 @@ export function compileKiku(
   const step = (2 * Math.PI) / n;
   for (const { index: poleIndex, pole } of kagariPolesToSew(division, which)) {
     const innerOver: number[][] = Array.from({ length: n }, () => []);
-    for (const ring of rings) {
-      const thread = kikuColor(ring, color);
-      const { tInner, tOuter } = kikuThetas(spec, ring);
-      if (tOuter >= Math.PI * 0.49 || tInner >= tOuter - spec.pitch * 0.4) continue;
-      for (let pass = 0; pass < skip; pass++) {
-        const set = (pass === 0 ? 0 : 1) as 0 | 1;
-        let cursor: Vec3 | null = null;
+    for (let pass = 0; pass < skip; pass++) {
+      if (onlySet !== "all" && pass !== onlySet) continue;
+      const set = (pass === 0 ? 0 : 1) as 0 | 1;
+      let cursor: Vec3 | null = null;
+      for (const ring of rings) {
+        const thread = kikuColor(ring, color);
+        const { tInner, tOuter } = kikuThetas(spec, ring);
+        if (tOuter >= Math.PI * 0.49 || tInner >= tOuter - spec.pitch * 0.4) continue;
         for (let sector = 0; sector < n; sector++) {
           if (sector % skip !== pass) continue;
           const phi0 = step * sector;
@@ -581,8 +594,10 @@ function kiku(
   spacing: KagariSpacing = "even",
   which: number | "all" = "all",
   color = 0,
+  wanted: number | "fit" = 3,
+  onlySet: 0 | 1 | "all" = "all",
 ): Stitch[] {
-  return stitchesFromOps(compileKiku(division, dir, spacing, which, color));
+  return stitchesFromOps(compileKiku(division, dir, spacing, which, color, wanted, onlySet));
 }
 
 function hoshi(division: Division, dir: KagariDir = "out", which: number | "all" = "all"): Stitch[] {
@@ -689,8 +704,10 @@ export function generateMotif(
   spacing: KagariSpacing = "even",
   which: number | "all" = "all",
   color = 0,
+  wanted: number | "fit" = 3,
+  onlySet: 0 | 1 | "all" = "all",
 ): Stitch[] {
-  if (motif === "kiku") return kiku(division, dir, spacing, which, color);
+  if (motif === "kiku") return kiku(division, dir, spacing, which, color, wanted, onlySet);
   if (motif === "hoshi") return hoshi(division, dir, which);
   if (motif === "hishi") return hishi(division, dir, which);
   if (motif === "obi") return obi(division, dir);
@@ -705,8 +722,10 @@ export function motifStitchPlan(
   spacing: KagariSpacing = "even",
   which: number | "all" = "all",
   color = 0,
+  wanted: number | "fit" = 3,
+  onlySet: 0 | 1 | "all" = "all",
 ): Stitch[] {
-  return generateMotif(division, motif, dir, spacing, which, color);
+  return generateMotif(division, motif, dir, spacing, which, color, wanted, onlySet);
 }
 
 /** Pole the mari should face while this stitch is laid. Obi stays equator-on. */
@@ -756,9 +775,16 @@ export function kagariPhaseHint(
   total: number,
   playing: boolean,
   poleIndex = 0,
+  kagariSet: 0 | 1 = 0,
 ): string {
   if (motif === "none" || total === 0) return "";
   if (!playing && laid >= total) {
+    if (motif === "kiku" && kagariSet === 0) {
+      return "Залить — дальше от полюса. Снова «Кику» — следующие 4.";
+    }
+    if (motif === "kiku") {
+      return "Залить — дальше от полюса. Другой полюс — переверните шар.";
+    }
     return "Кагари: ряд лежит. Другой полюс — переверните шар.";
   }
   if (motif === "hoshi") return "Хоси: звезда по кругу, ряд за рядом";
@@ -767,25 +793,18 @@ export function kagariPhaseHint(
   if (motif !== "kiku") return "";
   const n = petalCount(division);
   const spec = kikuSpec(division);
-  const stitchesPerPole = spec.rounds * n * 2;
-  const polesInPlan = Math.max(1, Math.round(total / Math.max(1, stitchesPerPole)));
-  const perPole = Math.max(n * 2, Math.floor(total / polesInPlan));
+  const perRound = (n / spec.sets) * 2;
   const at = Math.max(0, laid - 1);
-  const pole = Math.min(polesInPlan - 1, Math.floor(at / perPole));
-  const local = at % perPole;
-  const perKai = n * 2;
-  const kai = Math.floor(local / perKai) + 1;
-  const pass = local % perKai < n ? 0 : 1;
-  const whereN = poleIndex + pole;
-  const where = whereN === 0 ? "север" : whereN === 1 ? "юг" : `полюс ${whereN + 1}`;
-  const set = pass === 0 ? "чётные" : "нечётные";
+  const kai = Math.floor(at / perRound) + 1;
+  const where = poleIndex === 0 ? "север" : poleIndex === 1 ? "юг" : `полюс ${poleIndex + 1}`;
+  const petals = kagariSet === 0 ? "первые 4" : "вторые 4";
   const way = dir === "out" ? "от полюса" : "с края";
-  return `Кику · ${where} · круг ${kai} · ${set} · ${way}`;
+  return `Кику · ${where} · ${petals} · круг ${kai} · ${way}`;
 }
 
 /** Classic first temari: Simple 8, kiku on both poles, maki obi. */
 export function generateTitleMari(): Stitch[] {
-  const stitches = kiku("simple");
+  const stitches = kiku("simple", "out", "even", "all", 0, "fit");
   const belts: [number, number][] = [
     [0, 1],
     [0.11, 2],

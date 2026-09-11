@@ -106,6 +106,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const kagariPlaying = useTemari((s) => s.kagariPlaying);
   const kagariLaid = useTemari((s) => s.kagariLaid);
   const kagariPlan = useTemari((s) => s.kagariPlan);
+  const kagariSet = useTemari((s) => s.kagariSet);
   const history = useTemari((s) => s.history);
   const sewnHistory = useTemari((s) => s.sewnHistory);
   const pinHistory = useTemari((s) => s.pinHistory);
@@ -163,6 +164,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
           kagariPlan.length,
           kagariPlaying,
           Math.max(0, stitchPoleIndex(kagariPlan[0]!, division, motif)),
+          kagariSet,
         )
       : jiwariOn
         ? jiwariPhaseHint(jiwariPhase, jiwariLaid)

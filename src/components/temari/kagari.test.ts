@@ -86,7 +86,7 @@ describe("kagari recipe atom", () => {
       assert.equal(stitch.kind, "arc");
       if (stitch.kind !== "arc") return;
       assert.ok(stitch.bite);
-      assert.ok(dist(stitch.a, stitch.b) > 0.4);
+      assert.ok(dist(stitch.a, stitch.b) > 0.2);
     }
   });
 
@@ -138,7 +138,7 @@ describe("kagari recipe atom", () => {
     if (!outer0 || !outer1) return;
     const th = (p: [number, number, number]) => Math.acos(Math.min(1, Math.max(-1, p[1])));
     const d = th(outer1.mark.at) - th(outer0.mark.at);
-    assert.ok(d > spec.pitch + spec.stretch * 0.8, `outer step ${d} includes stretch`);
+    assert.ok(d > spec.stretch * 0.8, `outer step ${d} is the Ozaki stretch`);
   });
 
   it("player color is every kai until they pick another", () => {
@@ -159,6 +159,22 @@ describe("kagari recipe atom", () => {
     const setB = ops.filter((op) => op.set === 1).length;
     assert.equal(setA, 8);
     assert.equal(setB, 8);
+  });
+
+  it("all kai of set 0 land before any of set 1", () => {
+    const ops = compileKiku("simple", "out", "even", 0);
+    const firstB = ops.findIndex((op) => op.set === 1);
+    assert.ok(firstB > 0);
+    assert.ok(ops.slice(0, firstB).every((op) => op.set === 0));
+    assert.ok(ops.slice(firstB).every((op) => op.set === 1));
+  });
+
+  it("onlySet 0 with one kai is four petals, not eight", () => {
+    const ops = compileKiku("simple", "out", "even", 0, 0, 1, 0);
+    assert.equal(ops.length, 8);
+    assert.ok(ops.every((op) => op.set === 0 && op.kai === 0));
+    const both = compileKiku("simple", "out", "even", 0, 0, 1, "all");
+    assert.equal(both.length, 16);
   });
 
   it("inner uwagake bite widens around the stack; outer bite stays tiny", () => {

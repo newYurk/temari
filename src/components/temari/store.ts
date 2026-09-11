@@ -25,6 +25,7 @@ import {
   stitchFocus,
   stitchPoleIndex,
   nextKagariPole,
+  kikuSpec,
   sameFocus,
   slotKey,
   type KagariDir,
@@ -187,6 +188,7 @@ type TemariState = {
   kagariPlaying: boolean;
   kagariFocus: Vec3 | null;
   kagariKept: Stitch[];
+  kagariSet: 0 | 1;
   facingPole: number;
   startPin: Vec3 | null;
   originNonce: number;
@@ -301,7 +303,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   wrapStarted: false,
   layerDone: false,
   wrapPass: 3,
-  kikuLayers: 8,
+  kikuLayers: 1,
   kagariDir: "out",
   kagariSpacing: "even",
   kagariPlan: [],
@@ -309,6 +311,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   kagariPlaying: false,
   kagariFocus: null,
   kagariKept: [],
+  kagariSet: 0,
   facingPole: 0,
   startPin: null,
   originNonce: 0,
@@ -609,6 +612,23 @@ export const useTemari = create<TemariState>((set, get) => ({
   setMotif: (id) => {
     if (get().mode === "kata") return;
     if (get().motif === id && id !== "none") {
+      if (id === "kiku") {
+        const s = get();
+        const complete = s.kagariLaid >= s.kagariPlan.length && s.kagariPlan.length > 0;
+        if (complete && s.kagariSet === 0) {
+          set({ kagariSet: 1 });
+          get().startKagari();
+          return;
+        }
+        if (complete && s.kagariSet === 1) {
+          const next = nextKagariPole(s.division, s.motif, s.kagariPlan, s.kagariKept);
+          if (next != null && s.facingPole === next) {
+            set({ kagariSet: 0, kikuLayers: 1 });
+            get().startKagari();
+          }
+          return;
+        }
+      }
       get().startKagari();
       return;
     }
@@ -617,6 +637,8 @@ export const useTemari = create<TemariState>((set, get) => ({
       sewn: [],
       sewnHistory: [...get().sewnHistory, get().sewn].slice(-40),
       hoverSlot: null,
+      kagariSet: 0,
+      kikuLayers: 1,
       ...idleKagari(),
     });
     rememberStudio(get());
@@ -642,6 +664,8 @@ export const useTemari = create<TemariState>((set, get) => ({
         state.kagariSpacing,
         state.motif === "obi" ? "all" : state.facingPole,
         selectedColor,
+        state.kikuLayers,
+        state.motif === "kiku" ? state.kagariSet : "all",
       );
       const plan = state.kagariPlan.map((stitch, i) =>
         i >= state.kagariLaid ? (fresh[i] ?? stitch) : stitch,
@@ -938,6 +962,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       return;
     }
     const which = state.motif === "obi" ? "all" : state.facingPole;
+    const onlySet = state.motif === "kiku" ? state.kagariSet : "all";
     const plan = motifStitchPlan(
       state.division,
       state.motif,
@@ -945,12 +970,16 @@ export const useTemari = create<TemariState>((set, get) => ({
       state.kagariSpacing,
       which,
       state.selectedColor,
+      state.kikuLayers,
+      onlySet,
     );
     const prev = [...state.kagariKept, ...state.kagariPlan.slice(0, state.kagariLaid)];
     const kept =
       which === "all"
         ? []
-        : prev.filter((stitch) => stitchPoleIndex(stitch, state.division, state.motif) !== which);
+        : state.motif === "kiku" && state.kagariSet === 1
+          ? prev
+          : prev.filter((stitch) => stitchPoleIndex(stitch, state.division, state.motif) !== which);
     const first = plan.length > 0 ? 1 : 0;
     if (first) feel.stitch();
     set({
@@ -974,36 +1003,7 @@ export const useTemari = create<TemariState>((set, get) => ({
     const next = state.kagariLaid + 1;
     if (next >= state.kagariPlan.length) {
       feel.kikuFill();
-      const nextPole = nextKagariPole(
-        state.division,
-        state.motif,
-        state.kagariPlan,
-        state.kagariKept,
-      );
-      if (nextPole == null) {
-        set({ kagariLaid: state.kagariPlan.length, kagariPlaying: false });
-        return;
-      }
-      const kept = [...state.kagariKept, ...state.kagariPlan];
-      const plan = motifStitchPlan(
-        state.division,
-        state.motif,
-        state.kagariDir,
-        state.kagariSpacing,
-        nextPole,
-        state.selectedColor,
-      );
-      const first = plan.length > 0 ? 1 : 0;
-      if (first) feel.stitch();
-      set({
-        kagariKept: kept,
-        kagariPlan: plan,
-        kagariLaid: first,
-        kagariPlaying: plan.length > first,
-        kagariFocus: stitchFocus(plan[0], state.division, state.motif),
-        facingPole: nextPole,
-        viewNonce: state.viewNonce + 1,
-      });
+      set({ kagariLaid: state.kagariPlan.length, kagariPlaying: false });
       return;
     }
     feel.stitch();
@@ -1022,6 +1022,44 @@ export const useTemari = create<TemariState>((set, get) => ({
       if (state.kagariLaid < state.kagariPlan.length) {
         set({ kagariPlaying: true });
         return;
+      }
+      if (state.motif === "kiku") {
+        const spec = kikuSpec(state.division, state.kagariSpacing, "fit");
+        if (state.kikuLayers < spec.fit) {
+          const nextL = state.kikuLayers + 1;
+          const onlySet = state.kagariSet;
+          const before = motifStitchPlan(
+            state.division,
+            "kiku",
+            state.kagariDir,
+            state.kagariSpacing,
+            state.facingPole,
+            state.selectedColor,
+            state.kikuLayers,
+            onlySet,
+          ).length;
+          const grown = motifStitchPlan(
+            state.division,
+            "kiku",
+            state.kagariDir,
+            state.kagariSpacing,
+            state.facingPole,
+            state.selectedColor,
+            nextL,
+            onlySet,
+          );
+          const extra = grown.slice(before);
+          if (extra.length === 0) return;
+          feel.stitch();
+          set({
+            kikuLayers: nextL,
+            kagariPlan: [...state.kagariPlan, ...extra],
+            kagariPlaying: true,
+            kagariFocus: stitchFocus(extra[0], state.division, "kiku"),
+          });
+          rememberStudio(get());
+          return;
+        }
       }
       get().startKagari();
       return;
@@ -1100,6 +1138,8 @@ export const useTemari = create<TemariState>((set, get) => ({
       hoverSlot: null,
       selectedColor: 0,
       kagariDir: "out",
+      kagariSet: 0,
+      kikuLayers: 1,
       jiwariOn: true,
       jiwariPhase: "done",
       jiwariLaid: 5,

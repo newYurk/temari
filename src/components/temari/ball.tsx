@@ -625,6 +625,8 @@ export function Ball() {
             dir: st.kagariDir,
             kept: st.kagariKept.length,
             pole: st.facingPole,
+            set: st.kagariSet,
+            layers: st.kikuLayers,
           },
           ...wrap.snapshot(),
         };
@@ -639,6 +641,8 @@ export function Ball() {
           dir: st.kagariDir,
           kept: st.kagariKept.length,
           pole: st.facingPole,
+          set: st.kagariSet,
+          layers: st.kikuLayers,
         };
       },
       freezeKagari: (n?: number) => {

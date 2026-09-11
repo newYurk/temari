@@ -62,10 +62,13 @@ describe("kiku on Simple 8", () => {
     }
   });
 
-  it("upper marks sit ~1 cm from the pole, lower ⅓ up from the equator", () => {
+  it("upper marks sit ~1 cm from the pole; outer is the obi ceiling, not round 0", () => {
     const spec = kikuSpec("simple");
     assert.ok(Math.abs(spec.inner - unitFromMm(10)) < 1e-6);
     assert.ok(Math.abs(spec.outer - Math.PI / 3) < 1e-9);
+    const first = kikuThetas(spec, 0);
+    assert.ok(first.tOuter < spec.outer * 0.65, "round 0 corners sit near the pole");
+    assert.ok(first.tOuter - first.tInner > unitFromMm(8), "first V is a petal, not a tick");
     assert.ok(spec.inner + spec.rounds * spec.pitch <= spec.outer + spec.pitch);
     assert.ok(Math.abs(spec.pitch - unitFromMm(STITCH_THREAD_MM.pearl5)) < 1e-6);
   });
@@ -84,8 +87,9 @@ describe("kiku on Simple 8", () => {
     const bB = polar(pole, b.b);
     const spanA = Math.abs(aA.theta - aB.theta);
     const spanB = Math.abs(bA.theta - bB.theta);
-    assert.ok(spanA > 0.55, `leg A span ${spanA}`);
-    assert.ok(spanB > 0.55, `leg B span ${spanB}`);
+    assert.ok(spanA > 0.18, `leg A span ${spanA}`);
+    assert.ok(spanB > 0.18, `leg B span ${spanB}`);
+    assert.ok(spanA < 0.45, `leg A still a hemisphere (${spanA})`);
     assert.ok(Math.min(aA.theta, aB.theta, bA.theta, bB.theta) > 0.2, "inner is 1 cm, not 2 mm");
     const slopeA = wrapDelta(aA.phi, aB.phi) / (aB.theta - aA.theta);
     const slopeB = wrapDelta(bA.phi, bB.phi) / (bB.theta - bA.theta);
@@ -104,15 +108,21 @@ describe("kiku on Simple 8", () => {
     assert.deepEqual(sectors.slice(4, 8), [1, 3, 5, 7]);
   });
 
-  it("sews round by round: north set A, then set B, before the next kai", () => {
+  it("finishes the four petals (all kai) before the other four", () => {
     const sewn = fillKikuSewn("simple", "out", "even");
-    const first = sewn.slice(0, 8).map((e) => e.key);
-    assert.deepEqual(
-      first,
-      ["0:0:0", "0:0:2", "0:0:4", "0:0:6", "0:0:1", "0:0:3", "0:0:5", "0:0:7"],
+    const spec = kikuSpec("simple", "even");
+    const perSet = spec.rounds * 4;
+    const first = sewn.slice(0, 4).map((e) => e.key);
+    assert.deepEqual(first, ["0:0:0", "0:0:2", "0:0:4", "0:0:6"]);
+    assert.ok(
+      sewn.slice(0, perSet).every((e) => Number(e.key.split(":")[2]) % 2 === 0),
+      "set A is even meridians, all rounds",
+    );
+    assert.ok(
+      sewn.slice(perSet, perSet * 2).every((e) => Number(e.key.split(":")[2]) % 2 === 1),
+      "set B is odd meridians, after A",
     );
     const inward = fillKikuSewn("simple", "in", "even");
-    const spec = kikuSpec("simple", "even");
     const lastRing = spec.rounds - 1;
     assert.equal(inward[0]?.key, `0:${lastRing}:0`);
   });
@@ -176,7 +186,8 @@ describe("kiku on Simple 8", () => {
 
     const lastI = spec.rounds - 1;
     const last = kikuThetas(spec, lastI);
-    assert.ok(last.tOuter > spec.outer + spec.pitch, "later rings sit past spec.outer");
+    assert.ok(last.tOuter > first.tOuter, "later rings move out");
+    assert.ok(last.tOuter <= spec.outer + 1e-9, "never past the obi ceiling");
     const q = around(pole, 0.5 * (last.tInner + last.tOuter), 0.1);
     const hN = hitKikuSlot(q[0], q[1], q[2], "simple");
     assert.equal(hN?.ring, lastI);
@@ -184,5 +195,17 @@ describe("kiku on Simple 8", () => {
     const past = around(pole, last.tOuter - spec.pitch * 0.1, 0.1);
     const hPast = hitKikuSlot(past[0], past[1], past[2], "simple");
     assert.ok(hPast, "drawn outer rows are hittable");
+  });
+
+  it("one set of one kai is four petals near the pole", () => {
+    const ops = compileKiku("simple", "out", "even", 0, 0, 1, 0);
+    assert.equal(ops.length, 8);
+    assert.ok(ops.every((op) => op.set === 0 && op.kai === 0));
+    const outer = ops.find((op) => op.mark.t === "outer");
+    assert.ok(outer);
+    if (!outer) return;
+    const th = Math.acos(Math.min(1, Math.max(-1, outer.mark.at[1])));
+    const spec = kikuSpec("simple", "even", 1);
+    assert.ok(th < spec.outer * 0.65, "first corners sit near the pole, not at the obi");
   });
 });

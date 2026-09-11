@@ -28,8 +28,9 @@ export type PatternRecipe = {
    */
   cornerMm: number;
   /**
-   * Extra drop at the outer V after round 0, millimetres.
-   * Ozaki / TemariKai: ~2 mm for pearl #5 so the thread can turn the corner.
+   * Outer step after round 0, millimetres. Ozaki / TemariKai: ~2 mm for
+   * pearl #5 so the thread can turn the corner. This IS the step, not
+   * an extra on top of one thread — else six rounds reach the equator.
    */
   stretchMm: number;
 };
