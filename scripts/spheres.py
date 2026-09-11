@@ -455,14 +455,16 @@ def hoshi():
 
 def hishi():
     set_cam("face")
-    # Hishi is an irregular four-sided diamond shape, not a square or octagon.
+    # Hishi is a symmetric diamond/lozenge: alternating radii make an elongated
+    # rhombus. TemariKai calls it "irregular" because its angles are not all equal,
+    # not because the four vertices should be randomly skewed.
     n = 4
     bits = [circle_paths(gc_samples((0, 1, 0)), "mark-front", "mark-back", 0.9)]
     da = 2 * math.pi / n
     for i in range(n // 2):
         bits.append(circle_paths(gc_samples(meridian_axis(i * da)), "mark-front", "mark-back", 1.0))
     for k, theta in enumerate((0.32, 0.52, 0.72, 0.92)):
-        radii = (theta * 0.74, theta, theta * 0.86, theta * 1.12)
+        radii = (theta * 0.76, theta, theta * 0.76, theta)
         pts = [around_pole(NORTH, radii[i], i * da) for i in range(n)]
         w = 1.5 if k % 2 == 0 else 1.2
         for i in range(n):
