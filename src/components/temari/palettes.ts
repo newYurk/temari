@@ -15,7 +15,7 @@ export const THREAD_COLORS = [
   "#c4a574",
   "#ece8e1",
   "#2a2420",
-  "#2a3a4a",
+  "#3d5f86",
 ] as const;
 
 export const COLOR_COUNT = THREAD_COLORS.length;
