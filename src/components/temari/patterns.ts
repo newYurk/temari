@@ -239,11 +239,11 @@ export function fillKikuSewn(
   const rings = Array.from({ length: spec.rounds }, (_, i) => i);
   if (dir === "in") rings.reverse();
   const sewn: SewnEntry[] = [];
-  // Real order: kai (round) → pole → set of meridians → around the pole.
-  // Instructables / TemariKai: each round is two passes (even, then odd).
-  for (const ring of rings) {
-    const color = kikuColor(ring);
-    for (let pole = 0; pole < poles; pole++) {
+  // Real order: pole (north, then south) → kai → set (even, then odd) → around.
+  // TemariKai 8-point: finish the flower on one pole before turning the mari.
+  for (let pole = 0; pole < poles; pole++) {
+    for (const ring of rings) {
+      const color = kikuColor(ring);
       for (let pass = 0; pass < skip; pass++) {
         for (let sector = 0; sector < n; sector++) {
           if (sector % skip !== pass) continue;
@@ -289,7 +289,12 @@ function petalCount(division: Division) {
   return 8;
 }
 
-/** Simple 8 / C10: two sets of every-other meridian. Adjacent = hugs the ray. */
+/**
+ * Simple 8 / C10: two sets of every-other petal.
+ * Each petal is a V on adjacent meridians (chidori both ways).
+ * skip=2 is the set, not the stitch: even petals, then odd.
+ * Adjacent-only (skip=1 as the stitch) hugs the ray and never crosses.
+ */
 function kikuSkip(n: number) {
   return n >= 8 ? 2 : 1;
 }
@@ -333,15 +338,25 @@ function kikuPetal(
   const tInner = spec.inner + ring * spec.pitch;
   const tOuter = spec.outer + ring * spec.pitch;
   if (tOuter >= Math.PI * 0.49 || tInner >= tOuter - spec.pitch * 0.4) return [];
-  const skip = kikuSkip(n);
-  const a = (2 * Math.PI * sector) / n;
-  const b = (2 * Math.PI * (sector + skip)) / n;
+  const step = (2 * Math.PI) / n;
+  const phi0 = step * sector;
+  const phi1 = step * (sector + 1);
+  const phi2 = step * (sector + 2);
   const lift = 0.003 + ring * 0.0005;
+  // Downward V: uppers on meridians sector and sector+2, point on sector+1.
+  // Two legs = ёлочка in both directions for this petal of one set.
   return [
     {
       kind: "arc",
-      a: around(pole, tOuter, a),
-      b: around(pole, tInner, b),
+      a: around(pole, tInner, phi0),
+      b: around(pole, tOuter, phi1),
+      color,
+      lift,
+    },
+    {
+      kind: "arc",
+      a: around(pole, tOuter, phi1),
+      b: around(pole, tInner, phi2),
       color,
       lift,
     },
@@ -356,14 +371,16 @@ function kiku(
   return stitchesFromSewn(division, fillKikuSewn(division, dir, spacing));
 }
 
-function hoshi(division: Division): Stitch[] {
+function hoshi(division: Division, dir: KagariDir = "out"): Stitch[] {
   const n = petalCount(division);
   const skip = starSkip(division);
   const rings =
     division === "simple" ? [0.38, 0.58, 0.78] : division === "c8" ? [0.28, 0.44] : [0.26, 0.4];
+  const ordered = dir === "in" ? [...rings].reverse() : rings;
   const stitches: Stitch[] = [];
   for (const pole of polePositions(division)) {
-    rings.forEach((theta, ring) => {
+    for (const theta of ordered) {
+      const ring = rings.indexOf(theta);
       const color = ring % 2 === 0 ? 0 : 1;
       const pts = Array.from({ length: n }, (_, i) =>
         around(pole, theta, (2 * Math.PI * i) / n),
@@ -376,12 +393,12 @@ function hoshi(division: Division): Stitch[] {
           color,
         });
       }
-    });
+    }
   }
   return stitches;
 }
 
-function hishi(division: Division): Stitch[] {
+function hishi(division: Division, dir: KagariDir = "out"): Stitch[] {
   const n = division === "c8" ? 4 : petalCount(division);
   const rings =
     division === "simple"
@@ -389,9 +406,11 @@ function hishi(division: Division): Stitch[] {
       : division === "c8"
         ? [0.18, 0.3, 0.42, 0.54]
         : [0.16, 0.28, 0.4];
+  const ordered = dir === "in" ? [...rings].reverse() : rings;
   const stitches: Stitch[] = [];
   for (const pole of polePositions(division)) {
-    rings.forEach((theta, ring) => {
+    for (const theta of ordered) {
+      const ring = rings.indexOf(theta);
       const color = ring % 2 === 0 ? 0 : 2;
       const pts = Array.from({ length: n }, (_, i) =>
         around(pole, theta, (2 * Math.PI * i) / n),
@@ -404,12 +423,12 @@ function hishi(division: Division): Stitch[] {
           color,
         });
       }
-    });
+    }
   }
   return stitches;
 }
 
-function obi(division: Division): Stitch[] {
+function obi(division: Division, dir: KagariDir = "out"): Stitch[] {
   const stitches: Stitch[] = [];
   if (division === "simple") {
     const heights = [0, 0.32, -0.32, 0.58, -0.58];
@@ -420,9 +439,7 @@ function obi(division: Division): Stitch[] {
         color: i % 2 === 0 ? 0 : 2,
       });
     });
-    return stitches;
-  }
-  if (division === "c8") {
+  } else if (division === "c8") {
     const axes: Vec3[] = [
       [0, 1, 0],
       [1, 0, 0],
@@ -437,16 +454,17 @@ function obi(division: Division): Stitch[] {
         });
       }
     });
-    return stitches;
-  }
-  const heights = [0, 0.28, -0.28, 0.52, -0.52];
-  heights.forEach((h, i) => {
-    stitches.push({
-      kind: "loop",
-      points: smallCircle([0, 1, 0], h),
-      color: i % 2 === 0 ? 0 : 1,
+  } else {
+    const heights = [0, 0.28, -0.28, 0.52, -0.52];
+    heights.forEach((h, i) => {
+      stitches.push({
+        kind: "loop",
+        points: smallCircle([0, 1, 0], h),
+        color: i % 2 === 0 ? 0 : 1,
+      });
     });
-  });
+  }
+  if (dir === "in") stitches.reverse();
   return stitches;
 }
 
@@ -457,9 +475,9 @@ export function generateMotif(
   spacing: KagariSpacing = "even",
 ): Stitch[] {
   if (motif === "kiku") return kiku(division, dir, spacing);
-  if (motif === "hoshi") return hoshi(division);
-  if (motif === "hishi") return hishi(division);
-  if (motif === "obi") return obi(division);
+  if (motif === "hoshi") return hoshi(division, dir);
+  if (motif === "hishi") return hishi(division, dir);
+  if (motif === "obi") return obi(division, dir);
   return [];
 }
 
@@ -471,6 +489,74 @@ export function motifStitchPlan(
   spacing: KagariSpacing = "even",
 ): Stitch[] {
   return generateMotif(division, motif, dir, spacing);
+}
+
+/** Pole the mari should face while this stitch is laid. Obi stays equator-on. */
+export function stitchFocus(
+  stitch: Stitch | undefined,
+  division: Division,
+  motif: MotifId,
+): Vec3 | null {
+  if (!stitch || motif === "obi" || motif === "none") return null;
+  let p: Vec3;
+  if (stitch.kind === "arc") {
+    p = normalize([
+      stitch.a[0] + stitch.b[0],
+      stitch.a[1] + stitch.b[1],
+      stitch.a[2] + stitch.b[2],
+    ]);
+  } else if (stitch.points[0]) {
+    p = stitch.points[0];
+  } else {
+    return null;
+  }
+  const poles = polePositions(division);
+  let best: Vec3 | null = null;
+  let bestD = -2;
+  for (const pole of poles) {
+    const d = pole[0] * p[0] + pole[1] * p[1] + pole[2] * p[2];
+    if (d > bestD) {
+      bestD = d;
+      best = pole;
+    }
+  }
+  return best;
+}
+
+export function sameFocus(a: Vec3 | null, b: Vec3 | null) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] > 0.995;
+}
+
+/** Live line under the buttons — same job as jiwariPhaseHint. */
+export function kagariPhaseHint(
+  motif: MotifId,
+  division: Division,
+  dir: KagariDir,
+  laid: number,
+  total: number,
+  playing: boolean,
+): string {
+  if (motif === "none" || total === 0) return "";
+  if (!playing && laid >= total) return "Кагари: ряд лежит";
+  if (motif === "hoshi") return "Хоси: звезда по кругу, ряд за рядом";
+  if (motif === "hishi") return "Хиси: многоугольник у полюса, ряд за рядом";
+  if (motif === "obi") return "Оби: пояс за поясом";
+  if (motif !== "kiku") return "";
+  const n = petalCount(division);
+  const poles = Math.max(1, polePositions(division).length);
+  const perPole = Math.max(n * 2, Math.floor(total / poles));
+  const at = Math.max(0, laid - 1);
+  const pole = Math.min(poles - 1, Math.floor(at / perPole));
+  const local = at % perPole;
+  const perKai = n * 2;
+  const kai = Math.floor(local / perKai) + 1;
+  const pass = local % perKai < n ? 0 : 1;
+  const where = pole === 0 ? "север" : pole === 1 ? "юг" : `полюс ${pole + 1}`;
+  const set = pass === 0 ? "чётные" : "нечётные";
+  const way = dir === "out" ? "от полюса" : "с края";
+  return `Кику · ${where} · круг ${kai} · ${set} · ${way}`;
 }
 
 /** Classic first temari: Simple 8, kiku on both poles, maki obi. */
@@ -568,13 +654,19 @@ export function kikuArcsFromPins(
       const c = r % 2 === 0 ? color : (color + 1) % 4;
       for (const pass of [0, 1] as const) {
         for (let i = 0; i < n; i++) {
-          if (i % 2 !== pass) continue;
+          if (i % skip !== pass) continue;
           const a = sorted[i];
-          const b = sorted[(i + skip) % n];
-          if (!a || !b) continue;
+          const b = sorted[(i + 1) % n];
+          const d = sorted[(i + 2) % n];
+          if (!a || !b || !d) continue;
           arcs.push({
-            a: around(pole, outer, a.phi),
-            b: around(pole, inner, b.phi),
+            a: around(pole, inner, a.phi),
+            b: around(pole, outer, b.phi),
+            color: c,
+          });
+          arcs.push({
+            a: around(pole, outer, b.phi),
+            b: around(pole, inner, d.phi),
             color: c,
           });
         }
