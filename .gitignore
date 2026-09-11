@@ -4,3 +4,6 @@ dist
 .vercel
 
 screenshots/
+
+# рабочие копии агентов: создаются под .claude/, в git не идут
+.claude/worktrees/
