@@ -211,8 +211,10 @@ export function createMotifGeometry(
         ...via.map((p) => vec(p, lift + 0.0024)),
         vec(stitch.b, lift),
       ];
+      if (stitch.bite) {
+        path.push(vec(stitch.bite.enter, lift), vec(stitch.bite.exit, lift));
+      }
       parts.push(geodesicRibbon(path, width));
-      // Bite scoops under the jiwari — not a hashed bar on the surface.
     } else {
       parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, lift)), width * 1.08, true));
     }

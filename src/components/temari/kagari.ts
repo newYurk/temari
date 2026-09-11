@@ -39,7 +39,7 @@ export const KIKU_8_POINT: PatternRecipe = {
   innerMm: 10,
   outerFromEquator: 1 / 3,
   crossing: "over-all",
-  cornerMm: 2,
+  cornerMm: 0.71,
 };
 
 export type KagariMark = {
@@ -91,7 +91,7 @@ function dot(a: Vec3, b: Vec3) {
 
 /**
  * Tiny bite across the jiwari: enter one side, scoop wrap+mark, exit the other.
- * Length ≈ recipe.cornerMm. Not a tunnel under the mari.
+ * Length ≈ one pearl, not a 2 mm hashed bar.
  */
 export function biteAcross(pole: Vec3, mark: Vec3, mm = KIKU_8_POINT.cornerMm): KagariBite {
   const m = normalize(mark);

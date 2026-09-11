@@ -38,7 +38,7 @@ describe("kagari recipe atom", () => {
     const len = Math.hypot(...mid) || 1;
     const m: [number, number, number] = [mid[0] / len, mid[1] / len, mid[2] / len];
     assert.ok(dist(m, mark) < 0.02, "bite centered on the mark");
-    assert.ok(dist(bite.enter, bite.exit) > unitFromMm(1), "bite has width");
+    assert.ok(dist(bite.enter, bite.exit) > unitFromMm(0.5), "bite has width");
     const along = Math.abs(mark[1] - bite.enter[1]);
     const across = dist(bite.enter, bite.exit);
     assert.ok(along < across, "bite is across the jiwari, not down the ray");
