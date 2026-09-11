@@ -232,6 +232,7 @@ describe("kiku on Simple 8", () => {
     const spec = kikuSpec("simple");
     const pins = kikuMarkPins("simple");
     assert.equal(pins.length, 16);
+    assert.equal(kikuMarkPins("simple", 0).length, 8);
     const pole: [number, number, number] = [0, 1, 0];
     const north = pins.filter((pin) => pin.id.startsWith("kiku-0-"));
     assert.equal(north.length, 8);

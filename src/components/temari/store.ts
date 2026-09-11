@@ -267,13 +267,27 @@ function currentCap(state: { pins: Pin[]; threadWidth: number; kagariSpacing: Ka
 }
 
 function withKikuMarks(
-  state: { division: Division; pins: Pin[]; jiwariLaid: number },
+  state: {
+    division: Division;
+    pins: Pin[];
+    jiwariLaid: number;
+    jiwariPhase: JiwariPhase;
+    facingPole: number;
+  },
   motif: MotifId,
 ): Pin[] {
-  const base = state.pins.filter((pin) => !pin.id.startsWith("kiku-"));
-  if (motif !== "kiku") return base;
-  const extra = kikuMarkPins(state.division);
-  const out = base.length ? [...base] : jiwariVisiblePins(state.division, "done", state.jiwariLaid);
+  if (motif !== "kiku") {
+    return jiwariVisiblePins(
+      state.division,
+      state.jiwariPhase === "off" ? "done" : state.jiwariPhase,
+      state.jiwariLaid,
+    );
+  }
+  const poles = jiwariVisiblePins(state.division, "done", state.jiwariLaid).filter(
+    (pin) => Math.abs(pin.p[1]) > 0.92,
+  );
+  const extra = kikuMarkPins(state.division, state.facingPole);
+  const out = [...poles];
   for (const pin of extra) {
     if (out.some((q) => q.p[0] * pin.p[0] + q.p[1] * pin.p[1] + q.p[2] * pin.p[2] > 0.999)) continue;
     out.push(pin);
@@ -1166,7 +1180,10 @@ export const useTemari = create<TemariState>((set, get) => ({
       jiwariOn: true,
       jiwariPhase: "done",
       jiwariLaid: 5,
-      pins: withKikuMarks({ division: "simple", pins: simplePins("done"), jiwariLaid: 5 }, "kiku"),
+      pins: withKikuMarks(
+        { division: "simple", pins: simplePins("done"), jiwariLaid: 5, jiwariPhase: "done", facingPole: 0 },
+        "kiku",
+      ),
     });
     rememberStudio(get());
     get().startKagari();
