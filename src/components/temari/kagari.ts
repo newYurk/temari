@@ -28,9 +28,10 @@ export type PatternRecipe = {
    */
   cornerMm: number;
   /**
-   * Ozaki / TemariKai Stretch Points: ~2 mm of *turn* at an acute corner
-   * for pearl #5, so the point lays flat. The flanks of later kai pack
-   * parallel at one thread — not this amount as a growing-V outer step.
+   * Ozaki / TemariKai Stretch Points: ~2 mm *below the previous outer stitch*
+   * for pearl #5, so the point lays flat and there is room for the turn.
+   * Flanks still pack parallel to the previous thread (one pearl wide);
+   * this value is the mark along the jiwari, not a fanning of the V.
    */
   stretchMm: number;
 };

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import type { Stitch } from "./patterns";
-import { DEFAULT_KIND, ribbonWidth, type ThreadKind } from "./thread";
+import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
 import { stackBump } from "./kagari";
@@ -155,12 +155,72 @@ function arcRibbon(a: THREE.Vector3, b: THREE.Vector3, width: number) {
 }
 
 /**
- * Geodesic on the mari with local extra height where the stitch sits on thread.
- * Legs stay at wrap + one radius. Only the pole bundle and the set-B
- * crossing rise — and only by a few thread diameters, pressed down the
- * way a master strokes the uwagake wedge. Stretch at the outer point is
- * along the mark, not a radial lift.
+ * Pearl on the mari: a round cord. Path follows `via` when the stitch is a
+ * parallel offset (later kiku kai). Local extra height only where the
+ * stitch sits on thread — pole bundle and set-B crossing.
  */
+function stackedArcCord(
+  stitch: Extract<Stitch, { kind: "arc" }>,
+  kind: ThreadKind,
+) {
+  const mm = kindMm(kind);
+  const half = unitFromMm(mm) * 0.5;
+  const diameter = unitFromMm(mm);
+  const radius = stitchRadius(kind);
+  const sitA = stitch.sitA ?? 0;
+  const sitB = stitch.sitB ?? 0;
+  const sitMid = stitch.sitMid ?? 0;
+  const uniform = stitch.lift ?? 0;
+  const via = stitch.via ?? [];
+  const anchors: THREE.Vector3[] = [
+    new THREE.Vector3(stitch.a[0], stitch.a[1], stitch.a[2]).normalize(),
+    ...via.map((p) => new THREE.Vector3(p[0], p[1], p[2]).normalize()),
+    new THREE.Vector3(stitch.b[0], stitch.b[1], stitch.b[2]).normalize(),
+  ];
+  const pts: THREE.Vector3[] = [];
+  const lift = (t: number, dir: THREE.Vector3) => {
+    const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid)) * diameter * 0.7;
+    return dir.clone().multiplyScalar(1 + half + extra);
+  };
+  if (via.length === 0) {
+    const a = anchors[0]!;
+    const b = anchors[1]!;
+    for (let i = 0; i <= ARC_SEGS; i++) {
+      const t = i / ARC_SEGS;
+      slerpUnit(a, b, t, _a);
+      pts.push(lift(t, _a));
+    }
+  } else {
+    const steps = anchors.length - 1;
+    const sub = 2;
+    for (let s = 0; s < steps; s++) {
+      const a = anchors[s];
+      const b = anchors[s + 1];
+      if (!a || !b) continue;
+      const start = s === 0 ? 0 : 1;
+      for (let i = start; i <= sub; i++) {
+        const t = (s + i / sub) / steps;
+        slerpUnit(a, b, i / sub, _a);
+        pts.push(lift(t, _a));
+      }
+    }
+  }
+  if (pts.length < 2) return new THREE.BufferGeometry();
+  const tube = tubeOnSphere(pts, radius);
+  const a = pts[0];
+  const b = pts[pts.length - 1];
+  if (!a || !b) return tube;
+  const capA = new THREE.SphereGeometry(radius, 8, 6);
+  capA.translate(a.x, a.y, a.z);
+  const capB = new THREE.SphereGeometry(radius, 8, 6);
+  capB.translate(b.x, b.y, b.z);
+  const merged = mergeGeometries([tube, capA, capB], false);
+  tube.dispose();
+  capA.dispose();
+  capB.dispose();
+  return merged ?? new THREE.BufferGeometry();
+}
+
 function stackedArcRibbon(
   stitch: Extract<Stitch, { kind: "arc" }>,
   width: number,
@@ -175,13 +235,36 @@ function stackedArcRibbon(
   const sitB = stitch.sitB ?? 0;
   const sitMid = stitch.sitMid ?? 0;
   const uniform = stitch.lift ?? 0;
+  const via = stitch.via ?? [];
   const pts: THREE.Vector3[] = [];
-  for (let i = 0; i <= ARC_SEGS; i++) {
-    const t = i / ARC_SEGS;
-    const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid));
-    const extra = uniform + stacked * diameter * 0.7;
-    slerpUnit(_pa, _pb, t, _a);
-    pts.push(_a.clone().multiplyScalar(1 + half + extra));
+  if (via.length === 0) {
+    for (let i = 0; i <= ARC_SEGS; i++) {
+      const t = i / ARC_SEGS;
+      const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid));
+      const extra = uniform + stacked * diameter * 0.7;
+      slerpUnit(_pa, _pb, t, _a);
+      pts.push(_a.clone().multiplyScalar(1 + half + extra));
+    }
+  } else {
+    const anchors = [
+      _pa.clone(),
+      ...via.map((p) => new THREE.Vector3(p[0], p[1], p[2]).normalize()),
+      _pb.clone(),
+    ];
+    const steps = anchors.length - 1;
+    for (let s = 0; s < steps; s++) {
+      const a = anchors[s];
+      const b = anchors[s + 1];
+      if (!a || !b) continue;
+      const start = s === 0 ? 0 : 1;
+      for (let i = start; i <= 1; i++) {
+        const t = (s + i) / steps;
+        const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid));
+        const extra = uniform + stacked * diameter * 0.7;
+        slerpUnit(a, b, i, _a);
+        pts.push(_a.clone().multiplyScalar(1 + half + extra));
+      }
+    }
   }
   return ribbonFromPoints(pts, width, false);
 }
@@ -263,22 +346,12 @@ export function createMotifGeometry(
   kind = DEFAULT_KIND.stitch,
 ): THREE.BufferGeometry | null {
   const width = ribbonWidth(kind);
+  const cord = kind !== "metallic";
   const parts: THREE.BufferGeometry[] = [];
   for (const stitch of stitches) {
     if (stitch.color !== colorIndex) continue;
     if (stitch.kind === "arc") {
-      const via = stitch.via ?? [];
-      if (via.length === 0) {
-        parts.push(stackedArcRibbon(stitch, width, kind));
-      } else {
-        const lift = stitch.lift ?? 0;
-        const path = [
-          vec(stitch.a, lift, kind),
-          ...via.map((p) => vec(p, lift, kind)),
-          vec(stitch.b, lift, kind),
-        ];
-        parts.push(geodesicRibbon(path, width));
-      }
+      parts.push(cord ? stackedArcCord(stitch, kind) : stackedArcRibbon(stitch, width, kind));
     } else {
       parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, stitch.lift ?? 0, kind)), width * 1.08, true));
     }
@@ -365,5 +438,5 @@ class SpherePolyline extends THREE.Curve<THREE.Vector3> {
 function tubeOnSphere(pts: THREE.Vector3[], radius: number) {
   const curve = new SpherePolyline(pts);
   const segs = Math.max(12, pts.length);
-  return new THREE.TubeGeometry(curve, segs, radius, 5, false);
+  return new THREE.TubeGeometry(curve, segs, radius, 6, false);
 }

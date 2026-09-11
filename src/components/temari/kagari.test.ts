@@ -106,12 +106,11 @@ describe("kagari recipe atom", () => {
       const outer = ops.filter((op) => op.set === set && op.mark.t === "outer");
       assert.equal(inner.length, outer.length, `set ${set} inner vs outer`);
       for (const op of inner) {
-        assert.ok(!op.lay.via || op.lay.via.length === 0, "via must not pull one flank off the mark");
         assert.ok(dist(op.lay.to, op.mark.at) < 1e-9, "inner leg ends on the mark");
         assert.ok(dist(op.lay.from, op.mark.at) > 0.2, "inner leg has a real span");
       }
       for (const op of outer) {
-        assert.ok(!op.lay.via || op.lay.via.length === 0);
+        assert.ok(dist(op.lay.to, op.mark.at) < 1e-9, "outer leg ends on the mark");
       }
     }
     const byLine = new Map<string, { inner: number; outer: number }>();
@@ -128,7 +127,7 @@ describe("kagari recipe atom", () => {
     }
   });
 
-  it("later kai pack parallel: outer steps one thread, same as inner", () => {
+  it("later kai: inner one thread, outer Ozaki stretch; flanks stay parallel mid-petal", () => {
     const spec = kikuSpec("simple", "even");
     const ops = compileKiku("simple", "out", "even", 0);
     const outer0 = ops.find((op) => op.kai === 0 && op.mark.t === "outer");
@@ -140,9 +139,9 @@ describe("kagari recipe atom", () => {
     const th = (p: [number, number, number]) => Math.acos(Math.min(1, Math.max(-1, p[1])));
     const dOut = th(outer1.mark.at) - th(outer0.mark.at);
     const dIn = th(inner1.mark.at) - th(inner0.mark.at);
-    assert.ok(Math.abs(dOut - spec.pitch) < 1e-6, `outer step ${dOut} is one thread`);
+    assert.ok(Math.abs(dOut - spec.stretch) < 1e-6, `outer step ${dOut} is Ozaki stretch`);
     assert.ok(Math.abs(dIn - spec.pitch) < 1e-6, `inner step ${dIn} is one thread`);
-    assert.ok(Math.abs(dOut - dIn) < 1e-9, "same step so the flanks stay parallel");
+    assert.ok(outer1.lay.via && outer1.lay.via.length > 4, "later kai follow the offset path, not a free geodesic");
   });
 
   it("player color is every kai until they pick another", () => {

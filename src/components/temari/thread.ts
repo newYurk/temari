@@ -119,8 +119,7 @@ export function isThreadKind(value: unknown): value is ThreadKind {
   return THREAD_KINDS.includes(value as ThreadKind);
 }
 
-/** Ribbon half-width on the unit sphere — half of the real thread millimetres. */
-/** Pearl #5 occupies nearly its millimetre. 0.52 left navy between packed kiku flanks. */
+/** Ribbon half-width on the unit sphere — metallic jiwari and belts. */
 export function ribbonWidth(kind: ThreadKind) {
   const mm =
     kind === "pearl8"
@@ -128,7 +127,18 @@ export function ribbonWidth(kind: ThreadKind) {
       : kind === "metallic"
         ? STITCH_THREAD_MM.mark
         : STITCH_THREAD_MM.pearl5;
-  return unitFromMm(mm) * 0.92;
+  return unitFromMm(mm) * (kind === "metallic" ? 0.55 : 0.5);
+}
+
+/** Round pearl on the mari. Slightly under half a millimetre so cords read. */
+export function stitchRadius(kind: ThreadKind) {
+  const mm =
+    kind === "pearl8"
+      ? STITCH_THREAD_MM.pearl8
+      : kind === "metallic"
+        ? STITCH_THREAD_MM.mark
+        : STITCH_THREAD_MM.pearl5;
+  return unitFromMm(mm) * 0.46;
 }
 
 /** Slider 0–1 → tube diameter on the unit sphere for the wrap thread. */

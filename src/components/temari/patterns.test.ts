@@ -157,7 +157,7 @@ describe("kiku on Simple 8", () => {
     assert.equal(nextKagariPole("c8", "kiku", north, []), null);
   });
 
-  it("later rounds pack parallel; flanks keep the same angle", () => {
+  it("later rounds: inner one thread, outer Ozaki; mid-flank stays parallel", () => {
     const pole: [number, number, number] = [0, 1, 0];
     const a = stitchesForSlot("simple", { pole: 0, ring: 0, sector: 0 }, 1)[0];
     const b = stitchesForSlot("simple", { pole: 0, ring: 3, sector: 0 }, 1)[0];
@@ -169,18 +169,42 @@ describe("kiku on Simple 8", () => {
     const bOut = Math.max(polar(pole, b.a).theta, polar(pole, b.b).theta);
     assert.ok(bIn > aIn + 0.02, "inner moves out with the round");
     assert.ok(bOut > aOut + 0.02, "outer moves toward the equator");
-    const dIn = bIn - aIn;
-    const dOut = bOut - aOut;
-    assert.ok(
-      Math.abs(dOut - dIn) < 1e-6,
-      `parallel flanks: outer step ${dOut} matches inner ${dIn}`,
-    );
-    const slope = (leg: typeof a) => {
-      const A = polar(pole, leg.a);
-      const B = polar(pole, leg.b);
-      return wrapDelta(A.phi, B.phi) / (B.theta - A.theta);
-    };
-    assert.ok(Math.abs(slope(a) - slope(b)) < 0.04, "side lines keep the first V's angle");
+    const spec = kikuSpec("simple");
+    assert.ok(Math.abs(bIn - aIn - 3 * spec.pitch) < 1e-6, "inner steps one pearl");
+    assert.ok(Math.abs(bOut - aOut - 3 * spec.stretch) < 1e-6, "outer steps Ozaki 2 mm");
+    assert.ok(b.via && b.via.length > 4, "later kai is an offset path");
+    const mid0 = polar(pole, slerp(a.a, a.b, 0.5));
+    const midVia = b.via[Math.floor(b.via.length / 2)];
+    assert.ok(midVia);
+    const midN = polar(pole, midVia);
+    const tan0 = (() => {
+      const p0 = slerp(a.a, a.b, 0.45);
+      const p1 = slerp(a.a, a.b, 0.55);
+      const v = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]] as [number, number, number];
+      const l = Math.hypot(...v) || 1;
+      return v.map((x) => x / l) as [number, number, number];
+    })();
+    const tanN = (() => {
+      const i = Math.floor(b.via!.length / 2);
+      const p0 = b.via![i - 1]!;
+      const p1 = b.via![i + 1]!;
+      const v = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]] as [number, number, number];
+      const l = Math.hypot(...v) || 1;
+      return v.map((x) => x / l) as [number, number, number];
+    })();
+    const dot = tan0[0] * tanN[0] + tan0[1] * tanN[1] + tan0[2] * tanN[2];
+    assert.ok(dot > 0.99, `mid-flank parallel, tan dot ${dot}`);
+    assert.ok(midN.theta > mid0.theta, "offset sits further from the pole");
+  });
+
+  it("fit is Ozaki rounds to the obi, not seventeen tape layers", () => {
+    const spec = kikuSpec("simple", "even", "fit");
+    assert.ok(spec.fit >= 5 && spec.fit <= 10, `fit=${spec.fit}`);
+    const last = kikuThetas(spec, spec.fit - 1);
+    assert.ok(last.tOuter <= spec.ceiling + 1e-9, "never past the obi mark");
+    assert.ok(last.tOuter > spec.outer + spec.stretch * 3, "later rounds pack past the first pin");
+    const first = kikuThetas(spec, 0);
+    assert.ok(last.tOuter - last.tInner > first.tOuter - first.tInner, "points stretch; flanks stay parallel");
   });
 
   it("hitKikuSlot asks kikuThetas, not an inward band", () => {
@@ -215,18 +239,5 @@ describe("kiku on Simple 8", () => {
     const spec = kikuSpec("simple", "even", 1);
     assert.ok(Math.abs(th - spec.outer) < 0.02, "first corners sit on the pin, ⅓ from the equator");
     assert.ok(th > spec.inner + 0.5, "first V is long");
-  });
-
-  it("fit packs thread-to-thread toward the obi, not four nested outlines", () => {
-    const spec = kikuSpec("simple", "even", "fit");
-    assert.ok(spec.fit >= 12 && spec.fit <= 24, `fit=${spec.fit}`);
-    const last = kikuThetas(spec, spec.fit - 1);
-    assert.ok(last.tOuter <= spec.ceiling + 1e-9, "never past the obi mark");
-    assert.ok(last.tOuter > spec.outer + spec.pitch * 8, "later rounds pack past the first pin");
-    const first = kikuThetas(spec, 0);
-    assert.ok(
-      Math.abs((last.tOuter - last.tInner) - (first.tOuter - first.tInner)) < spec.pitch * 1.1,
-      "V depth stays; flanks don't fan",
-    );
   });
 });

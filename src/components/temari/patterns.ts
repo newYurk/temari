@@ -387,11 +387,10 @@ function starSkip(division: Division) {
 
 /**
  * GT14 / TemariKai beginner: enter ~5 mm from the pole; first outer stitch
- * sits just below the pin ⅓ up from the equator. Later rounds pack *parallel*
- * to that V (GT14: "laying thread parallel to first round"). Both ends of
- * the flank step one pearl #5. Ozaki's ~2 mm is the volume of the turn at
- * the point — not a wider V, which made the side lines sit at changing
- * angles. `outer` is the first pin, not a short-V ceiling.
+ * sits just below the pin ⅓ up from the equator. Later rounds: lay the
+ * thread *parallel* to the first (GT14), inner one pearl #5 below, outer
+ * Ozaki ~2 mm below the previous point so the turn lays flat. Work toward
+ * the equator. `outer` is the first pin, not a short-V ceiling.
  * Default wanted is 3 kai (tests); studio starts at 1; title uses "fit".
  */
 export function kikuSpec(
@@ -411,7 +410,7 @@ export function kikuSpec(
   // Room for a thin maki obi. GT14 works toward the equator, not past it.
   const ceiling = Math.min(Math.PI / 2 - unitFromMm(8), Math.PI * 0.49);
   const vDepth = Math.max(pitch, outer - inner);
-  const packed = 1 + Math.floor(Math.max(0, ceiling - outer) / Math.max(pitch, 1e-9));
+  const packed = 1 + Math.floor(Math.max(0, ceiling - outer) / Math.max(stretch, 1e-9));
   const fit = Math.max(1, packed);
   const rounds =
     wanted === "fit" ? fit : Math.max(1, Math.min(fit, Math.round(wanted)));
@@ -450,13 +449,84 @@ export function kikuThetas(
 ) {
   const ceiling = spec.ceiling ?? Math.min(Math.PI / 2 - unitFromMm(8), Math.PI * 0.49);
   const tInner = spec.inner + ring * spec.pitch;
-  const tOuter = Math.min(ceiling, spec.outer + ring * spec.pitch);
+  const tOuter = Math.min(ceiling, spec.outer + ring * spec.stretch);
   return { tInner, tOuter };
+}
+
+function offsetBy(p: Vec3, n: Vec3, delta: number): Vec3 {
+  const c = Math.cos(delta);
+  const s = Math.sin(delta);
+  return normalize([
+    p[0] * c + n[0] * s,
+    p[1] * c + n[1] * s,
+    p[2] * c + n[2] * s,
+  ]);
+}
+
+function offsetAxis(a: Vec3, b: Vec3, pole: Vec3): Vec3 {
+  const n = normalize(cross(a, b));
+  const mid = slerp3(a, b, 0.5);
+  const plus = offsetBy(mid, n, 0.02);
+  const th = (p: Vec3) =>
+    Math.acos(Math.min(1, Math.max(-1, dot(normalize(pole), p))));
+  return th(plus) > th(mid) ? n : [-n[0], -n[1], -n[2]];
+}
+
+function ease01(t: number) {
+  const x = Math.min(1, Math.max(0, t));
+  return x * x * (3 - 2 * x);
+}
+
+/**
+ * One kiku flank. Marks sit on meridians (inner + 1 thread, outer + Ozaki
+ * 2 mm). The lay between them is a parallel offset of the first V — "lay
+ * the thread parallel to the first round" — so the sides don't fan. The
+ * extra at the point is a short turn, not a new angle for the whole petal.
+ */
+export function kikuFlank(
+  pole: Vec3,
+  spec: {
+    inner: number;
+    outer: number;
+    pitch: number;
+    stretch: number;
+    ceiling?: number;
+  },
+  ring: number,
+  phiInner: number,
+  phiOuter: number,
+): { a: Vec3; b: Vec3; via: Vec3[] } {
+  const { tInner, tOuter } = kikuThetas(spec, ring);
+  const a = around(pole, tInner, phiInner);
+  const b = around(pole, tOuter, phiOuter);
+  if (ring <= 0) return { a, b, via: [] };
+  const a0 = around(pole, spec.inner, phiInner);
+  const b0 = around(pole, spec.outer, phiOuter);
+  const n = offsetAxis(a0, b0, pole);
+  const delta = ring * spec.pitch;
+  const segs = 16;
+  const via: Vec3[] = [];
+  for (let i = 1; i < segs; i++) {
+    const t = i / segs;
+    const off = offsetBy(slerp3(a0, b0, t), n, delta);
+    const along = slerp3(a, b, t);
+    const w = ease01(t / 0.08) * ease01((1 - t) / 0.07);
+    via.push(slerp3(along, off, w));
+  }
+  return { a, b, via };
 }
 
 function kikuPetal(
   pole: Vec3,
-  spec: { inner: number; outer: number; pitch: number; stretch: number; vDepth: number; rounds: number },
+  spec: {
+    inner: number;
+    outer: number;
+    pitch: number;
+    stretch: number;
+    vDepth: number;
+    rounds: number;
+    ceiling?: number;
+  },
   ring: number,
   sector: number,
   n: number,
@@ -469,33 +539,33 @@ function kikuPetal(
   const phi0 = step * sector;
   const phi1 = step * (sector + 1);
   const phi2 = step * (sector + 2);
-  const a = around(pole, tInner, phi0);
-  const b = around(pole, tOuter, phi1);
-  const c = around(pole, tInner, phi2);
+  const left = kikuFlank(pole, spec, ring, phi0, phi1);
+  const right = kikuFlank(pole, spec, ring, phi2, phi1);
   const cornerMm = KIKU_8_POINT.cornerMm;
   const sitInner = ring;
   const sitMid = sector % 2 === 1 ? 1 : 0;
-  // Downward V: uppers on meridians sector and sector+2, point on sector+1.
   return [
     {
       kind: "arc",
-      a,
-      b,
+      a: left.a,
+      b: left.b,
       color,
       sitA: sitInner,
       sitB: 0,
       sitMid,
-      bite: biteAcross(pole, b, cornerMm),
+      bite: biteAcross(pole, left.b, cornerMm),
+      via: left.via,
     },
     {
       kind: "arc",
-      a: b,
-      b: c,
+      a: right.b,
+      b: right.a,
       color,
       sitA: 0,
       sitB: sitInner,
       sitMid,
-      bite: biteAcross(pole, c, cornerMm),
+      bite: biteAcross(pole, right.a, cornerMm),
+      via: [...right.via].reverse(),
     },
   ];
 }
@@ -511,6 +581,7 @@ function pushKikuLeg(
   to: { line: number; t: "inner" | "outer"; at: Vec3 },
   over: number[],
   cornerMm: number,
+  via?: Vec3[],
 ): Vec3 {
   const biteMm =
     to.t === "inner" ? cornerMm * (1 + over.length) : cornerMm;
@@ -522,7 +593,7 @@ function pushKikuLeg(
     pole: poleIndex,
     color,
     mark: { line: to.line, t: to.t, at: to.at },
-    lay: { from, to: to.at },
+    lay: { from, to: to.at, via: via && via.length ? via : undefined },
     bite,
     over,
   });
@@ -571,9 +642,8 @@ export function compileKiku(
           const phi2 = step * (sector + 2);
           const line1 = (sector + 1) % n;
           const line2 = (sector + 2) % n;
-          const inner0 = around(pole, tInner, phi0);
-          const outer1 = around(pole, tOuter, phi1);
-          const inner2 = around(pole, tInner, phi2);
+          const left = kikuFlank(pole, spec, ring, phi0, phi1);
+          const right = kikuFlank(pole, spec, ring, phi2, phi1);
           cursor = pushKikuLeg(
             ops,
             pole,
@@ -581,10 +651,11 @@ export function compileKiku(
             ring,
             set,
             thread,
-            cursor ?? inner0,
-            { line: line1, t: "outer", at: outer1 },
+            cursor ?? left.a,
+            { line: line1, t: "outer", at: left.b },
             [],
             cornerMm,
+            left.via,
           );
           const over = stackOver(innerOver[line2] ?? [], crossing);
           cursor = pushKikuLeg(
@@ -595,9 +666,10 @@ export function compileKiku(
             set,
             thread,
             cursor,
-            { line: line2, t: "inner", at: inner2 },
+            { line: line2, t: "inner", at: right.a },
             over,
             cornerMm,
+            [...right.via].reverse(),
           );
           innerOver[line2]?.push(ops.length - 1);
         }
