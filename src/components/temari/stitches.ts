@@ -94,9 +94,9 @@ export function ribbonFromPoints(pts: THREE.Vector3[], width: number, closed: bo
     nrm[o + 4] = _radial.y;
     nrm[o + 5] = _radial.z;
     const v = i / Math.max(1, n - 1);
-    uv[i * 4] = v * 4;
+    uv[i * 4] = v * 1.4;
     uv[i * 4 + 1] = 0;
-    uv[i * 4 + 2] = v * 4;
+    uv[i * 4 + 2] = v * 1.4;
     uv[i * 4 + 3] = 1;
   }
 
@@ -125,7 +125,7 @@ function arcRibbon(a: THREE.Vector3, b: THREE.Vector3, width: number) {
 
 export function getYarnTexture() {
   if (yarn) return yarn;
-  yarn = makeYarnTexture(true);
+  yarn = makeYarnTexture(false);
   return yarn;
 }
 
@@ -141,34 +141,30 @@ let wrapYarn: THREE.CanvasTexture | null = null;
 
 function makeYarnTexture(fadeEdges: boolean) {
   const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 24;
+  canvas.width = 64;
+  canvas.height = 16;
   const ctx = canvas.getContext("2d");
   const tex = new THREE.CanvasTexture(canvas);
   if (!ctx) return tex;
-  ctx.fillStyle = "#d9cfc4";
-  ctx.fillRect(0, 0, 128, 24);
-  for (let s = 0; s < 6; s++) {
-    const y = 3 + s * 3.2;
-    ctx.strokeStyle = s % 2 === 0 ? "rgba(48,40,34,0.22)" : "rgba(255,252,246,0.4)";
-    ctx.lineWidth = 1.15;
+  ctx.fillStyle = "#e8e0d6";
+  ctx.fillRect(0, 0, 64, 16);
+  ctx.strokeStyle = "rgba(40,34,28,0.12)";
+  ctx.lineWidth = 1;
+  for (const y of [5, 11]) {
     ctx.beginPath();
-    for (let x = 0; x <= 128; x += 4) {
-      const yy = y + Math.sin((x / 128) * Math.PI * 6 + s) * 1.1;
-      if (x === 0) ctx.moveTo(x, yy);
-      else ctx.lineTo(x, yy);
-    }
+    ctx.moveTo(0, y);
+    ctx.lineTo(64, y);
     ctx.stroke();
   }
   if (fadeEdges) {
-    const fade = ctx.createLinearGradient(0, 0, 0, 24);
-    fade.addColorStop(0, "rgba(255,255,255,0)");
-    fade.addColorStop(0.18, "rgba(255,255,255,1)");
-    fade.addColorStop(0.82, "rgba(255,255,255,1)");
-    fade.addColorStop(1, "rgba(255,255,255,0)");
+    const fade = ctx.createLinearGradient(0, 0, 0, 16);
+    fade.addColorStop(0, "rgba(255,255,255,0.35)");
+    fade.addColorStop(0.22, "rgba(255,255,255,1)");
+    fade.addColorStop(0.78, "rgba(255,255,255,1)");
+    fade.addColorStop(1, "rgba(255,255,255,0.35)");
     ctx.globalCompositeOperation = "destination-in";
     ctx.fillStyle = fade;
-    ctx.fillRect(0, 0, 128, 24);
+    ctx.fillRect(0, 0, 64, 16);
   }
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.ClampToEdgeWrapping;
@@ -216,15 +212,7 @@ export function createMotifGeometry(
         vec(stitch.b, lift),
       ];
       parts.push(geodesicRibbon(path, width));
-      if (stitch.bite) {
-        parts.push(
-          arcRibbon(
-            vec(stitch.bite.enter, lift - 0.0014),
-            vec(stitch.bite.exit, lift - 0.0014),
-            width * 0.82,
-          ),
-        );
-      }
+      // Bite scoops under the jiwari — not a hashed bar on the surface.
     } else {
       parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, lift)), width * 1.08, true));
     }

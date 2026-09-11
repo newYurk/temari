@@ -384,14 +384,8 @@ export function kikuRecipe(division: Division): PatternRecipe | null {
   return division === "simple" ? KIKU_8_POINT : null;
 }
 
-function kikuColor(ring: number, base = 0) {
-  const start = ((base % COLOR_COUNT) + COLOR_COUNT) % COLOR_COUNT;
-  if (ring % 2 === 0) return start;
-  for (let k = 1; k < COLOR_COUNT; k++) {
-    const c = (start + k) % COLOR_COUNT;
-    if (c !== 2) return c;
-  }
-  return (start + 1) % COLOR_COUNT;
+function kikuColor(_ring: number, base = 0) {
+  return ((base % COLOR_COUNT) + COLOR_COUNT) % COLOR_COUNT;
 }
 
 function kikuThetas(
@@ -452,17 +446,17 @@ function pushKikuLeg(
     pole: poleIndex,
     color,
     mark: { line: to.line, t: to.t, at: to.at },
-    lay: { from, to: bite.enter, via },
+    lay: { from, to: to.at, via },
     bite,
     over,
   });
-  return bite.exit;
+  return to.at;
 }
 
 /**
  * Compile the 8-point kiku recipe to KagariOp[].
  * One op = one chidori leg: lay on the mari, bite across the destination mark.
- * `color` is the player's thread for kai 0; later kais follow the recipe cycle.
+ * `color` is the player's thread for every kai until they pick another.
  */
 export function compileKiku(
   division: Division,

@@ -134,7 +134,7 @@ export function uwagakeVia(
   const p = normalize(pole);
   const m = normalize(inner);
   const theta = Math.acos(Math.min(1, Math.max(-1, dot(p, m))));
-  const back = Math.min(theta * 0.72, pitch * (stacked - 0.12));
+  const back = Math.min(theta * 0.28, pitch * 1.05);
   const t = Math.max(unitFromMm(STITCH_THREAD_MM.pearl5), theta - back);
   if (t >= theta - 1e-4) return null;
   const radial = normalize([m[0] - p[0] * dot(p, m), m[1] - p[1] * dot(p, m), m[2] - p[2] * dot(p, m)]);

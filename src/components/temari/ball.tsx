@@ -71,7 +71,7 @@ function ThreadLayer({
               color={colors[i]}
               roughness={threadRoughness(kind)}
               metalness={threadMetalness(kind)}
-              transparent
+              transparent={opacity < 1}
               opacity={opacity}
               depthWrite={opacity >= 1}
               side={THREE.DoubleSide}

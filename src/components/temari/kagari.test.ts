@@ -121,15 +121,11 @@ describe("kagari recipe atom", () => {
     assert.ok(d > spec.pitch + spec.stretch * 0.8, `outer step ${d} includes stretch`);
   });
 
-  it("player color is kai 0; later kais follow the recipe cycle", () => {
+  it("player color is every kai until they pick another", () => {
     const a = compileKiku("simple", "out", "even", 0, 0);
-    const b = compileKiku("simple", "out", "even", 0, 1);
-    assert.equal(a[0]?.color, 0);
-    assert.equal(b[0]?.color, 1);
-    const kai1a = a.find((op) => op.kai === 1);
-    const kai1b = b.find((op) => op.kai === 1);
-    assert.equal(kai1a?.color, 1);
-    assert.equal(kai1b?.color, 3);
+    const b = compileKiku("simple", "out", "even", 0, 4);
+    assert.ok(a.every((op) => op.color === 0));
+    assert.ok(b.every((op) => op.color === 4));
   });
 
   it("both sets of kai 0 make 8 inner and 8 outer marks — the star with diamonds", () => {
