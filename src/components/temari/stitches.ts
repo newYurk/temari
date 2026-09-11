@@ -189,6 +189,15 @@ export function createMotifGeometry(
     const lift = stitch.lift ?? 0;
     if (stitch.kind === "arc") {
       parts.push(arcRibbon(vec(stitch.a, lift), vec(stitch.b, lift), width));
+      if (stitch.bite) {
+        parts.push(
+          arcRibbon(
+            vec(stitch.bite.enter, lift + 0.0016),
+            vec(stitch.bite.exit, lift + 0.0016),
+            width * 0.9,
+          ),
+        );
+      }
     } else {
       parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, lift)), width * 1.08, true));
     }

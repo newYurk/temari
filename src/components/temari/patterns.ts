@@ -1,5 +1,6 @@
 import { polePositions, type Division } from "./division.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
+import { biteAcross, type KagariOp } from "./kagari.ts";
 
 export type KikuSlot = { pole: number; ring: number; sector: number };
 
@@ -10,7 +11,14 @@ export type MotifId = "none" | "kiku" | "hoshi" | "hishi" | "obi";
 export type Vec3 = [number, number, number];
 
 export type Stitch =
-  | { kind: "arc"; a: Vec3; b: Vec3; color: number; lift?: number }
+  | {
+      kind: "arc";
+      a: Vec3;
+      b: Vec3;
+      color: number;
+      lift?: number;
+      bite?: { enter: Vec3; exit: Vec3 };
+    }
   | { kind: "loop"; points: Vec3[]; color: number; lift?: number };
 
 export const MOTIF_META: Record<MotifId, { label: string; hint: string }> = {
@@ -377,24 +385,117 @@ function kikuPetal(
   const phi1 = step * (sector + 1);
   const phi2 = step * (sector + 2);
   const lift = 0.003 + ring * 0.0005;
+  const a = around(pole, tInner, phi0);
+  const b = around(pole, tOuter, phi1);
+  const c = around(pole, tInner, phi2);
   // Downward V: uppers on meridians sector and sector+2, point on sector+1.
-  // Two legs = ёлочка in both directions for this petal of one set.
   return [
-    {
-      kind: "arc",
-      a: around(pole, tInner, phi0),
-      b: around(pole, tOuter, phi1),
-      color,
-      lift,
-    },
-    {
-      kind: "arc",
-      a: around(pole, tOuter, phi1),
-      b: around(pole, tInner, phi2),
-      color,
-      lift,
-    },
+    { kind: "arc", a, b, color, lift, bite: biteAcross(pole, b) },
+    { kind: "arc", a: b, b: c, color, lift, bite: biteAcross(pole, c) },
   ];
+}
+
+function pushKikuLeg(
+  ops: KagariOp[],
+  pole: Vec3,
+  poleIndex: number,
+  kai: number,
+  set: 0 | 1,
+  color: number,
+  from: { line: number; t: "inner" | "outer"; at: Vec3 },
+  to: { line: number; t: "inner" | "outer"; at: Vec3 },
+  over: number[],
+) {
+  ops.push({
+    i: ops.length,
+    kai,
+    set,
+    pole: poleIndex,
+    color,
+    mark: { line: to.line, t: to.t, at: to.at },
+    lay: { from: from.at, to: to.at },
+    bite: biteAcross(pole, to.at),
+    over,
+  });
+}
+
+/**
+ * Compile the 8-point kiku recipe to KagariOp[].
+ * One op = one chidori leg: lay on the mari, bite across the destination mark.
+ */
+export function compileKiku(
+  division: Division,
+  dir: KagariDir = "out",
+  spacing: KagariSpacing = "even",
+  which: number | "all" = "all",
+): KagariOp[] {
+  const n = petalCount(division);
+  const spec = kikuSpec(division, spacing);
+  const skip = kikuSkip(n);
+  const rings = Array.from({ length: spec.rounds }, (_, i) => i);
+  if (dir === "in") rings.reverse();
+  const ops: KagariOp[] = [];
+  const step = (2 * Math.PI) / n;
+  for (const { index: poleIndex, pole } of kagariPolesToSew(division, which)) {
+    const innerOver: number[][] = Array.from({ length: n }, () => []);
+    for (const ring of rings) {
+      const color = kikuColor(ring);
+      const tInner = spec.inner + ring * spec.pitch;
+      const tOuter = spec.outer + ring * spec.pitch;
+      if (tOuter >= Math.PI * 0.49 || tInner >= tOuter - spec.pitch * 0.4) continue;
+      for (let pass = 0; pass < skip; pass++) {
+        const set = (pass === 0 ? 0 : 1) as 0 | 1;
+        for (let sector = 0; sector < n; sector++) {
+          if (sector % skip !== pass) continue;
+          const phi0 = step * sector;
+          const phi1 = step * (sector + 1);
+          const phi2 = step * (sector + 2);
+          const line0 = sector % n;
+          const line1 = (sector + 1) % n;
+          const line2 = (sector + 2) % n;
+          const inner0 = around(pole, tInner, phi0);
+          const outer1 = around(pole, tOuter, phi1);
+          const inner2 = around(pole, tInner, phi2);
+          pushKikuLeg(
+            ops,
+            pole,
+            poleIndex,
+            ring,
+            set,
+            color,
+            { line: line0, t: "inner", at: inner0 },
+            { line: line1, t: "outer", at: outer1 },
+            [],
+          );
+          const over = innerOver[line2] ? [...innerOver[line2]] : [];
+          pushKikuLeg(
+            ops,
+            pole,
+            poleIndex,
+            ring,
+            set,
+            color,
+            { line: line1, t: "outer", at: outer1 },
+            { line: line2, t: "inner", at: inner2 },
+            over,
+          );
+          innerOver[line2]?.push(ops.length - 1);
+        }
+      }
+    }
+  }
+  return ops;
+}
+
+export function stitchesFromOps(ops: KagariOp[]): Stitch[] {
+  return ops.map((op) => ({
+    kind: "arc" as const,
+    a: op.lay.from,
+    b: op.lay.to,
+    color: op.color,
+    lift: 0.003 + op.kai * 0.0005 + (op.over.length > 0 ? 0.0008 : 0),
+    bite: op.bite,
+  }));
 }
 
 function kiku(
@@ -403,7 +504,7 @@ function kiku(
   spacing: KagariSpacing = "even",
   which: number | "all" = "all",
 ): Stitch[] {
-  return stitchesFromSewn(division, fillKikuSewn(division, dir, spacing, which));
+  return stitchesFromOps(compileKiku(division, dir, spacing, which));
 }
 
 function hoshi(division: Division, dir: KagariDir = "out", which: number | "all" = "all"): Stitch[] {
