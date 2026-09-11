@@ -177,6 +177,27 @@ function makeYarnTexture(fadeEdges: boolean) {
   return tex;
 }
 
+function geodesicRibbon(points: THREE.Vector3[], width: number) {
+  if (points.length < 2) return new THREE.BufferGeometry();
+  if (points.length === 2) {
+    const a = points[0];
+    const b = points[1];
+    if (!a || !b) return new THREE.BufferGeometry();
+    return arcRibbon(a, b, width);
+  }
+  const pts: THREE.Vector3[] = [];
+  for (let s = 0; s < points.length - 1; s++) {
+    const a = points[s];
+    const b = points[s + 1];
+    if (!a || !b) continue;
+    const start = s === 0 ? 0 : 1;
+    for (let i = start; i <= ARC_SEGS; i++) {
+      pts.push(slerp(a, b, i / ARC_SEGS, _a).clone());
+    }
+  }
+  return ribbonFromPoints(pts, width, false);
+}
+
 export function createMotifGeometry(
   stitches: Stitch[],
   colorIndex: number,
@@ -188,13 +209,19 @@ export function createMotifGeometry(
     if (stitch.color !== colorIndex) continue;
     const lift = stitch.lift ?? 0;
     if (stitch.kind === "arc") {
-      parts.push(arcRibbon(vec(stitch.a, lift), vec(stitch.b, lift), width));
+      const via = stitch.via ?? [];
+      const path = [
+        vec(stitch.a, lift + (via.length ? 0.0012 : 0)),
+        ...via.map((p) => vec(p, lift + 0.0024)),
+        vec(stitch.b, lift),
+      ];
+      parts.push(geodesicRibbon(path, width));
       if (stitch.bite) {
         parts.push(
           arcRibbon(
-            vec(stitch.bite.enter, lift + 0.0016),
-            vec(stitch.bite.exit, lift + 0.0016),
-            width * 0.9,
+            vec(stitch.bite.enter, lift - 0.0014),
+            vec(stitch.bite.exit, lift - 0.0014),
+            width * 0.82,
           ),
         );
       }

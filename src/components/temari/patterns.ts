@@ -1,6 +1,6 @@
 import { polePositions, type Division } from "./division.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
-import { biteAcross, stackOver, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
+import { biteAcross, stackOver, uwagakeVia, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
 
 export type KikuSlot = { pole: number; ring: number; sector: number };
 
@@ -18,6 +18,7 @@ export type Stitch =
       color: number;
       lift?: number;
       bite?: { enter: Vec3; exit: Vec3 };
+      via?: Vec3[];
     }
   | { kind: "loop"; points: Vec3[]; color: number; lift?: number };
 
@@ -348,45 +349,64 @@ function starSkip(division: Division) {
 /**
  * Upper marks sit ~1 cm from the pole (Barbara / TemariKai beginner).
  * Lower of round 0: recipe.outerFromEquator of the pole–equator path, up from the equator.
- * Next rounds sit parallel, one thread-width toward the equator (uwagake).
- * cornerMm is the bite across the mark, not a second pitch.
+ * Next rounds: inner moves one thread toward the equator (parallel).
+ * Outer moves one thread plus cornerMm so the V point stays sharp (растяжка).
  */
 export function kikuSpec(division: Division, spacing: KagariSpacing = "even") {
   const recipe = kikuRecipe(division);
   const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
+  const stretch = unitFromMm(recipe?.cornerMm ?? STITCH_THREAD_MM.pearl5);
   const inner = unitFromMm(recipe?.innerMm ?? 10);
   const outer = recipe
     ? (Math.PI / 2) * (1 - recipe.outerFromEquator)
     : division === "c8"
       ? Math.PI / 4
       : 0.52;
-  const room = Math.max(pitch, Math.PI / 2 - 0.1 - outer);
-  const fit = Math.max(2, Math.floor(room / pitch));
+  const stepOut = pitch + stretch;
+  const room = Math.max(stepOut, Math.PI / 2 - 0.08 - outer);
+  const fit = Math.max(2, Math.floor(room / stepOut));
   const density = KAGARI_SPACING_META[spacing].density;
-  const rounds = Math.max(2, Math.min(fit, Math.round(2 + density * 12)));
-  return { inner, outer, pitch, rounds, sets: recipe?.sets ?? kikuSkip(petalCount(division)), recipe };
+  const rounds = Math.max(2, Math.min(fit, Math.round(2 + density * 8)));
+  return {
+    inner,
+    outer,
+    pitch,
+    stretch,
+    rounds,
+    sets: recipe?.sets ?? kikuSkip(petalCount(division)),
+    recipe,
+  };
 }
 
 export function kikuRecipe(division: Division): PatternRecipe | null {
   return division === "simple" ? KIKU_8_POINT : null;
 }
 
-function kikuColor(ring: number) {
-  const cycle = [1, 2, 1, 3, 1, 2, 1];
-  return cycle[ring % cycle.length] ?? 1;
+function kikuColor(ring: number, base = 0) {
+  const cycle = [0, 1, 0, 2, 0, 1, 0];
+  return (base + (cycle[ring % cycle.length] ?? 0)) % 4;
+}
+
+function kikuThetas(
+  spec: { inner: number; outer: number; pitch: number; stretch: number },
+  ring: number,
+) {
+  return {
+    tInner: spec.inner + ring * spec.pitch,
+    tOuter: spec.outer + ring * (spec.pitch + spec.stretch),
+  };
 }
 
 function kikuPetal(
   pole: Vec3,
-  spec: { inner: number; outer: number; pitch: number; rounds: number },
+  spec: { inner: number; outer: number; pitch: number; stretch: number; rounds: number },
   ring: number,
   sector: number,
   n: number,
   color: number,
 ): Stitch[] {
   if (ring < 0) return [];
-  const tInner = spec.inner + ring * spec.pitch;
-  const tOuter = spec.outer + ring * spec.pitch;
+  const { tInner, tOuter } = kikuThetas(spec, ring);
   if (tOuter >= Math.PI * 0.49 || tInner >= tOuter - spec.pitch * 0.4) return [];
   const step = (2 * Math.PI) / n;
   const phi0 = step * sector;
@@ -411,11 +431,13 @@ function pushKikuLeg(
   kai: number,
   set: 0 | 1,
   color: number,
-  from: { line: number; t: "inner" | "outer"; at: Vec3 },
+  from: Vec3,
   to: { line: number; t: "inner" | "outer"; at: Vec3 },
   over: number[],
   cornerMm: number,
-) {
+  via: Vec3[] | undefined,
+): Vec3 {
+  const bite = biteAcross(pole, to.at, cornerMm);
   ops.push({
     i: ops.length,
     kai,
@@ -423,21 +445,24 @@ function pushKikuLeg(
     pole: poleIndex,
     color,
     mark: { line: to.line, t: to.t, at: to.at },
-    lay: { from: from.at, to: to.at },
-    bite: biteAcross(pole, to.at, cornerMm),
+    lay: { from, to: bite.enter, via },
+    bite,
     over,
   });
+  return bite.exit;
 }
 
 /**
  * Compile the 8-point kiku recipe to KagariOp[].
  * One op = one chidori leg: lay on the mari, bite across the destination mark.
+ * `color` is the player's thread for kai 0; later kais follow the recipe cycle.
  */
 export function compileKiku(
   division: Division,
   dir: KagariDir = "out",
   spacing: KagariSpacing = "even",
   which: number | "all" = "all",
+  color = 0,
 ): KagariOp[] {
   const n = petalCount(division);
   const spec = kikuSpec(division, spacing);
@@ -452,47 +477,49 @@ export function compileKiku(
   for (const { index: poleIndex, pole } of kagariPolesToSew(division, which)) {
     const innerOver: number[][] = Array.from({ length: n }, () => []);
     for (const ring of rings) {
-      const color = kikuColor(ring);
-      const tInner = spec.inner + ring * spec.pitch;
-      const tOuter = spec.outer + ring * spec.pitch;
+      const thread = kikuColor(ring, color);
+      const { tInner, tOuter } = kikuThetas(spec, ring);
       if (tOuter >= Math.PI * 0.49 || tInner >= tOuter - spec.pitch * 0.4) continue;
       for (let pass = 0; pass < skip; pass++) {
         const set = (pass === 0 ? 0 : 1) as 0 | 1;
+        let cursor: Vec3 | null = null;
         for (let sector = 0; sector < n; sector++) {
           if (sector % skip !== pass) continue;
           const phi0 = step * sector;
           const phi1 = step * (sector + 1);
           const phi2 = step * (sector + 2);
-          const line0 = sector % n;
           const line1 = (sector + 1) % n;
           const line2 = (sector + 2) % n;
           const inner0 = around(pole, tInner, phi0);
           const outer1 = around(pole, tOuter, phi1);
           const inner2 = around(pole, tInner, phi2);
-          pushKikuLeg(
+          cursor = pushKikuLeg(
             ops,
             pole,
             poleIndex,
             ring,
             set,
-            color,
-            { line: line0, t: "inner", at: inner0 },
+            thread,
+            cursor ?? inner0,
             { line: line1, t: "outer", at: outer1 },
             [],
             cornerMm,
+            undefined,
           );
           const over = stackOver(innerOver[line2] ?? [], crossing);
-          pushKikuLeg(
+          const viaPt = uwagakeVia(pole, inner2, over.length, spec.pitch);
+          cursor = pushKikuLeg(
             ops,
             pole,
             poleIndex,
             ring,
             set,
-            color,
-            { line: line1, t: "outer", at: outer1 },
+            thread,
+            cursor,
             { line: line2, t: "inner", at: inner2 },
             over,
             cornerMm,
+            viaPt ? [viaPt] : undefined,
           );
           innerOver[line2]?.push(ops.length - 1);
         }
@@ -508,8 +535,9 @@ export function stitchesFromOps(ops: KagariOp[]): Stitch[] {
     a: op.lay.from,
     b: op.lay.to,
     color: op.color,
-    lift: 0.003 + op.kai * 0.0005 + (op.over.length > 0 ? 0.0008 : 0),
+    lift: 0.003 + op.kai * 0.00055 + op.over.length * 0.0007,
     bite: op.bite,
+    via: op.lay.via,
   }));
 }
 
@@ -518,8 +546,9 @@ function kiku(
   dir: KagariDir = "out",
   spacing: KagariSpacing = "even",
   which: number | "all" = "all",
+  color = 0,
 ): Stitch[] {
-  return stitchesFromOps(compileKiku(division, dir, spacing, which));
+  return stitchesFromOps(compileKiku(division, dir, spacing, which, color));
 }
 
 function hoshi(division: Division, dir: KagariDir = "out", which: number | "all" = "all"): Stitch[] {
@@ -625,8 +654,9 @@ export function generateMotif(
   dir: KagariDir = "out",
   spacing: KagariSpacing = "even",
   which: number | "all" = "all",
+  color = 0,
 ): Stitch[] {
-  if (motif === "kiku") return kiku(division, dir, spacing, which);
+  if (motif === "kiku") return kiku(division, dir, spacing, which, color);
   if (motif === "hoshi") return hoshi(division, dir, which);
   if (motif === "hishi") return hishi(division, dir, which);
   if (motif === "obi") return obi(division, dir);
@@ -640,8 +670,9 @@ export function motifStitchPlan(
   dir: KagariDir = "out",
   spacing: KagariSpacing = "even",
   which: number | "all" = "all",
+  color = 0,
 ): Stitch[] {
-  return generateMotif(division, motif, dir, spacing, which);
+  return generateMotif(division, motif, dir, spacing, which, color);
 }
 
 /** Pole the mari should face while this stitch is laid. Obi stays equator-on. */

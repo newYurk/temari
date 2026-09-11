@@ -140,7 +140,7 @@ describe("kiku on Simple 8", () => {
     assert.ok(south.every((e) => e.key.startsWith("1:")));
   });
 
-  it("later rounds sit parallel, not shrinking onto the pole", () => {
+  it("later rounds move out; outer drops extra (stretch)", () => {
     const pole: [number, number, number] = [0, 1, 0];
     const a = stitchesForSlot("simple", { pole: 0, ring: 0, sector: 0 }, 1)[0];
     const b = stitchesForSlot("simple", { pole: 0, ring: 3, sector: 0 }, 1)[0];
@@ -152,6 +152,9 @@ describe("kiku on Simple 8", () => {
     const bOut = Math.max(polar(pole, b.a).theta, polar(pole, b.b).theta);
     assert.ok(bIn > aIn + 0.02, "inner moves out with the round");
     assert.ok(bOut > aOut + 0.02, "outer moves toward the equator");
-    assert.ok(Math.abs(bOut - bIn - (aOut - aIn)) < 0.05, "span stays parallel");
+    assert.ok(
+      bOut - aOut > bIn - aIn + 0.02,
+      "outer drops extra (растяжка) so the V point stays sharp",
+    );
   });
 });

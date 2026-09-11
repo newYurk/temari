@@ -1,4 +1,4 @@
-import { unitFromMm } from "./measure.ts";
+import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 
 type Vec3 = [number, number, number];
 
@@ -22,7 +22,11 @@ export type PatternRecipe = {
   /** Fraction of pole–equator measured up from the equator. */
   outerFromEquator: number;
   crossing: Crossing;
-  /** Bite width across the mark. Also the extra drop at the lower V so it stays sharp. */
+  /**
+   * Bite width across the mark, millimetres on the mari.
+   * The same length is the extra drop at the lower V each round so the point stays sharp.
+   * (Pearl #5 is ~0.7 mm; 2 mm is a few threads, as TemariKai "drop a little" at the point.)
+   */
   cornerMm: number;
 };
 
@@ -58,7 +62,7 @@ export type KagariOp = {
   pole: number;
   color: number;
   mark: KagariMark;
-  lay: { from: Vec3; to: Vec3 };
+  lay: { from: Vec3; to: Vec3; via?: Vec3[] };
   bite: KagariBite;
   /** Previous ops this bite goes over (uwagake at the pole). */
   over: number[];
@@ -79,6 +83,10 @@ function cross(a: Vec3, b: Vec3): Vec3 {
     a[2] * b[0] - a[0] * b[2],
     a[0] * b[1] - a[1] * b[0],
   ];
+}
+
+function dot(a: Vec3, b: Vec3) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
 /**
@@ -109,4 +117,32 @@ export function stackOver(previous: number[], crossing: Crossing): number[] {
   if (crossing === "under" || previous.length === 0) return [];
   if (crossing === "over-1") return previous.slice(-1);
   return [...previous];
+}
+
+/**
+ * Uwagake at the pole: the working thread goes *over* the already-sewn bundle
+ * on this meridian, closer to the pole than the new inner bite, then scoops.
+ * That is the V opening — the needle's eye clearing the stack — not a new ray.
+ */
+export function uwagakeVia(
+  pole: Vec3,
+  inner: Vec3,
+  stacked: number,
+  pitch: number,
+): Vec3 | null {
+  if (stacked <= 0) return null;
+  const p = normalize(pole);
+  const m = normalize(inner);
+  const theta = Math.acos(Math.min(1, Math.max(-1, dot(p, m))));
+  const back = Math.min(theta * 0.72, pitch * (stacked - 0.12));
+  const t = Math.max(unitFromMm(STITCH_THREAD_MM.pearl5), theta - back);
+  if (t >= theta - 1e-4) return null;
+  const radial = normalize([m[0] - p[0] * dot(p, m), m[1] - p[1] * dot(p, m), m[2] - p[2] * dot(p, m)]);
+  const ct = Math.cos(t);
+  const st = Math.sin(t);
+  return normalize([
+    p[0] * ct + radial[0] * st,
+    p[1] * ct + radial[1] * st,
+    p[2] * ct + radial[2] * st,
+  ]);
 }

@@ -631,7 +631,15 @@ export const useTemari = create<TemariState>((set, get) => ({
   },
 
   setColor: (index) => {
-    set({ selectedColor: Math.min(3, Math.max(0, index)) });
+    const selectedColor = Math.min(3, Math.max(0, index));
+    const state = get();
+    const plan =
+      state.motif === "kiku" && state.kagariPlan.length > 0
+        ? state.kagariPlan.map((stitch, i) =>
+            i >= state.kagariLaid ? { ...stitch, color: selectedColor } : stitch,
+          )
+        : state.kagariPlan;
+    set({ selectedColor, kagariPlan: plan });
     rememberStudio(get());
   },
   setWrapColor: (index) => {
@@ -926,6 +934,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       state.kagariDir,
       state.kagariSpacing,
       which,
+      state.selectedColor,
     );
     const prev = [...state.kagariKept, ...state.kagariPlan.slice(0, state.kagariLaid)];
     const kept =

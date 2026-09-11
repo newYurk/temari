@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { biteAcross, KIKU_8_POINT, stackOver } from "./kagari.ts";
+import { biteAcross, KIKU_8_POINT, stackOver, uwagakeVia } from "./kagari.ts";
 import { compileKiku, fillKikuSewn, kikuSpec, stitchesFromOps } from "./patterns.ts";
 import { unitFromMm } from "./measure.ts";
 
@@ -85,5 +85,50 @@ describe("kagari recipe atom", () => {
       assert.ok(stitch.bite);
       assert.ok(dist(stitch.a, stitch.b) > 0.4);
     }
+  });
+
+  it("uwagake via sits closer to the pole than the inner bite", () => {
+    const pole: [number, number, number] = [0, 1, 0];
+    const inner: [number, number, number] = [0, Math.cos(0.4), -Math.sin(0.4)];
+    const via = uwagakeVia(pole, inner, 2, 0.02);
+    assert.ok(via);
+    if (!via) return;
+    assert.ok(via[1] > inner[1], "via is higher / closer to +Y pole");
+    const kai0 = compileKiku("simple", "out", "even", 0).filter(
+      (op) => op.kai === 0 && op.mark.t === "inner",
+    );
+    assert.ok(kai0.every((op) => !op.lay.via || op.lay.via.length === 0));
+    const later = compileKiku("simple", "out", "even", 0).filter(
+      (op) => op.kai > 0 && op.mark.t === "inner",
+    );
+    assert.ok(later.length > 0);
+    assert.ok(
+      later.every((op) => op.lay.via && op.lay.via.length === 1),
+      "later inner legs hook over the bundle",
+    );
+  });
+
+  it("outer of later kai drops extra so the V point stretches", () => {
+    const pole: [number, number, number] = [0, 1, 0];
+    const spec = kikuSpec("simple", "even");
+    const ops = compileKiku("simple", "out", "even", 0);
+    const outer0 = ops.find((op) => op.kai === 0 && op.mark.t === "outer");
+    const outer1 = ops.find((op) => op.kai === 1 && op.mark.t === "outer");
+    assert.ok(outer0 && outer1);
+    if (!outer0 || !outer1) return;
+    const th = (p: [number, number, number]) => Math.acos(Math.min(1, Math.max(-1, p[1])));
+    const d = th(outer1.mark.at) - th(outer0.mark.at);
+    assert.ok(d > spec.pitch + spec.stretch * 0.8, `outer step ${d} includes stretch`);
+  });
+
+  it("player color is kai 0; later kais follow the recipe cycle", () => {
+    const a = compileKiku("simple", "out", "even", 0, 0);
+    const b = compileKiku("simple", "out", "even", 0, 1);
+    assert.equal(a[0]?.color, 0);
+    assert.equal(b[0]?.color, 1);
+    const kai1a = a.find((op) => op.kai === 1);
+    const kai1b = b.find((op) => op.kai === 1);
+    assert.equal(kai1a?.color, 1);
+    assert.equal(kai1b?.color, 2);
   });
 });
