@@ -320,6 +320,30 @@ export function kagariPolesToSew(
   return pole ? [{ index, pole }] : [];
 }
 
+/**
+ * After a Simple-8 kiku flower is finished, sew the other pole.
+ * Not C8's six centers — that's a different recipe.
+ */
+export function nextKagariPole(
+  division: Division,
+  motif: MotifId,
+  plan: Stitch[],
+  kept: Stitch[],
+): number | null {
+  if (motif !== "kiku" || division !== "simple") return null;
+  const poles = polePositions(division);
+  if (poles.length < 2) return null;
+  const sewn = new Set<number>();
+  for (const stitch of [...kept, ...plan]) {
+    const i = stitchPoleIndex(stitch, division, motif);
+    if (i >= 0) sewn.add(i);
+  }
+  for (let i = 0; i < poles.length; i++) {
+    if (!sewn.has(i)) return i;
+  }
+  return null;
+}
+
 export function stitchPoleIndex(
   stitch: Stitch,
   division: Division,

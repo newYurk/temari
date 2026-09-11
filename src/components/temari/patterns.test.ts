@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { fillKikuSewn, kikuSpec, stitchesForSlot, hitKikuSlot, kikuThetas, around } from "./patterns.ts";
+import { fillKikuSewn, kikuSpec, stitchesForSlot, hitKikuSlot, kikuThetas, around, nextKagariPole, compileKiku, stitchesFromOps } from "./patterns.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 
 function merPhi(p: [number, number, number]) {
@@ -138,6 +138,14 @@ describe("kiku on Simple 8", () => {
     assert.equal(south.length, per);
     assert.ok(north.every((e) => e.key.startsWith("0:")));
     assert.ok(south.every((e) => e.key.startsWith("1:")));
+  });
+
+  it("after north kiku, the next pole is south; not C8's six centers", () => {
+    const north = stitchesFromOps(compileKiku("simple", "out", "even", 0));
+    const south = stitchesFromOps(compileKiku("simple", "out", "even", 1));
+    assert.equal(nextKagariPole("simple", "kiku", north, []), 1);
+    assert.equal(nextKagariPole("simple", "kiku", south, north), null);
+    assert.equal(nextKagariPole("c8", "kiku", north, []), null);
   });
 
   it("later rounds move out; outer drops extra (stretch)", () => {

@@ -235,7 +235,7 @@ export const MOTIF_CATALOG: MotifEntry[] = [
     centers: "both-poles",
     status: "v1",
     appears: "variant-chip",
-    note: "Тот же стежок на юге. Учебный шар.",
+    note: "Тот же стежок на юге. Студия поворачивает шар после северного цветка — чип не нужен.",
   },
   {
     id: "kiku-sakasa",

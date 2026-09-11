@@ -24,6 +24,7 @@ import {
   motifStitchPlan,
   stitchFocus,
   stitchPoleIndex,
+  nextKagariPole,
   sameFocus,
   slotKey,
   type KagariDir,
@@ -972,8 +973,37 @@ export const useTemari = create<TemariState>((set, get) => ({
     if (!state.kagariPlaying) return;
     const next = state.kagariLaid + 1;
     if (next >= state.kagariPlan.length) {
-      set({ kagariLaid: state.kagariPlan.length, kagariPlaying: false });
       feel.kikuFill();
+      const nextPole = nextKagariPole(
+        state.division,
+        state.motif,
+        state.kagariPlan,
+        state.kagariKept,
+      );
+      if (nextPole == null) {
+        set({ kagariLaid: state.kagariPlan.length, kagariPlaying: false });
+        return;
+      }
+      const kept = [...state.kagariKept, ...state.kagariPlan];
+      const plan = motifStitchPlan(
+        state.division,
+        state.motif,
+        state.kagariDir,
+        state.kagariSpacing,
+        nextPole,
+        state.selectedColor,
+      );
+      const first = plan.length > 0 ? 1 : 0;
+      if (first) feel.stitch();
+      set({
+        kagariKept: kept,
+        kagariPlan: plan,
+        kagariLaid: first,
+        kagariPlaying: plan.length > first,
+        kagariFocus: stitchFocus(plan[0], state.division, state.motif),
+        facingPole: nextPole,
+        viewNonce: state.viewNonce + 1,
+      });
       return;
     }
     feel.stitch();
