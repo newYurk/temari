@@ -208,4 +208,12 @@ describe("kiku on Simple 8", () => {
     const spec = kikuSpec("simple", "even", 1);
     assert.ok(th < spec.outer * 0.65, "first corners sit near the pole, not at the obi");
   });
+
+  it("fit is a few kai so the nested flower still reads", () => {
+    const spec = kikuSpec("simple", "even", "fit");
+    assert.ok(spec.fit >= 2 && spec.fit <= 4);
+    const last = kikuThetas(spec, spec.fit - 1);
+    assert.ok(last.tOuter <= spec.outer + 1e-9, "never past the obi mark");
+    assert.ok(last.tOuter < 0.8, "max corners stay inside the disk");
+  });
 });

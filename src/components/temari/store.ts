@@ -1025,9 +1025,9 @@ export const useTemari = create<TemariState>((set, get) => ({
       }
       if (state.motif === "kiku") {
         const spec = kikuSpec(state.division, state.kagariSpacing, "fit");
-        if (state.kikuLayers < spec.fit) {
-          const nextL = state.kikuLayers + 1;
-          const onlySet = state.kagariSet;
+        if (state.kikuLayers >= spec.fit) return;
+        const nextL = state.kikuLayers + 1;
+        const extraOf = (onlySet: 0 | 1) => {
           const before = motifStitchPlan(
             state.division,
             "kiku",
@@ -1038,7 +1038,7 @@ export const useTemari = create<TemariState>((set, get) => ({
             state.kikuLayers,
             onlySet,
           ).length;
-          const grown = motifStitchPlan(
+          return motifStitchPlan(
             state.division,
             "kiku",
             state.kagariDir,
@@ -1047,19 +1047,21 @@ export const useTemari = create<TemariState>((set, get) => ({
             state.selectedColor,
             nextL,
             onlySet,
-          );
-          const extra = grown.slice(before);
-          if (extra.length === 0) return;
-          feel.stitch();
-          set({
-            kikuLayers: nextL,
-            kagariPlan: [...state.kagariPlan, ...extra],
-            kagariPlaying: true,
-            kagariFocus: stitchFocus(extra[0], state.division, "kiku"),
-          });
-          rememberStudio(get());
-          return;
-        }
+          ).slice(before);
+        };
+        // First four grow alone. After the other four, the whole flower grows.
+        const extra =
+          state.kagariSet === 1 ? [...extraOf(0), ...extraOf(1)] : extraOf(state.kagariSet);
+        if (extra.length === 0) return;
+        feel.stitch();
+        set({
+          kikuLayers: nextL,
+          kagariPlan: [...state.kagariPlan, ...extra],
+          kagariPlaying: true,
+          kagariFocus: stitchFocus(extra[0], state.division, "kiku"),
+        });
+        rememberStudio(get());
+        return;
       }
       get().startKagari();
       return;

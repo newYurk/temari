@@ -3,7 +3,7 @@ import { RotateCcw, Undo2, Pin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { THREAD_COLORS } from "./palettes";
 import { jiwariPhaseHint } from "./jiwari";
-import { kagariPhaseHint, stitchPoleIndex } from "./patterns";
+import { kagariPhaseHint, kikuSpec, stitchPoleIndex } from "./patterns";
 import { useTemari } from "./store";
 import {
   CRAFT_ACTIONS,
@@ -107,6 +107,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const kagariLaid = useTemari((s) => s.kagariLaid);
   const kagariPlan = useTemari((s) => s.kagariPlan);
   const kagariSet = useTemari((s) => s.kagariSet);
+  const kikuLayers = useTemari((s) => s.kikuLayers);
   const history = useTemari((s) => s.history);
   const sewnHistory = useTemari((s) => s.sewnHistory);
   const pinHistory = useTemari((s) => s.pinHistory);
@@ -165,6 +166,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
           kagariPlaying,
           Math.max(0, stitchPoleIndex(kagariPlan[0]!, division, motif)),
           kagariSet,
+          motif === "kiku" && kikuLayers < kikuSpec(division, kagariSpacing, "fit").fit,
         )
       : jiwariOn
         ? jiwariPhaseHint(jiwariPhase, jiwariLaid)
@@ -276,7 +278,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
                   }
                   dispatchCommand(dirAction.id);
                 }}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full text-ink"
+                className="hidden size-11 shrink-0 items-center justify-center rounded-full text-ink md:flex"
               >
                 {kagariDir === "out" ? (
                   <IconDirOut className="size-5" />
@@ -299,7 +301,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
                   }
                   dispatchCommand(spaceAction.id);
                 }}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full text-ink"
+                className="hidden size-11 shrink-0 items-center justify-center rounded-full text-ink md:flex"
               >
                 <IconDensity className="size-5" level={kagariSpacing} />
               </button>

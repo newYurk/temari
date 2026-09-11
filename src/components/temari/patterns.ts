@@ -407,7 +407,9 @@ export function kikuSpec(
   const vDepth = inner;
   const stepOut = stretch;
   const room = Math.max(0, outer - inner - vDepth);
-  const fit = Math.max(1, 1 + Math.floor(room / Math.max(stepOut, 1e-9)));
+  // Ozaki step is 2 mm; more than four nested thin-arc kai reads as a nest.
+  const packed = 1 + Math.floor(room / Math.max(stepOut, 1e-9));
+  const fit = Math.max(1, Math.min(4, packed));
   const rounds =
     wanted === "fit" ? fit : Math.max(1, Math.min(fit, Math.round(wanted)));
   return {
@@ -776,14 +778,19 @@ export function kagariPhaseHint(
   playing: boolean,
   poleIndex = 0,
   kagariSet: 0 | 1 = 0,
+  canGrow = true,
 ): string {
   if (motif === "none" || total === 0) return "";
   if (!playing && laid >= total) {
     if (motif === "kiku" && kagariSet === 0) {
-      return "Залить — дальше от полюса. Снова «Кику» — следующие 4.";
+      return canGrow
+        ? "Залить — дальше от полюса. Снова «Кику» — следующие 4."
+        : "Снова «Кику» — следующие 4.";
     }
     if (motif === "kiku") {
-      return "Залить — дальше от полюса. Другой полюс — переверните шар.";
+      return canGrow
+        ? "Залить — дальше от полюса. Другой полюс — переверните шар."
+        : "Кагари: ряд лежит. Другой полюс — переверните шар.";
     }
     return "Кагари: ряд лежит. Другой полюс — переверните шар.";
   }
