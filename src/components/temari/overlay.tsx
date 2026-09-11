@@ -167,7 +167,7 @@ function Workbench() {
         </div>
       </header>
       {mode === "kata" ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-36 z-20 px-3 md:px-8">
+        <div className="pointer-events-none absolute inset-x-0 bottom-28 z-20 px-3 md:px-8">
           <div className="pointer-events-auto mx-auto flex max-w-lg gap-1 overflow-x-auto">
             {PUZZLES.map((item, i) => (
               <button
@@ -175,7 +175,7 @@ function Workbench() {
                 type="button"
                 onClick={() => setPuzzle(i)}
                 className={cn(
-                  "min-h-8 shrink-0 rounded-full px-3 text-[0.68rem] tracking-wide ring-1",
+                  "min-h-8 shrink-0 rounded-full px-3 text-xs tracking-wide ring-1",
                   i === puzzleIndex
                     ? "bg-ink/8 text-ink ring-line-strong"
                     : "text-stone ring-line",
