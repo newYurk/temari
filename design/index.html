@@ -79,6 +79,10 @@
         margin: 1.2rem 0 0.4rem;
       }
       .grid.wide { grid-template-columns: 1fr; }
+      #motifs-corrected {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 2rem 1.5rem;
+      }
       .steps {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
@@ -123,6 +127,9 @@
       .st-part { color: #8a5a32; }
       a { color: var(--ink); }
       footer { margin-top: 3.5rem; font-size: 0.78rem; color: var(--stone); }
+      @media (max-width: 34rem) {
+        #motifs-corrected { grid-template-columns: 1fr; }
+      }
     </style>
   </head>
   <body>
@@ -1239,9 +1246,9 @@
           </tr>
           <tr>
             <td>Хиси</td>
-            <td>четырёхчастный центр или четырёхугольная грань разметки</td>
-            <td>один hishi: симметричный diamond / lozenge, обычно вытянутый ромб; не квадрат</td>
-            <td>повторять по выбранным четырёхчастным центрам только по рецепту</td>
+            <td>в примере ниже — одна из 12 четырёхчастных diamond-граней C8 рядом с 8-лучевым полюсом</td>
+            <td>один hishi по четырём углам готовой грани; квадрат вокруг 8-центра показан отдельно</td>
+            <td>конкретное размещение и повтор задаёт рецепт; hishi не обязан быть у северного полюса</td>
           </tr>
           <tr>
             <td>Оби</td>
@@ -1252,10 +1259,9 @@
         </tbody>
       </table>
       <p class="note">
-        В схемах ниже бордо — видимая рабочая нить, золото — дзивари, белое кольцо — место крошечного
-        стежка кагари. В кику тёмная линия отделяет второй непрерывный набор от первого; цвет здесь служебный.
-        Это не карта постоянных булавок. Показан один элемент; подпись отдельно говорит, где рецепт требует
-        повторить его на шаре.
+        Бордо — рабочая нить, золото — дзивари. Чёрная точка с числом — центр разметки после прихвата.
+        Белое кольцо означает указанную рецептом точку стежка; если там нужна временная булавка, подпись
+        говорит об этом прямо. Булавки не считаются постоянной частью готового узора.
       </p>
 
       <div class="grid" id="motifs-corrected">
@@ -1273,12 +1279,16 @@
               <path d="M100 36 L110 90 L164 100 L110 110 L100 164 L90 110 L36 100 L90 90 Z" transform="rotate(45 100 100)" stroke="#34302c" stroke-width="2.2" />
               <path d="M100 43 L113 87 L157 100 L113 113 L100 157 L87 113 L43 100 L87 87 Z" transform="rotate(45 100 100)" stroke="#34302c" stroke-width="1.25" />
             </g>
-            <circle cx="100" cy="36" r="3" fill="#f7f3ea" stroke="#8f3d32" stroke-width="1.5" />
-            <path d="M111 31 C122 29 132 32 138 39" fill="none" stroke="#665f58" stroke-width="0.9" />
-            <text x="142" y="42" text-anchor="end" font-size="8.5" fill="#665f58" font-family="IBM Plex Sans, sans-serif">нижняя точка</text>
+            <g fill="#f7f3ea" stroke="#8f3d32" stroke-width="1.4">
+              <circle cx="100" cy="36" r="3" /><circle cx="145.25" cy="54.75" r="3" />
+              <circle cx="164" cy="100" r="3" /><circle cx="145.25" cy="145.25" r="3" />
+              <circle cx="100" cy="164" r="3" /><circle cx="54.75" cy="145.25" r="3" />
+              <circle cx="36" cy="100" r="3" /><circle cx="54.75" cy="54.75" r="3" />
+            </g>
+            <text x="100" y="30" text-anchor="middle" font-size="8" fill="#665f58" font-family="IBM Plex Sans, sans-serif">8 булавок низа</text>
             <text x="100" y="103" text-anchor="middle" font-size="8" fill="#665f58" font-family="IBM Plex Sans, sans-serif">NP</text>
           </svg>
-          <figcaption><strong>Кику · один полюс.</strong> Не восемь отдельно замкнутых листиков: бордо — один непрерывный четырёхлучевой тидори-зигзаг, тёмный — второй такой же набор со сдвигом 45°. Их чередующиеся ряды дают восемь видимых лепестков. Кольцо — нижняя точка стежка; в учебном шаре мотив повторяют на юге.</figcaption>
+          <figcaption><strong>Кику · Simple 8, вид на NP.</strong> Восемь временных булавок стоят на меридианах в ⅓ пути вверх от экватора. Стежок берут сразу под каждой булавкой. Бордо и тёмный — два чередующихся тидори-набора; в учебном шаре всё повторяют у SP.</figcaption>
         </figure>
 
         <figure>
@@ -1297,23 +1307,32 @@
               <text x="140" y="161">3</text><text x="55" y="161">4</text><text x="29" y="81">5</text>
             </g>
           </svg>
-          <figcaption><strong>Хоси · один пятичастный центр.</strong> Не восьмилучевая `{8/3}`: в темари это пятиконечная звезда. Цифры называют точки, рабочий ход — 1→3→5→2→4→1.</figcaption>
+          <figcaption><strong>Хоси · пятичастный центр.</strong> Кольца 1–5 — точки стежка на пяти линиях, не обязательно булавки. Рабочий ход — 1→3→5→2→4→1; центр остаётся центром разметки.</figcaption>
         </figure>
 
         <figure>
-          <svg class="ball" viewBox="0 0 200 200" aria-label="Хиси: один симметричный вытянутый ромб на четырёх лучах">
+          <svg class="ball" viewBox="0 0 200 200" aria-label="Хиси: четырёхчастная diamond-грань рядом с квадратом восьмилучевого полюса C8">
             <circle cx="100" cy="100" r="78" fill="url(#g)" stroke="#0c0b09" stroke-width="1.15" />
-            <g fill="none" stroke="#9a8b6a" stroke-width="1">
-              <path d="M100 22 V178 M22 100 H178" />
+            <g fill="none" stroke="#9a8b6a" stroke-width="0.9" opacity="0.72">
+              <path d="M100 22 V178 M22 100 H178 M45 45 L155 155 M155 45 L45 155" />
+              <path d="M100 45 Q132 58 155 100 Q142 132 100 155 Q68 142 45 100 Q58 68 100 45 Z" stroke-width="1.45" />
             </g>
-            <g fill="none" stroke="#8f3d32" stroke-linejoin="round">
-              <path d="M100 78 L132 100 L100 122 L68 100 Z" stroke-width="1.35" />
-              <path d="M100 64 L150 100 L100 136 L50 100 Z" stroke-width="1.7" />
-              <path d="M100 50 L166 100 L100 150 L34 100 Z" stroke-width="2.05" />
+            <g fill="none" stroke="#9a8b6a" stroke-width="0.9">
+              <path d="M100 100 L145 52 M100 100 L145 148 M145 52 L178 100 M145 148 L178 100" />
             </g>
-            <circle cx="100" cy="78" r="3" fill="#f7f3ea" stroke="#8f3d32" stroke-width="1.4" />
+            <path d="M100 100 L145 52 L178 100 L145 148 Z" fill="none" stroke="#8f3d32" stroke-width="2.25" stroke-linejoin="round" />
+            <g fill="#f7f3ea" stroke="#8f3d32" stroke-width="1.4">
+              <circle cx="100" cy="100" r="3" /><circle cx="145" cy="52" r="3" />
+              <circle cx="178" cy="100" r="3" /><circle cx="145" cy="148" r="3" />
+            </g>
+            <circle cx="100" cy="100" r="2.3" fill="#0c0b09" />
+            <circle cx="145" cy="100" r="2.3" fill="#0c0b09" />
+            <g font-size="7.5" font-weight="600" fill="#665f58" font-family="IBM Plex Sans, sans-serif">
+              <text x="94" y="95">8</text><text x="149" y="97">4</text>
+              <text x="52" y="68">квадрат вокруг 8</text><text x="139" y="39">hishi вокруг 4</text>
+            </g>
           </svg>
-          <figcaption><strong>Хиси · один четырёхчастный центр.</strong> Симметричный diamond / lozenge: в плоской схеме — вытянутый ромб с равными сторонами и неравными углами, не квадрат. На сфере и в ракурсе проекция может визуально менять длины. Следующие круги повторяют тот же контур.</figcaption>
+          <figcaption><strong>Хиси · конкретный пример на C8.</strong> В центре вида — 8-лучевой полюс; золотистый замкнутый контур вокруг него является квадратной гранью C8. Бордо выделяет соседнюю diamond-грань вокруг 4-центра. Четыре кольца — её углы и точки поворота нити; временные булавки ставят там только когда этого требует рецепт.</figcaption>
         </figure>
 
         <figure>
@@ -1330,8 +1349,11 @@
               <path d="M22 105 C23 93 58 85 100 85 C142 85 177 93 178 105" stroke-dasharray="2.4 3" opacity="0.34" />
               <path d="M22 105 C23 117 58 125 100 125 C142 125 177 117 178 105" />
             </g>
+            <circle cx="22" cy="105" r="3.2" fill="#f7f3ea" stroke="#8f3d32" stroke-width="1.5" />
+            <path d="M25 101 C34 92 44 89 55 90" fill="none" stroke="#665f58" stroke-width="0.8" />
+            <text x="30" y="87" font-size="8" fill="#665f58" font-family="IBM Plex Sans, sans-serif">стартовая булавка</text>
           </svg>
-          <figcaption><strong>Оби · весь шар.</strong> Четыре соседних обхвата образуют одну полосу у экватора. Сплошная часть спереди, пунктир — сзади; это не два отдельных пояса.</figcaption>
+          <figcaption><strong>Оби · весь шар.</strong> Стартовая булавка отмечает место выхода нити и помогает считать обхваты. Четыре соседних полных обхвата образуют одну полосу; сплошная часть спереди, пунктир — сзади.</figcaption>
         </figure>
       </div>
 
@@ -1542,6 +1564,7 @@
         <a href="https://www.temarikai.com/HowToPages/uwagakekiku.html">Uwagake Chidori &amp; Kiku</a>,
         <a href="https://www.temarikai.com/HowToPages/ToolKit/hoshi.html">Hoshi Kagari</a>,
         <a href="https://www.temarikai.com/HowToPages/polygons.html">Hishi / polygons</a>,
+        <a href="https://www.temarikai.com/HowToPages/standarddivisions.html">C8 faces</a>,
         <a href="https://www.temarikai.com/HowToPages/ToolKit/maki.html">Maki Kagari / obi</a>.
       </p>
 

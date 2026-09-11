@@ -421,6 +421,10 @@ def kiku():
                 bits.append(
                     front_only(arc_samples(ring[i], ring[(i + 1) % len(ring)], 14), "beni-front", 1.2)
                 )
+    # GT14 places one temporary lower-point pin on every Simple-8 line,
+    # one third of the pole-to-equator distance up from the equator.
+    for i in range(n):
+        bits.append(pin(around_pole(NORTH, 0.72, i * da), 2.35))
     bits.append(pin(NORTH, 3.2))
     set_cam("hand")
     return svg("Кику от полюса", "\n            ".join(x for x in bits if x))
@@ -455,23 +459,34 @@ def hoshi():
 
 def hishi():
     set_cam("face")
-    # Hishi is a symmetric diamond/lozenge: alternating radii make an elongated
-    # rhombus. TemariKai calls it "irregular" because its angles are not all equal,
-    # not because the four vertices should be randomly skewed.
-    n = 4
+    # Concrete C8 context. The 8-point pole is enclosed by a spherical square.
+    # One adjacent 4-point center is enclosed by a diamond (hishi) whose corners
+    # are two 8-centers and two 6-centers. This avoids inventing a diamond on an
+    # isolated orthogonal cross.
     bits = [circle_paths(gc_samples((0, 1, 0)), "mark-front", "mark-back", 0.9)]
-    da = 2 * math.pi / n
-    for i in range(n // 2):
-        bits.append(circle_paths(gc_samples(meridian_axis(i * da)), "mark-front", "mark-back", 1.0))
-    for k, theta in enumerate((0.32, 0.52, 0.72, 0.92)):
-        radii = (theta * 0.76, theta, theta * 0.76, theta)
-        pts = [around_pole(NORTH, radii[i], i * da) for i in range(n)]
-        w = 1.5 if k % 2 == 0 else 1.2
-        for i in range(n):
-            bits.append(front_only(arc_samples(pts[i], pts[(i + 1) % n], 12), "beni-front", w))
-    bits.append(pin(NORTH, 3.0))
+    for lam in (0.0, math.pi / 4, math.pi / 2, 3 * math.pi / 4):
+        bits.append(circle_paths(gc_samples(meridian_axis(lam)), "mark-front", "mark-back", 0.85))
+
+    cube_n = [norm((sx, 1.0, sz)) for sx in (-1, 1) for sz in (-1, 1)]
+    _, u, v = basis(NORTH)
+
+    def around_north(p):
+        return math.atan2(
+            p[0] * v[0] + p[1] * v[1] + p[2] * v[2],
+            p[0] * u[0] + p[1] * u[1] + p[2] * u[2],
+        )
+
+    cube_n.sort(key=around_north)
+    for i, a in enumerate(cube_n):
+        bits.append(front_only(arc_samples(a, cube_n[(i + 1) % 4], 24), "mark-front", 1.25))
+
+    diamond = [NORTH, norm((1, 1, 1)), (1, 0, 0), norm((1, 1, -1))]
+    for i, a in enumerate(diamond):
+        bits.append(front_only(arc_samples(a, diamond[(i + 1) % 4], 24), "beni-front", 2.0))
+        bits.append(pin(a, 2.4))
+    bits.append(pin(norm((1, 1, 0)), 2.6))
     set_cam("hand")
-    return svg("Хиси — вложенные", "\n            ".join(x for x in bits if x))
+    return svg("Хиси — грань C8", "\n            ".join(x for x in bits if x))
 
 
 def obi():
@@ -483,6 +498,7 @@ def obi():
         circle_paths(parallel_samples((0, 1, 0), 0.015), "beni-front", "beni-back", 1.7),
         circle_paths(parallel_samples((0, 1, 0), -0.015), "beni-front", "beni-back", 1.7),
         circle_paths(parallel_samples((0, 1, 0), -0.045), "beni-front", "beni-back", 1.7),
+        pin((1, 0, 0), 2.8),
     ]
     return svg("Оби по экватору", "\n            ".join(bits))
 
