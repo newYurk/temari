@@ -356,7 +356,6 @@ function starSkip(division: Division) {
 export function kikuSpec(division: Division, spacing: KagariSpacing = "even") {
   const recipe = kikuRecipe(division);
   const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
-  // One extra thread at the point — not cornerMm (2 mm) stacked on pitch.
   const stretch = pitch;
   const inner = unitFromMm(recipe?.innerMm ?? 10);
   const outer = recipe
@@ -368,7 +367,8 @@ export function kikuSpec(division: Division, spacing: KagariSpacing = "even") {
   const room = Math.max(stepOut, Math.PI / 2 - 0.08 - outer);
   const fit = Math.max(2, Math.floor(room / stepOut));
   const density = KAGARI_SPACING_META[spacing].density;
-  const rounds = Math.max(2, Math.min(fit, Math.round(2 + density * 8)));
+  const rounds =
+    density <= 0.3 ? Math.max(2, Math.round(fit * 0.55)) : density >= 0.7 ? fit : fit;
   return {
     inner,
     outer,
@@ -385,8 +385,13 @@ export function kikuRecipe(division: Division): PatternRecipe | null {
 }
 
 function kikuColor(ring: number, base = 0) {
-  const cycle = [0, 1, 0, 2, 0, 1, 0];
-  return (base + (cycle[ring % cycle.length] ?? 0)) % COLOR_COUNT;
+  const start = ((base % COLOR_COUNT) + COLOR_COUNT) % COLOR_COUNT;
+  if (ring % 2 === 0) return start;
+  for (let k = 1; k < COLOR_COUNT; k++) {
+    const c = (start + k) % COLOR_COUNT;
+    if (c !== 2) return c;
+  }
+  return (start + 1) % COLOR_COUNT;
 }
 
 function kikuThetas(

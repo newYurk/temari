@@ -7,6 +7,7 @@
  *
  * Picker UI comes later. Geometry reads thickness from here.
  */
+import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 export type ThreadRole = "wrap" | "mark" | "stitch";
 export type ThreadKind = "serger" | "pearl5" | "pearl8" | "mouline" | "metallic";
 
@@ -118,10 +119,15 @@ export function isThreadKind(value: unknown): value is ThreadKind {
   return THREAD_KINDS.includes(value as ThreadKind);
 }
 
-/** Ribbon half-width on a unit sphere. */
+/** Ribbon half-width on the unit sphere — half of the real thread millimetres. */
 export function ribbonWidth(kind: ThreadKind) {
-  const t = THREAD_KIND_META[kind].thickness;
-  return 0.011 + t * 0.028;
+  const mm =
+    kind === "pearl8"
+      ? STITCH_THREAD_MM.pearl8
+      : kind === "metallic"
+        ? STITCH_THREAD_MM.mark
+        : STITCH_THREAD_MM.pearl5;
+  return unitFromMm(mm) * 0.52;
 }
 
 /** Slider 0–1 → tube diameter on the unit sphere for the wrap thread. */

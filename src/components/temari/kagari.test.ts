@@ -129,7 +129,7 @@ describe("kagari recipe atom", () => {
     const kai1a = a.find((op) => op.kai === 1);
     const kai1b = b.find((op) => op.kai === 1);
     assert.equal(kai1a?.color, 1);
-    assert.equal(kai1b?.color, 2);
+    assert.equal(kai1b?.color, 3);
   });
 
   it("both sets of kai 0 make 8 inner and 8 outer marks — the star with diamonds", () => {
