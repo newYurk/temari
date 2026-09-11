@@ -81,4 +81,32 @@ describe("kiku on Simple 8", () => {
     assert.deepEqual(sectors.slice(0, 4), [0, 2, 4, 6]);
     assert.deepEqual(sectors.slice(4, 8), [1, 3, 5, 7]);
   });
+
+  it("sews round by round: north set A, then set B, before the next kai", () => {
+    const sewn = fillKikuSewn("simple", "out", "even");
+    const first = sewn.slice(0, 8).map((e) => e.key);
+    assert.deepEqual(
+      first,
+      ["0:0:0", "0:0:2", "0:0:4", "0:0:6", "0:0:1", "0:0:3", "0:0:5", "0:0:7"],
+    );
+    const inward = fillKikuSewn("simple", "in", "even");
+    const spec = kikuSpec("simple", "even");
+    const lastRing = spec.rounds - 1;
+    assert.equal(inward[0]?.key, `0:${lastRing}:0`);
+  });
+
+  it("later rounds sit parallel, not shrinking onto the pole", () => {
+    const pole: [number, number, number] = [0, 1, 0];
+    const a = stitchesForSlot("simple", { pole: 0, ring: 0, sector: 0 }, 1)[0];
+    const b = stitchesForSlot("simple", { pole: 0, ring: 3, sector: 0 }, 1)[0];
+    assert.ok(a && a.kind === "arc" && b && b.kind === "arc");
+    if (!a || a.kind !== "arc" || !b || b.kind !== "arc") return;
+    const aIn = polar(pole, a.b).theta;
+    const bIn = polar(pole, b.b).theta;
+    const aOut = polar(pole, a.a).theta;
+    const bOut = polar(pole, b.a).theta;
+    assert.ok(bIn > aIn + 0.02, "inner moves out with the round");
+    assert.ok(bOut > aOut + 0.02, "outer moves toward the equator");
+    assert.ok(Math.abs(bOut - bIn - (aOut - aIn)) < 0.05, "span stays parallel");
+  });
 });

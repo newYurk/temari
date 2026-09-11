@@ -71,6 +71,9 @@ const jiwariReady = (s: TemariCraftState) => s.jiwariOn && s.jiwariPhase === "do
 const simpleDone = (s: TemariCraftState) =>
   s.jiwariOn && s.division === "simple" && s.jiwariPhase === "done";
 
+const canFillMotif = (s: TemariCraftState) =>
+  s.closedContour || s.motif !== "none" || jiwariReady(s);
+
 export const CRAFT_ACTIONS: CraftAction[] = [
   {
     id: "pin",
@@ -174,54 +177,54 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "kagari-in",
     label: "Внутрь",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s) && s.closedContour,
+    canExecute: (s) => !needKagari(s) && canFillMotif(s),
     isActive: (s) => s.kagariDir === "in",
     getDisabledReason: (s) =>
-      needKagari(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
+      needKagari(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
   },
   {
     id: "kagari-out",
     label: "Наружу",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s) && s.closedContour,
+    canExecute: (s) => !needKagari(s) && canFillMotif(s),
     isActive: (s) => s.kagariDir === "out",
     getDisabledReason: (s) =>
-      needKagari(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
+      needKagari(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
   },
   {
     id: "fill",
     label: "Залить",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s) && s.closedContour,
+    canExecute: (s) => !needKagari(s) && canFillMotif(s),
     getDisabledReason: (s) =>
-      needKagari(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
+      needKagari(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
   },
   {
     id: "space-open",
     label: "Реже",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s) && s.closedContour,
+    canExecute: (s) => !needKagari(s) && canFillMotif(s),
     isActive: (s) => s.kagariSpacing === "open",
     getDisabledReason: (s) =>
-      needKagari(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
+      needKagari(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
   },
   {
     id: "space-even",
     label: "Так",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s) && s.closedContour,
+    canExecute: (s) => !needKagari(s) && canFillMotif(s),
     isActive: (s) => s.kagariSpacing === "even",
     getDisabledReason: (s) =>
-      needKagari(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
+      needKagari(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
   },
   {
     id: "space-tight",
     label: "Плотнее",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s) && s.closedContour,
+    canExecute: (s) => !needKagari(s) && canFillMotif(s),
     isActive: (s) => s.kagariSpacing === "tight",
     getDisabledReason: (s) =>
-      needKagari(s) ?? (s.closedContour ? null : "Залить можно, только если контур замкнут"),
+      needKagari(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
   },
   {
     id: "undo",

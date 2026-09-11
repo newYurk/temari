@@ -15,19 +15,20 @@ import {
 } from "./craft";
 import { isPaletteId, PALETTES, type PaletteId } from "./palettes";
 import {
-  fillKikuSewn,
   isMotifId,
   kikuArcsFromPins,
   sakasaArcsFromPins,
   kikuCapacity,
   KAGARI_SPACING_META,
   isClosedContour,
+  motifStitchPlan,
   slotKey,
   type KagariDir,
   type KagariSpacing,
   type KikuSlot,
   type MotifId,
   type SewnEntry,
+  type Stitch,
   type Vec3,
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
@@ -177,6 +178,9 @@ type TemariState = {
   kikuLayers: number;
   kagariDir: KagariDir;
   kagariSpacing: KagariSpacing;
+  kagariPlan: Stitch[];
+  kagariLaid: number;
+  kagariPlaying: boolean;
   startPin: Vec3 | null;
   originNonce: number;
   wrapSeed: "empty" | "full";
@@ -214,6 +218,8 @@ type TemariState = {
   setKikuLayers: (n: number) => void;
   setKagariDir: (dir: KagariDir) => void;
   setKagariSpacing: (spacing: KagariSpacing) => void;
+  startKagari: () => void;
+  advanceKagari: () => void;
   fillKiku: () => void;
   setStartPin: (local: Vec3) => void;
   showExample: () => void;
@@ -283,6 +289,9 @@ export const useTemari = create<TemariState>((set, get) => ({
   kikuLayers: 8,
   kagariDir: "in",
   kagariSpacing: "even",
+  kagariPlan: [],
+  kagariLaid: 0,
+  kagariPlaying: false,
   startPin: null,
   originNonce: 0,
   wrapSeed: "full",
@@ -326,6 +335,9 @@ export const useTemari = create<TemariState>((set, get) => ({
       jiwariOn: false,
       jiwariPhase: "off",
       jiwariLaid: 0,
+      kagariPlan: [],
+      kagariLaid: 0,
+      kagariPlaying: false,
     });
   },
 
@@ -417,7 +429,6 @@ export const useTemari = create<TemariState>((set, get) => ({
       rememberStudio(get());
       return;
     }
-    const motif = get().motif;
     if (division === "c8") {
       set({
         division: "c8",
@@ -425,7 +436,7 @@ export const useTemari = create<TemariState>((set, get) => ({
         jiwariPhase: "combine",
         jiwariLaid: 1,
         fills: emptyFills("c8"),
-        sewn: motif === "kiku" ? fillKikuSewn("c8") : [],
+        sewn: [],
         history: [],
         sewnHistory: [],
         hover: -1,
@@ -444,7 +455,7 @@ export const useTemari = create<TemariState>((set, get) => ({
         jiwariPhase: "vruler",
         jiwariLaid: 0,
         fills: emptyFills("c10"),
-        sewn: motif === "kiku" ? fillKikuSewn("c10") : [],
+        sewn: [],
         history: [],
         sewnHistory: [],
         hover: -1,
@@ -463,7 +474,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       jiwariPhase: simple ? "strip" : "done",
       jiwariLaid: simple ? 0 : 5,
       fills: emptyFills(division),
-      sewn: motif === "kiku" ? fillKikuSewn(division) : [],
+      sewn: [],
       history: [],
       sewnHistory: [],
       hover: -1,
@@ -576,14 +587,17 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   setMotif: (id) => {
     if (get().mode === "kata") return;
-    const division = get().division;
     set({
       motif: id,
-      sewn: id === "kiku" ? [] : [],
+      sewn: [],
       sewnHistory: [...get().sewnHistory, get().sewn].slice(-40),
       hoverSlot: null,
+      kagariPlan: [],
+      kagariLaid: 0,
+      kagariPlaying: false,
     });
     rememberStudio(get());
+    if (id !== "none") get().startKagari();
   },
 
   setCraft: (craft) => {
@@ -779,6 +793,9 @@ export const useTemari = create<TemariState>((set, get) => ({
       jiwariOn: false,
       jiwariPhase: "off",
       jiwariLaid: 0,
+      kagariPlan: [],
+      kagariLaid: 0,
+      kagariPlaying: false,
     });
     rememberStudio(get());
   },
@@ -858,7 +875,10 @@ export const useTemari = create<TemariState>((set, get) => ({
     const max = Math.max(1, currentCap(get()).max);
     set({ kikuLayers: Math.max(1, Math.min(max, Math.round(n))) });
   },
-  setKagariDir: (dir) => set({ kagariDir: dir }),
+  setKagariDir: (dir) => {
+    set({ kagariDir: dir });
+    if (get().motif !== "none") get().startKagari();
+  },
   setKagariSpacing: (spacing) => {
     const state = get();
     const max = kikuCapacity(
@@ -870,10 +890,53 @@ export const useTemari = create<TemariState>((set, get) => ({
       kagariSpacing: spacing,
       kikuLayers: Math.max(1, Math.min(Math.max(1, max), state.kikuLayers)),
     });
+    if (get().motif !== "none") get().startKagari();
+  },
+  startKagari: () => {
+    const state = get();
+    if (state.mode !== "studio" || !state.layerDone) return;
+    if (state.motif === "none") {
+      set({ kagariPlan: [], kagariLaid: 0, kagariPlaying: false });
+      return;
+    }
+    const plan = motifStitchPlan(
+      state.division,
+      state.motif,
+      state.kagariDir,
+      state.kagariSpacing,
+    );
+    set({
+      kagariPlan: plan,
+      kagariLaid: 0,
+      kagariPlaying: plan.length > 0,
+      craft: "stitch",
+    });
+    rememberStudio(get());
+  },
+  advanceKagari: () => {
+    const state = get();
+    if (!state.kagariPlaying) return;
+    const next = state.kagariLaid + 1;
+    if (next >= state.kagariPlan.length) {
+      set({ kagariLaid: state.kagariPlan.length, kagariPlaying: false });
+      feel.kikuFill();
+      return;
+    }
+    feel.stitch();
+    set({ kagariLaid: next });
   },
   fillKiku: () => {
     const state = get();
     if (state.mode !== "studio" || !state.layerDone) return;
+    if (state.motif !== "none") {
+      if (state.kagariPlaying) return;
+      if (state.kagariLaid < state.kagariPlan.length) {
+        set({ kagariPlaying: true });
+        return;
+      }
+      get().startKagari();
+      return;
+    }
     if (state.pins.length < 3) return;
     const pts = state.pins.map((pin) => pin.p);
     if (!isClosedContour(pts)) return;
@@ -953,5 +1016,6 @@ export const useTemari = create<TemariState>((set, get) => ({
       pins: simplePins("done"),
     });
     rememberStudio(get());
+    get().startKagari();
   },
 }));

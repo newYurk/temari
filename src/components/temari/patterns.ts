@@ -194,7 +194,6 @@ export function stitchesForSlot(
   if (!pole) return [];
   const n = petalCount(division);
   const spec = kikuSpec(division);
-  if (slot.ring < 0 || slot.ring >= spec.rounds) return [];
   if (slot.sector < 0 || slot.sector >= n) return [];
   return kikuPetal(pole, spec, slot.ring, slot.sector, n, color);
 }
@@ -228,17 +227,26 @@ export function hitKikuSlot(
   return { pole, ring, sector };
 }
 
-export function fillKikuSewn(division: Division): SewnEntry[] {
+export function fillKikuSewn(
+  division: Division,
+  dir: KagariDir = "out",
+  spacing: KagariSpacing = "even",
+): SewnEntry[] {
   const poles = polePositions(division).length;
   const n = petalCount(division);
-  const { rounds } = kikuSpec(division);
+  const spec = kikuSpec(division, spacing);
+  const skip = kikuSkip(n);
+  const rings = Array.from({ length: spec.rounds }, (_, i) => i);
+  if (dir === "in") rings.reverse();
   const sewn: SewnEntry[] = [];
-  for (let pole = 0; pole < poles; pole++) {
-    for (let ring = 0; ring < rounds; ring++) {
-      const color = kikuColor(ring);
-      for (const pass of [0, 1] as const) {
+  // Real order: kai (round) → pole → set of meridians → around the pole.
+  // Instructables / TemariKai: each round is two passes (even, then odd).
+  for (const ring of rings) {
+    const color = kikuColor(ring);
+    for (let pole = 0; pole < poles; pole++) {
+      for (let pass = 0; pass < skip; pass++) {
         for (let sector = 0; sector < n; sector++) {
-          if (sector % 2 !== pass) continue;
+          if (sector % skip !== pass) continue;
           sewn.push({ key: slotKey({ pole, ring, sector }), color });
         }
       }
@@ -292,17 +300,20 @@ function starSkip(division: Division) {
 
 /**
  * Upper marks sit ~1 cm from the pole (Barbara / TemariKai beginner).
- * 2 mm is the turn gap at the lower point, not the pole opening.
- * Outer: ⅓ of the pole–equator path, measured up from the equator.
+ * Lower of round 0: ⅓ of the pole–equator path, measured up from the equator.
+ * Next rounds sit parallel, one thread-width toward the equator (uwagake).
+ * 2 mm is the stretch at the lower point, equal to pearl-5 diameter.
  */
-export function kikuSpec(division: Division) {
+export function kikuSpec(division: Division, spacing: KagariSpacing = "even") {
   const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
   const inner = unitFromMm(10);
   const outer =
     division === "simple" ? Math.PI / 3 : division === "c8" ? Math.PI / 4 : 0.52;
-  const fit = Math.max(1, Math.floor((outer - inner) / pitch));
-  const cap = division === "simple" ? 10 : 8;
-  return { inner, outer, pitch, rounds: Math.min(cap, fit) };
+  const room = Math.max(pitch, Math.PI / 2 - 0.1 - outer);
+  const fit = Math.max(2, Math.floor(room / pitch));
+  const density = KAGARI_SPACING_META[spacing].density;
+  const rounds = Math.max(2, Math.min(fit, Math.round(2 + density * 12)));
+  return { inner, outer, pitch, rounds };
 }
 
 function kikuColor(ring: number) {
@@ -318,9 +329,10 @@ function kikuPetal(
   n: number,
   color: number,
 ): Stitch[] {
-  const tInner = spec.inner;
-  const tOuter = spec.outer - ring * spec.pitch;
-  if (tOuter <= tInner + spec.pitch * 0.6) return [];
+  if (ring < 0) return [];
+  const tInner = spec.inner + ring * spec.pitch;
+  const tOuter = spec.outer + ring * spec.pitch;
+  if (tOuter >= Math.PI * 0.49 || tInner >= tOuter - spec.pitch * 0.4) return [];
   const skip = kikuSkip(n);
   const a = (2 * Math.PI * sector) / n;
   const b = (2 * Math.PI * (sector + skip)) / n;
@@ -336,22 +348,12 @@ function kikuPetal(
   ];
 }
 
-function kiku(division: Division): Stitch[] {
-  const n = petalCount(division);
-  const spec = kikuSpec(division);
-  const stitches: Stitch[] = [];
-  for (const pole of polePositions(division)) {
-    for (let r = 0; r < spec.rounds; r++) {
-      const color = kikuColor(r);
-      for (const pass of [0, 1] as const) {
-        for (let i = 0; i < n; i++) {
-          if (i % 2 !== pass) continue;
-          stitches.push(...kikuPetal(pole, spec, r, i, n, color));
-        }
-      }
-    }
-  }
-  return stitches;
+function kiku(
+  division: Division,
+  dir: KagariDir = "out",
+  spacing: KagariSpacing = "even",
+): Stitch[] {
+  return stitchesFromSewn(division, fillKikuSewn(division, dir, spacing));
 }
 
 function hoshi(division: Division): Stitch[] {
@@ -448,12 +450,27 @@ function obi(division: Division): Stitch[] {
   return stitches;
 }
 
-export function generateMotif(division: Division, motif: MotifId): Stitch[] {
-  if (motif === "kiku") return kiku(division);
+export function generateMotif(
+  division: Division,
+  motif: MotifId,
+  dir: KagariDir = "out",
+  spacing: KagariSpacing = "even",
+): Stitch[] {
+  if (motif === "kiku") return kiku(division, dir, spacing);
   if (motif === "hoshi") return hoshi(division);
   if (motif === "hishi") return hishi(division);
   if (motif === "obi") return obi(division);
   return [];
+}
+
+/** Ordered stitches as a master sews them. Same sequence the player sees, one by one. */
+export function motifStitchPlan(
+  division: Division,
+  motif: MotifId,
+  dir: KagariDir = "out",
+  spacing: KagariSpacing = "even",
+): Stitch[] {
+  return generateMotif(division, motif, dir, spacing);
 }
 
 /** Classic first temari: Simple 8, kiku on both poles, maki obi. */

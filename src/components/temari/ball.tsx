@@ -246,7 +246,6 @@ export function Ball() {
   const mode = useTemari((s) => s.mode);
   const division = useTemari((s) => s.division);
   const paletteId = useTemari((s) => s.paletteId);
-  const motif = useTemari((s) => s.motif);
   const craft = useTemari((s) => s.craft);
   const fills = useTemari((s) => s.fills);
   const sewn = useTemari((s) => s.sewn);
@@ -288,7 +287,10 @@ export function Ball() {
   const nodes = useMemo(() => gridNodes(division), [division]);
 
   const preset: MotifId =
-    mode === "title" ? "kiku" : mode === "studio" && motif !== "none" ? motif : "none";
+    mode === "title" ? "kiku" : "none";
+  const kagariPlan = useTemari((s) => s.kagariPlan);
+  const kagariLaid = useTemari((s) => s.kagariLaid);
+  const kagariPlaying = useTemari((s) => s.kagariPlaying);
   const [stitchesOn, setStitchesOn] = useState(mode !== "title");
   useEffect(() => {
     if (mode !== "title") {
@@ -299,6 +301,13 @@ export function Ball() {
     const id = window.setTimeout(() => setStitchesOn(true), 320);
     return () => window.clearTimeout(id);
   }, [mode, preset, division]);
+  useEffect(() => {
+    if (!kagariPlaying) return;
+    const id = window.setInterval(() => {
+      useTemari.getState().advanceKagari();
+    }, 150);
+    return () => window.clearInterval(id);
+  }, [kagariPlaying]);
   const presetStitches = useMemo(
     () =>
       !stitchesOn
@@ -311,6 +320,10 @@ export function Ball() {
   const sewnStitches = useMemo(
     () => (mode === "studio" ? stitchesFromSewn(division, sewn) : []),
     [division, mode, sewn],
+  );
+  const playingStitches = useMemo(
+    () => (mode === "studio" ? kagariPlan.slice(0, kagariLaid) : []),
+    [kagariLaid, kagariPlan, mode],
   );
   const pinStitches = useMemo(
     () => (mode === "studio" ? arcsToStitches(pinArcs) : []),
@@ -754,6 +767,9 @@ export function Ball() {
       ) : null}
       {presetStitches.length > 0 ? (
         <ThreadLayer stitches={presetStitches} colors={palette.colors} order={14} />
+      ) : null}
+      {playingStitches.length > 0 ? (
+        <ThreadLayer stitches={playingStitches} colors={palette.colors} order={14} />
       ) : null}
       {sewnStitches.length > 0 ? (
         <ThreadLayer stitches={sewnStitches} colors={palette.colors} order={14} />
