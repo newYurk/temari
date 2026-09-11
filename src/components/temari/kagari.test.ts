@@ -94,18 +94,35 @@ describe("kagari recipe atom", () => {
     assert.ok(via);
     if (!via) return;
     assert.ok(via[1] > inner[1], "via is higher / closer to +Y pole");
-    const kai0 = compileKiku("simple", "out", "even", 0).filter(
-      (op) => op.kai === 0 && op.mark.t === "inner",
-    );
-    assert.ok(kai0.every((op) => !op.lay.via || op.lay.via.length === 0));
-    const later = compileKiku("simple", "out", "even", 0).filter(
-      (op) => op.kai > 0 && op.mark.t === "inner",
-    );
-    assert.ok(later.length > 0);
-    assert.ok(
-      later.every((op) => op.lay.via && op.lay.via.length === 1),
-      "later inner legs hook over the bundle",
-    );
+  });
+
+  it("both flanks of a V meet on the mark, same count", () => {
+    const ops = compileKiku("simple", "out", "even", 0);
+    for (const set of [0, 1] as const) {
+      const inner = ops.filter((op) => op.set === set && op.mark.t === "inner");
+      const outer = ops.filter((op) => op.set === set && op.mark.t === "outer");
+      assert.equal(inner.length, outer.length, `set ${set} inner vs outer`);
+      for (const op of inner) {
+        assert.ok(!op.lay.via || op.lay.via.length === 0, "via must not pull one flank off the mark");
+        assert.ok(dist(op.lay.to, op.mark.at) < 1e-9, "inner leg ends on the mark");
+        assert.ok(dist(op.lay.from, op.mark.at) > 0.2, "inner leg has a real span");
+      }
+      for (const op of outer) {
+        assert.ok(!op.lay.via || op.lay.via.length === 0);
+      }
+    }
+    const byLine = new Map<string, { inner: number; outer: number }>();
+    for (const op of ops) {
+      const k = `${op.set}:${op.mark.line}`;
+      const slot = byLine.get(k) ?? { inner: 0, outer: 0 };
+      if (op.mark.t === "inner") slot.inner += 1;
+      else slot.outer += 1;
+      byLine.set(k, slot);
+    }
+    for (const [k, slot] of byLine) {
+      assert.equal(slot.inner + slot.outer, slot.inner + slot.outer);
+      assert.ok(slot.inner === 0 || slot.outer === 0, `one set uses a line as inner or outer, not mixed: ${k}`);
+    }
   });
 
   it("outer of later kai drops extra so the V point stretches", () => {

@@ -1,7 +1,7 @@
 import { polePositions, type Division } from "./division.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 import { COLOR_COUNT } from "./palettes.ts";
-import { biteAcross, stackOver, uwagakeVia, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
+import { biteAcross, stackOver, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
 
 export type KikuSlot = { pole: number; ring: number; sector: number };
 
@@ -427,18 +427,6 @@ function kikuPetal(
   ];
 }
 
-function extendPast(from: Vec3, to: Vec3, extra: number): Vec3 {
-  const d = Math.acos(Math.min(1, Math.max(-1, dot(from, to))));
-  if (d < 1e-4 || extra <= 0) return to;
-  const t = 1 + extra / d;
-  const s = Math.sin(d);
-  return normalize([
-    from[0] * Math.sin((1 - t) * d) / s + to[0] * Math.sin(t * d) / s,
-    from[1] * Math.sin((1 - t) * d) / s + to[1] * Math.sin(t * d) / s,
-    from[2] * Math.sin((1 - t) * d) / s + to[2] * Math.sin(t * d) / s,
-  ]);
-}
-
 function pushKikuLeg(
   ops: KagariOp[],
   pole: Vec3,
@@ -450,10 +438,8 @@ function pushKikuLeg(
   to: { line: number; t: "inner" | "outer"; at: Vec3 },
   over: number[],
   cornerMm: number,
-  via: Vec3[] | undefined,
 ): Vec3 {
   const bite = biteAcross(pole, to.at, cornerMm);
-  const end = to.t === "inner" ? extendPast(from, to.at, unitFromMm(STITCH_THREAD_MM.pearl5) * 0.45) : to.at;
   ops.push({
     i: ops.length,
     kai,
@@ -461,7 +447,7 @@ function pushKikuLeg(
     pole: poleIndex,
     color,
     mark: { line: to.line, t: to.t, at: to.at },
-    lay: { from, to: end, via },
+    lay: { from, to: to.at },
     bite,
     over,
   });
@@ -520,10 +506,8 @@ export function compileKiku(
             { line: line1, t: "outer", at: outer1 },
             [],
             cornerMm,
-            undefined,
           );
           const over = stackOver(innerOver[line2] ?? [], crossing);
-          const viaPt = uwagakeVia(pole, inner2, over.length, spec.pitch);
           cursor = pushKikuLeg(
             ops,
             pole,
@@ -535,7 +519,6 @@ export function compileKiku(
             { line: line2, t: "inner", at: inner2 },
             over,
             cornerMm,
-            viaPt ? [viaPt] : undefined,
           );
           innerOver[line2]?.push(ops.length - 1);
         }
