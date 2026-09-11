@@ -389,11 +389,10 @@ export function Ball() {
     const g = group.current;
     if (!g) return;
     omega.current.set(0, 0, 0);
-    // Never identity() — that snatches the mari. Face a pole only if it is already this hemisphere.
+    // Face the working pole. Identity leaves +Y off the camera (+Z), so a
+    // hemisphere gate never snaps kiku to the diagram's NP view.
     if (!kagariFocus) return;
-    _axis.set(kagariFocus[0], kagariFocus[1], kagariFocus[2]).applyQuaternion(g.quaternion);
-    _feed.copy(camera.position).normalize();
-    if (_axis.dot(_feed) > 0.12) facePole.current = true;
+    facePole.current = true;
   }, [camera, kagariFocus, viewNonce]);
 
   useEffect(() => {
@@ -649,6 +648,7 @@ export function Ball() {
           kagariLaid: laid,
           kagariPlaying: false,
           kagariFocus: stitchFocus(newest, st.division, st.motif),
+          viewNonce: st.viewNonce + 1,
         });
       },
     };

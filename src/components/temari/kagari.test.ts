@@ -131,4 +131,17 @@ describe("kagari recipe atom", () => {
     assert.equal(kai1a?.color, 1);
     assert.equal(kai1b?.color, 2);
   });
+
+  it("both sets of kai 0 make 8 inner and 8 outer marks — the star with diamonds", () => {
+    const ops = compileKiku("simple", "out", "even", 0).filter((op) => op.kai === 0);
+    assert.equal(ops.length, 16);
+    const inners = ops.filter((op) => op.mark.t === "inner");
+    const outers = ops.filter((op) => op.mark.t === "outer");
+    assert.equal(inners.length, 8);
+    assert.equal(outers.length, 8);
+    const setA = ops.filter((op) => op.set === 0).length;
+    const setB = ops.filter((op) => op.set === 1).length;
+    assert.equal(setA, 8);
+    assert.equal(setB, 8);
+  });
 });
