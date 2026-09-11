@@ -16,6 +16,7 @@ describe("kagari recipe atom", () => {
     assert.equal(KIKU_8_POINT.sets, 2);
     assert.equal(KIKU_8_POINT.innerMm, 10);
     assert.equal(KIKU_8_POINT.outerFromEquator, 1 / 3);
+    assert.equal(KIKU_8_POINT.stretchMm, 2);
   });
 
   it("kikuSpec on Simple reads the recipe, not magic numbers", () => {
@@ -24,6 +25,8 @@ describe("kagari recipe atom", () => {
     assert.equal(spec.sets, 2);
     assert.ok(Math.abs(spec.inner - unitFromMm(KIKU_8_POINT.innerMm)) < 1e-9);
     assert.ok(Math.abs(spec.outer - (Math.PI / 2) * (1 - KIKU_8_POINT.outerFromEquator)) < 1e-9);
+    assert.ok(Math.abs(spec.stretch - unitFromMm(2)) < 1e-9, "Ozaki stretch is 2 mm, not one thread");
+    assert.ok(spec.stretch > spec.pitch * 1.5, "outer drop is larger than the inner pitch");
   });
 
   it("bite sits across the mark, not along the meridian", () => {
@@ -156,5 +159,19 @@ describe("kagari recipe atom", () => {
     const setB = ops.filter((op) => op.set === 1).length;
     assert.equal(setA, 8);
     assert.equal(setB, 8);
+  });
+
+  it("inner uwagake bite widens around the stack; outer bite stays tiny", () => {
+    const ops = compileKiku("simple", "out", "even", 0);
+    const inner0 = ops.find((op) => op.kai === 0 && op.mark.t === "inner");
+    const innerN = ops.find((op) => op.kai >= 2 && op.mark.t === "inner");
+    const outerN = ops.find((op) => op.kai >= 2 && op.mark.t === "outer");
+    assert.ok(inner0 && innerN && outerN);
+    if (!inner0 || !innerN || !outerN) return;
+    const w = (op: typeof inner0) => dist(op.bite.enter, op.bite.exit);
+    assert.ok(w(innerN) > w(inner0) * 1.8, "later inner bite wraps the stack");
+    assert.ok(w(outerN) < w(innerN) * 0.6, "outer point stays a tiny scoop");
+    assert.ok(innerN.bite.enter[1] > innerN.mark.at[1], "inner scoop sits toward the pole");
+    assert.ok(dist(innerN.lay.to, innerN.mark.at) < 1e-9, "flanks still meet on the mark");
   });
 });

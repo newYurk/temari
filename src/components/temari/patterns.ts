@@ -360,12 +360,12 @@ function starSkip(division: Division) {
  * Upper marks sit ~1 cm from the pole (Barbara / TemariKai beginner).
  * Lower of round 0: recipe.outerFromEquator of the pole–equator path, up from the equator.
  * Next rounds: inner moves one thread toward the equator (parallel).
- * Outer moves one thread plus one extra thread so the V point stays sharp.
+ * Outer moves one thread plus recipe.stretchMm (~2 mm, Ozaki) so the V stays sharp.
  */
 export function kikuSpec(division: Division, spacing: KagariSpacing = "even") {
   const recipe = kikuRecipe(division);
   const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
-  const stretch = pitch;
+  const stretch = unitFromMm(recipe?.stretchMm ?? STITCH_THREAD_MM.pearl5);
   const inner = unitFromMm(recipe?.innerMm ?? 10);
   const outer = recipe
     ? (Math.PI / 2) * (1 - recipe.outerFromEquator)
@@ -448,7 +448,9 @@ function pushKikuLeg(
   over: number[],
   cornerMm: number,
 ): Vec3 {
-  const bite = biteAcross(pole, to.at, cornerMm);
+  const biteMm =
+    to.t === "inner" ? cornerMm * (1 + over.length) : cornerMm;
+  const bite = biteAcross(pole, to.at, biteMm, to.t === "inner" ? over.length : 0);
   ops.push({
     i: ops.length,
     kai,

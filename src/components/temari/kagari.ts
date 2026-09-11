@@ -24,10 +24,14 @@ export type PatternRecipe = {
   crossing: Crossing;
   /**
    * Bite width across the mark, millimetres on the mari.
-   * Stretch at the lower V is one thread more than the inner step — not this
-   * number on top of the pitch, or petals run to the equator in six rounds.
+   * Inner uwagake widens from this by the stacked count.
    */
   cornerMm: number;
+  /**
+   * Extra drop at the outer V after round 0, millimetres.
+   * Ozaki / TemariKai: ~2 mm for pearl #5 so the thread can turn the corner.
+   */
+  stretchMm: number;
 };
 
 export const KIKU_8_POINT: PatternRecipe = {
@@ -40,6 +44,7 @@ export const KIKU_8_POINT: PatternRecipe = {
   outerFromEquator: 1 / 3,
   crossing: "over-all",
   cornerMm: 0.71,
+  stretchMm: 2,
 };
 
 export type KagariMark = {
@@ -91,25 +96,50 @@ function dot(a: Vec3, b: Vec3) {
 
 /**
  * Tiny bite across the jiwari: enter one side, scoop wrap+mark, exit the other.
- * Length ≈ one pearl, not a 2 mm hashed bar.
+ * Inner uwagake: wider with the stack, sitting slightly toward the pole so the
+ * needle goes around previous rounds. Both flanks still meet at `mark`.
  */
-export function biteAcross(pole: Vec3, mark: Vec3, mm = KIKU_8_POINT.cornerMm): KagariBite {
+export function biteAcross(
+  pole: Vec3,
+  mark: Vec3,
+  mm = KIKU_8_POINT.cornerMm,
+  stacked = 0,
+): KagariBite {
   const m = normalize(mark);
   const p = normalize(pole);
   const across = normalize(cross(m, p));
   if (hypot3(across) < 1e-6) return { enter: m, exit: m };
+  const center = stacked > 0 ? shiftTowardPole(p, m, unitFromMm(STITCH_THREAD_MM.pearl5) * 0.45) : m;
   const half = unitFromMm(mm) * 0.5;
   const enter = normalize([
-    m[0] - across[0] * half,
-    m[1] - across[1] * half,
-    m[2] - across[2] * half,
+    center[0] - across[0] * half,
+    center[1] - across[1] * half,
+    center[2] - across[2] * half,
   ]);
   const exit = normalize([
-    m[0] + across[0] * half,
-    m[1] + across[1] * half,
-    m[2] + across[2] * half,
+    center[0] + across[0] * half,
+    center[1] + across[1] * half,
+    center[2] + across[2] * half,
   ]);
   return { enter, exit };
+}
+
+function shiftTowardPole(pole: Vec3, mark: Vec3, along: number): Vec3 {
+  const theta = Math.acos(Math.min(1, Math.max(-1, dot(pole, mark))));
+  const t = Math.max(0, theta - along);
+  if (t >= theta - 1e-5) return mark;
+  const radial = normalize([
+    mark[0] - pole[0] * dot(pole, mark),
+    mark[1] - pole[1] * dot(pole, mark),
+    mark[2] - pole[2] * dot(pole, mark),
+  ]);
+  const ct = Math.cos(t);
+  const st = Math.sin(t);
+  return normalize([
+    pole[0] * ct + radial[0] * st,
+    pole[1] * ct + radial[1] * st,
+    pole[2] * ct + radial[2] * st,
+  ]);
 }
 
 /** Which previous inner ops this bite stacks, given the recipe crossing rule. */
