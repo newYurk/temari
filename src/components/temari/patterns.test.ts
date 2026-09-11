@@ -118,7 +118,7 @@ describe("kiku on Simple 8", () => {
   });
 
   it("finishes the north pole before turning to the south", () => {
-    const sewn = fillKikuSewn("simple", "out", "even");
+    const sewn = fillKikuSewn("simple", "out", "even", "all");
     const spec = kikuSpec("simple", "even");
     const north = spec.rounds * 8;
     assert.ok(sewn.length >= north * 2);
@@ -127,6 +127,17 @@ describe("kiku on Simple 8", () => {
     }
     assert.equal(sewn[north]?.key.startsWith("1:"), true);
     assert.equal(sewn[north]?.key, "1:0:0");
+  });
+
+  it("one pole is a choice: north only does not sew south", () => {
+    const north = fillKikuSewn("simple", "out", "even", 0);
+    const south = fillKikuSewn("simple", "out", "even", 1);
+    const spec = kikuSpec("simple", "even");
+    const per = spec.rounds * 8;
+    assert.equal(north.length, per);
+    assert.equal(south.length, per);
+    assert.ok(north.every((e) => e.key.startsWith("0:")));
+    assert.ok(south.every((e) => e.key.startsWith("1:")));
   });
 
   it("later rounds sit parallel, not shrinking onto the pole", () => {

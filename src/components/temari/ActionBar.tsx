@@ -3,6 +3,7 @@ import { RotateCcw, Undo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PALETTE_LIST, PALETTES } from "./palettes";
 import { jiwariPhaseHint } from "./jiwari";
+import { kagariPhaseHint, stitchPoleIndex } from "./patterns";
 import { useTemari } from "./store";
 import {
   CRAFT_ACTIONS,
@@ -72,6 +73,9 @@ export function ActionBar() {
   const pins = useTemari((s) => s.pins);
   const kagariDir = useTemari((s) => s.kagariDir);
   const kagariSpacing = useTemari((s) => s.kagariSpacing);
+  const kagariPlaying = useTemari((s) => s.kagariPlaying);
+  const kagariLaid = useTemari((s) => s.kagariLaid);
+  const kagariPlan = useTemari((s) => s.kagariPlan);
   const history = useTemari((s) => s.history);
   const sewnHistory = useTemari((s) => s.sewnHistory);
   const pinHistory = useTemari((s) => s.pinHistory);
@@ -95,6 +99,9 @@ export function ActionBar() {
       pins,
       kagariDir,
       kagariSpacing,
+      kagariPlaying,
+      kagariLaid,
+      kagariPlan.length,
       history,
       sewnHistory,
       pinHistory,
@@ -122,7 +129,20 @@ export function ActionBar() {
             className="min-h-4 px-1 text-[0.65rem] tracking-wide text-stone"
             aria-live="polite"
           >
-            {tip ?? (jiwariOn ? jiwariPhaseHint(jiwariPhase, jiwariLaid) : "")}
+            {tip ??
+              (motif !== "none" && kagariPlan.length > 0
+                ? kagariPhaseHint(
+                    motif,
+                    division,
+                    kagariDir,
+                    kagariLaid,
+                    kagariPlan.length,
+                    kagariPlaying,
+                    Math.max(0, stitchPoleIndex(kagariPlan[0]!, division, motif)),
+                  )
+                : jiwariOn
+                  ? jiwariPhaseHint(jiwariPhase, jiwariLaid)
+                  : "")}
           </p>
           <div className="flex gap-0.5">
             {jiwari.map((action) => (

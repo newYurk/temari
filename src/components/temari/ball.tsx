@@ -9,6 +9,7 @@ import {
   generateMotif,
   generateTitleMari,
   hitKikuSlot,
+  stitchFocus,
   stitchesForSlot,
   stitchesFromSewn,
   type MotifId,
@@ -196,6 +197,21 @@ function JiwariGuide() {
   return null;
 }
 
+function KagariGuide() {
+  const playing = useTemari((s) => s.kagariPlaying);
+  const laid = useTemari((s) => s.kagariLaid);
+  const advance = useTemari((s) => s.advanceKagari);
+  useEffect(() => {
+    if (!playing) return;
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const id = window.setTimeout(advance, reduce ? 0 : 110);
+    return () => window.clearTimeout(id);
+  }, [advance, laid, playing]);
+  return null;
+}
+
 function WrapSurface({ color, width }: { color: string; width: number }) {
   const mat = useMemo(() => createWrapCoverMaterial(), []);
   const baker = useMemo(() => createWrapBaker(), []);
@@ -276,6 +292,7 @@ export function Ball() {
   const setWrapCount = useTemari((s) => s.setWrapCount);
   const setWrapProgress = useTemari((s) => s.setWrapProgress);
   const setWrapStarted = useTemari((s) => s.setWrapStarted);
+  const setFacingPole = useTemari((s) => s.setFacingPole);
 
   const material = useMemo(() => createTemariMaterial(), []);
   const guideGeo = useMemo(() => createGuideGeometry(division), [division]);
@@ -290,7 +307,9 @@ export function Ball() {
     mode === "title" ? "kiku" : "none";
   const kagariPlan = useTemari((s) => s.kagariPlan);
   const kagariLaid = useTemari((s) => s.kagariLaid);
-  const kagariPlaying = useTemari((s) => s.kagariPlaying);
+  const kagariKept = useTemari((s) => s.kagariKept);
+  const kagariFocus = useTemari((s) => s.kagariFocus);
+  const facePole = useRef(false);
   const [stitchesOn, setStitchesOn] = useState(mode !== "title");
   useEffect(() => {
     if (mode !== "title") {
@@ -301,13 +320,6 @@ export function Ball() {
     const id = window.setTimeout(() => setStitchesOn(true), 320);
     return () => window.clearTimeout(id);
   }, [mode, preset, division]);
-  useEffect(() => {
-    if (!kagariPlaying) return;
-    const id = window.setInterval(() => {
-      useTemari.getState().advanceKagari();
-    }, 150);
-    return () => window.clearInterval(id);
-  }, [kagariPlaying]);
   const presetStitches = useMemo(
     () =>
       !stitchesOn
@@ -322,8 +334,11 @@ export function Ball() {
     [division, mode, sewn],
   );
   const playingStitches = useMemo(
-    () => (mode === "studio" ? kagariPlan.slice(0, kagariLaid) : []),
-    [kagariLaid, kagariPlan, mode],
+    () =>
+      mode === "studio"
+        ? [...kagariKept, ...kagariPlan.slice(0, kagariLaid)]
+        : [],
+    [kagariKept, kagariLaid, kagariPlan, mode],
   );
   const pinStitches = useMemo(
     () => (mode === "studio" ? arcsToStitches(pinArcs) : []),
@@ -373,9 +388,13 @@ export function Ball() {
   useLayoutEffect(() => {
     const g = group.current;
     if (!g) return;
-    g.quaternion.identity();
     omega.current.set(0, 0, 0);
-  }, [viewNonce]);
+    // Never identity() — that snatches the mari. Face a pole only if it is already this hemisphere.
+    if (!kagariFocus) return;
+    _axis.set(kagariFocus[0], kagariFocus[1], kagariFocus[2]).applyQuaternion(g.quaternion);
+    _feed.copy(camera.position).normalize();
+    if (_axis.dot(_feed) > 0.12) facePole.current = true;
+  }, [camera, kagariFocus, viewNonce]);
 
   useEffect(() => {
     wrap.reset();
@@ -590,16 +609,47 @@ export function Ball() {
       },
       dump: () => {
         mari.current.copyAxis(_feed);
+        const st = useTemari.getState();
         return {
-          progress: useTemari.getState().wrapProgress,
-          color: useTemari.getState().selectedColor,
-          pin: useTemari.getState().startPin,
+          progress: st.wrapProgress,
+          color: st.selectedColor,
+          pin: st.startPin,
           livePts: wrap.live.length,
           yarnPts: wrap.yarn().reduce((n, s) => n + s.points.length, 0),
           axis: [_feed.x, _feed.y, _feed.z],
           sign: mari.current.windSign,
+          kagari: {
+            laid: st.kagariLaid,
+            playing: st.kagariPlaying,
+            n: st.kagariPlan.length,
+            motif: st.motif,
+            dir: st.kagariDir,
+          },
           ...wrap.snapshot(),
         };
+      },
+      kagari: () => {
+        const st = useTemari.getState();
+        return {
+          laid: st.kagariLaid,
+          playing: st.kagariPlaying,
+          n: st.kagariPlan.length,
+          motif: st.motif,
+          dir: st.kagariDir,
+        };
+      },
+      freezeKagari: (n?: number) => {
+        const st = useTemari.getState();
+        const laid =
+          typeof n === "number"
+            ? Math.max(0, Math.min(st.kagariPlan.length, Math.round(n)))
+            : st.kagariLaid;
+        const newest = st.kagariPlan[Math.max(0, laid - 1)];
+        useTemari.setState({
+          kagariLaid: laid,
+          kagariPlaying: false,
+          kagariFocus: stitchFocus(newest, st.division, st.motif),
+        });
       },
     };
     (window as Window & { __temari?: typeof probe }).__temari = probe;
@@ -608,6 +658,33 @@ export function Ball() {
   useFrame((_, delta) => {
     const d = Math.min(delta, 0.1);
     const g = group.current;
+    if (g && mode === "studio" && poles.length > 0) {
+      _feed.copy(camera.position).normalize();
+      let best = 0;
+      let bestD = -2;
+      for (let i = 0; i < poles.length; i++) {
+        const p = poles[i];
+        if (!p) continue;
+        _local.set(p[0], p[1], p[2]).applyQuaternion(g.quaternion);
+        const along = _local.dot(_feed);
+        if (along > bestD) {
+          bestD = along;
+          best = i;
+        }
+      }
+      setFacingPole(best);
+    }
+    if (g && facePole.current) {
+      const focus = useTemari.getState().kagariFocus;
+      if (focus) {
+        _axis.set(focus[0], focus[1], focus[2]);
+        _feed.copy(camera.position).normalize();
+        _q.setFromUnitVectors(_axis, _feed);
+        g.quaternion.copy(_q);
+        omega.current.set(0, 0, 0);
+      }
+      facePole.current = false;
+    }
     const spd = omega.current.length();
     if (g && !spinning.current && spd > 0.0007) {
       const st = useTemari.getState();
@@ -756,6 +833,7 @@ export function Ball() {
       {mode === "studio" && layerDone && jiwariOn ? <PaperStrip /> : null}
       {mode === "studio" && layerDone && jiwariOn ? <VRuler /> : null}
       {mode === "studio" && layerDone ? <JiwariGuide /> : null}
+      {mode === "studio" && layerDone ? <KagariGuide /> : null}
 
       {markStitches.length > 0 ? (
         <ThreadLayer

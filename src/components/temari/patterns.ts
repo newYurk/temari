@@ -231,17 +231,17 @@ export function fillKikuSewn(
   division: Division,
   dir: KagariDir = "out",
   spacing: KagariSpacing = "even",
+  which: number | "all" = "all",
 ): SewnEntry[] {
-  const poles = polePositions(division).length;
   const n = petalCount(division);
   const spec = kikuSpec(division, spacing);
   const skip = kikuSkip(n);
   const rings = Array.from({ length: spec.rounds }, (_, i) => i);
   if (dir === "in") rings.reverse();
   const sewn: SewnEntry[] = [];
-  // Real order: pole (north, then south) → kai → set (even, then odd) → around.
-  // TemariKai 8-point: finish the flower on one pole before turning the mari.
-  for (let pole = 0; pole < poles; pole++) {
+  // One pole, then the player turns the mari. "all" is the finished recipe (title / Пример).
+  // TemariKai 8-point: finish the flower on one pole before turning — we do not snatch the ball.
+  for (const { index: pole } of kagariPolesToSew(division, which)) {
     for (const ring of rings) {
       const color = kikuColor(ring);
       for (let pass = 0; pass < skip; pass++) {
@@ -287,6 +287,40 @@ function smallCircle(normal: Vec3, height: number, count = 96): Vec3[] {
 function petalCount(division: Division) {
   if (division === "c10") return 10;
   return 8;
+}
+
+/** Which poles to sew. `"all"` is a finished recipe, not a requirement. */
+export function kagariPolesToSew(
+  division: Division,
+  which: number | "all" = "all",
+): { index: number; pole: Vec3 }[] {
+  const all = polePositions(division);
+  if (which === "all") return all.map((pole, index) => ({ index, pole }));
+  const index = Math.max(0, Math.min(all.length - 1, Math.round(which)));
+  const pole = all[index];
+  return pole ? [{ index, pole }] : [];
+}
+
+export function stitchPoleIndex(
+  stitch: Stitch,
+  division: Division,
+  motif: MotifId,
+): number {
+  const focus = stitchFocus(stitch, division, motif);
+  if (!focus) return -1;
+  const all = polePositions(division);
+  let best = -1;
+  let bestD = 0.15;
+  for (let i = 0; i < all.length; i++) {
+    const p = all[i];
+    if (!p) continue;
+    const d = p[0] * focus[0] + p[1] * focus[1] + p[2] * focus[2];
+    if (d > bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
 }
 
 /**
@@ -367,18 +401,19 @@ function kiku(
   division: Division,
   dir: KagariDir = "out",
   spacing: KagariSpacing = "even",
+  which: number | "all" = "all",
 ): Stitch[] {
-  return stitchesFromSewn(division, fillKikuSewn(division, dir, spacing));
+  return stitchesFromSewn(division, fillKikuSewn(division, dir, spacing, which));
 }
 
-function hoshi(division: Division, dir: KagariDir = "out"): Stitch[] {
+function hoshi(division: Division, dir: KagariDir = "out", which: number | "all" = "all"): Stitch[] {
   const n = petalCount(division);
   const skip = starSkip(division);
   const rings =
     division === "simple" ? [0.38, 0.58, 0.78] : division === "c8" ? [0.28, 0.44] : [0.26, 0.4];
   const ordered = dir === "in" ? [...rings].reverse() : rings;
   const stitches: Stitch[] = [];
-  for (const pole of polePositions(division)) {
+  for (const { pole } of kagariPolesToSew(division, which)) {
     for (const theta of ordered) {
       const ring = rings.indexOf(theta);
       const color = ring % 2 === 0 ? 0 : 1;
@@ -398,7 +433,7 @@ function hoshi(division: Division, dir: KagariDir = "out"): Stitch[] {
   return stitches;
 }
 
-function hishi(division: Division, dir: KagariDir = "out"): Stitch[] {
+function hishi(division: Division, dir: KagariDir = "out", which: number | "all" = "all"): Stitch[] {
   const n = division === "c8" ? 4 : petalCount(division);
   const rings =
     division === "simple"
@@ -408,7 +443,7 @@ function hishi(division: Division, dir: KagariDir = "out"): Stitch[] {
         : [0.16, 0.28, 0.4];
   const ordered = dir === "in" ? [...rings].reverse() : rings;
   const stitches: Stitch[] = [];
-  for (const pole of polePositions(division)) {
+  for (const { pole } of kagariPolesToSew(division, which)) {
     for (const theta of ordered) {
       const ring = rings.indexOf(theta);
       const color = ring % 2 === 0 ? 0 : 2;
@@ -473,10 +508,11 @@ export function generateMotif(
   motif: MotifId,
   dir: KagariDir = "out",
   spacing: KagariSpacing = "even",
+  which: number | "all" = "all",
 ): Stitch[] {
-  if (motif === "kiku") return kiku(division, dir, spacing);
-  if (motif === "hoshi") return hoshi(division, dir);
-  if (motif === "hishi") return hishi(division, dir);
+  if (motif === "kiku") return kiku(division, dir, spacing, which);
+  if (motif === "hoshi") return hoshi(division, dir, which);
+  if (motif === "hishi") return hishi(division, dir, which);
   if (motif === "obi") return obi(division, dir);
   return [];
 }
@@ -487,8 +523,9 @@ export function motifStitchPlan(
   motif: MotifId,
   dir: KagariDir = "out",
   spacing: KagariSpacing = "even",
+  which: number | "all" = "all",
 ): Stitch[] {
-  return generateMotif(division, motif, dir, spacing);
+  return generateMotif(division, motif, dir, spacing, which);
 }
 
 /** Pole the mari should face while this stitch is laid. Obi stays equator-on. */
@@ -537,23 +574,29 @@ export function kagariPhaseHint(
   laid: number,
   total: number,
   playing: boolean,
+  poleIndex = 0,
 ): string {
   if (motif === "none" || total === 0) return "";
-  if (!playing && laid >= total) return "Кагари: ряд лежит";
+  if (!playing && laid >= total) {
+    return "Кагари: ряд лежит. Другой полюс — переверните шар.";
+  }
   if (motif === "hoshi") return "Хоси: звезда по кругу, ряд за рядом";
   if (motif === "hishi") return "Хиси: многоугольник у полюса, ряд за рядом";
   if (motif === "obi") return "Оби: пояс за поясом";
   if (motif !== "kiku") return "";
   const n = petalCount(division);
-  const poles = Math.max(1, polePositions(division).length);
-  const perPole = Math.max(n * 2, Math.floor(total / poles));
+  const spec = kikuSpec(division);
+  const stitchesPerPole = spec.rounds * n * 2;
+  const polesInPlan = Math.max(1, Math.round(total / Math.max(1, stitchesPerPole)));
+  const perPole = Math.max(n * 2, Math.floor(total / polesInPlan));
   const at = Math.max(0, laid - 1);
-  const pole = Math.min(poles - 1, Math.floor(at / perPole));
+  const pole = Math.min(polesInPlan - 1, Math.floor(at / perPole));
   const local = at % perPole;
   const perKai = n * 2;
   const kai = Math.floor(local / perKai) + 1;
   const pass = local % perKai < n ? 0 : 1;
-  const where = pole === 0 ? "север" : pole === 1 ? "юг" : `полюс ${pole + 1}`;
+  const whereN = poleIndex + pole;
+  const where = whereN === 0 ? "север" : whereN === 1 ? "юг" : `полюс ${whereN + 1}`;
   const set = pass === 0 ? "чётные" : "нечётные";
   const way = dir === "out" ? "от полюса" : "с края";
   return `Кику · ${where} · круг ${kai} · ${set} · ${way}`;
