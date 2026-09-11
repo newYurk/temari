@@ -138,6 +138,8 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
       kagariPlaying,
       kagariLaid,
       kagariPlan.length,
+      kagariSet,
+      kikuLayers,
       history,
       sewnHistory,
       pinHistory,
@@ -166,7 +168,9 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
           kagariPlaying,
           Math.max(0, stitchPoleIndex(kagariPlan[0]!, division, motif)),
           kagariSet,
-          motif === "kiku" && kikuLayers < kikuSpec(division, kagariSpacing, "fit").fit,
+          motif === "kiku" &&
+            kagariSet === 1 &&
+            kikuLayers < kikuSpec(division, kagariSpacing, "fit").fit,
         )
       : jiwariOn
         ? jiwariPhaseHint(jiwariPhase, jiwariLaid)
@@ -265,7 +269,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
               </button>
             ) : null}
 
-            {stage === "kagari" && dirAction ? (
+            {stage === "kagari" && motif !== "kiku" && dirAction ? (
               <button
                 type="button"
                 aria-label={kagariDir === "out" ? "Наружу" : "Внутрь"}

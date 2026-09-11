@@ -5,6 +5,7 @@ import type { Stitch } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
+import { stackBump } from "./kagari";
 
 const ARC_SEGS = 32;
 
@@ -13,6 +14,48 @@ const _t = new THREE.Vector3();
 const _side = new THREE.Vector3();
 const _radial = new THREE.Vector3();
 const _mid = new THREE.Vector3();
+const _ua = new THREE.Vector3();
+const _ub = new THREE.Vector3();
+const _pa = new THREE.Vector3();
+const _pb = new THREE.Vector3();
+
+function kindMm(kind: ThreadKind) {
+  if (kind === "pearl8") return STITCH_THREAD_MM.pearl8;
+  if (kind === "metallic") return STITCH_THREAD_MM.mark;
+  return STITCH_THREAD_MM.pearl5;
+}
+
+/** Unit-sphere geodesic. a and b may have any radius; result is unit. */
+function slerpUnit(
+  a: THREE.Vector3,
+  b: THREE.Vector3,
+  t: number,
+  out: THREE.Vector3,
+) {
+  _ua.copy(a).normalize();
+  _ub.copy(b).normalize();
+  const dot = THREE.MathUtils.clamp(_ua.dot(_ub), -1, 1);
+  const theta = Math.acos(dot);
+  if (theta < 1e-4) return out.copy(_ua);
+  if (theta > Math.PI - 1e-4) {
+    const axis =
+      Math.abs(_ua.y) < 0.9 ? _t.set(0, 1, 0) : _t.set(1, 0, 0);
+    _mid.crossVectors(_ua, axis).normalize();
+    if (t < 0.5) {
+      const u = t * 2;
+      const h = (u * Math.PI) / 2;
+      return out.copy(_ua).multiplyScalar(Math.cos(h)).addScaledVector(_mid, Math.sin(h));
+    }
+    const u = t * 2 - 1;
+    const h = (u * Math.PI) / 2;
+    return out.copy(_mid).multiplyScalar(Math.cos(h)).addScaledVector(_ub, Math.sin(h));
+  }
+  const s = Math.sin(theta);
+  return out
+    .copy(_ua)
+    .multiplyScalar(Math.sin((1 - t) * theta) / s)
+    .addScaledVector(_ub, Math.sin(t * theta) / s);
+}
 
 function slerp(
   a: THREE.Vector3,
@@ -20,24 +63,10 @@ function slerp(
   t: number,
   out: THREE.Vector3,
 ) {
-  const dot = THREE.MathUtils.clamp(a.dot(b), -1, 1);
-  const theta = Math.acos(dot);
-  if (theta < 1e-4) return out.copy(a);
-  if (theta > Math.PI - 1e-4) {
-    // Antipodes: shortest geodesic is not unique. Pick a stable plane.
-    const axis =
-      Math.abs(a.y) < 0.9
-        ? _t.set(0, 1, 0)
-        : _t.set(1, 0, 0);
-    _mid.crossVectors(a, axis).normalize();
-    if (t < 0.5) return slerp(a, _mid, t * 2, out);
-    return slerp(_mid, b, t * 2 - 1, out);
-  }
-  const s = Math.sin(theta);
-  return out
-    .copy(a)
-    .multiplyScalar(Math.sin((1 - t) * theta) / s)
-    .addScaledVector(b, Math.sin(t * theta) / s);
+  const ra = a.length();
+  const rb = b.length();
+  slerpUnit(a, b, t, out);
+  return out.multiplyScalar(ra + (rb - ra) * t);
 }
 
 export function slerpOnSphere(
@@ -50,12 +79,7 @@ export function slerpOnSphere(
 }
 
 function vec(p: [number, number, number], lift = 0, kind: ThreadKind = DEFAULT_KIND.stitch) {
-  const mm =
-    kind === "pearl8"
-      ? STITCH_THREAD_MM.pearl8
-      : kind === "metallic"
-        ? STITCH_THREAD_MM.mark
-        : STITCH_THREAD_MM.pearl5;
+  const mm = kindMm(kind);
   const r = 1 + unitFromMm(mm) * 0.5 + lift;
   return new THREE.Vector3(p[0], p[1], p[2]).normalize().multiplyScalar(r);
 }
@@ -126,6 +150,38 @@ function arcRibbon(a: THREE.Vector3, b: THREE.Vector3, width: number) {
   const pts: THREE.Vector3[] = [];
   for (let i = 0; i <= ARC_SEGS; i++) {
     pts.push(slerp(a, b, i / ARC_SEGS, _a).clone());
+  }
+  return ribbonFromPoints(pts, width, false);
+}
+
+/**
+ * Geodesic on the mari with local extra height where the stitch sits on thread.
+ * Legs stay at wrap + one radius. Only the pole bundle and the set-B
+ * crossing rise — and only by a few thread diameters, pressed down the
+ * way a master strokes the uwagake wedge. Stretch at the outer point is
+ * along the mark, not a radial lift.
+ */
+function stackedArcRibbon(
+  stitch: Extract<Stitch, { kind: "arc" }>,
+  width: number,
+  kind: ThreadKind,
+) {
+  const mm = kindMm(kind);
+  const half = unitFromMm(mm) * 0.5;
+  const diameter = unitFromMm(mm);
+  _pa.set(stitch.a[0], stitch.a[1], stitch.a[2]).normalize();
+  _pb.set(stitch.b[0], stitch.b[1], stitch.b[2]).normalize();
+  const sitA = stitch.sitA ?? 0;
+  const sitB = stitch.sitB ?? 0;
+  const sitMid = stitch.sitMid ?? 0;
+  const uniform = stitch.lift ?? 0;
+  const pts: THREE.Vector3[] = [];
+  for (let i = 0; i <= ARC_SEGS; i++) {
+    const t = i / ARC_SEGS;
+    const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid));
+    const extra = uniform + stacked * diameter * 0.7;
+    slerpUnit(_pa, _pb, t, _a);
+    pts.push(_a.clone().multiplyScalar(1 + half + extra));
   }
   return ribbonFromPoints(pts, width, false);
 }
@@ -210,17 +266,21 @@ export function createMotifGeometry(
   const parts: THREE.BufferGeometry[] = [];
   for (const stitch of stitches) {
     if (stitch.color !== colorIndex) continue;
-    const lift = stitch.lift ?? 0;
     if (stitch.kind === "arc") {
       const via = stitch.via ?? [];
-      const path = [
-        vec(stitch.a, lift + (via.length ? 0.0002 : 0), kind),
-        ...via.map((p) => vec(p, lift + 0.00035, kind)),
-        vec(stitch.b, lift, kind),
-      ];
-      parts.push(geodesicRibbon(path, width));
+      if (via.length === 0) {
+        parts.push(stackedArcRibbon(stitch, width, kind));
+      } else {
+        const lift = stitch.lift ?? 0;
+        const path = [
+          vec(stitch.a, lift, kind),
+          ...via.map((p) => vec(p, lift, kind)),
+          vec(stitch.b, lift, kind),
+        ];
+        parts.push(geodesicRibbon(path, width));
+      }
     } else {
-      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, lift, kind)), width * 1.08, true));
+      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, stitch.lift ?? 0, kind)), width * 1.08, true));
     }
   }
   if (parts.length === 0) return null;
@@ -281,8 +341,10 @@ export function createWrapLineGeometry(strands: THREE.Vector3[][]) {
 }
 
 class SpherePolyline extends THREE.Curve<THREE.Vector3> {
-  constructor(private pts: THREE.Vector3[]) {
+  pts: THREE.Vector3[];
+  constructor(pts: THREE.Vector3[]) {
     super();
+    this.pts = pts;
   }
   getPoint(t: number, optionalTarget = new THREE.Vector3()) {
     const pts = this.pts;

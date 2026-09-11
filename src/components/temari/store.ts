@@ -639,6 +639,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       hoverSlot: null,
       kagariSet: 0,
       kikuLayers: 1,
+      kagariDir: id === "kiku" ? "out" : get().kagariDir,
       ...idleKagari(),
     });
     rememberStudio(get());
@@ -662,7 +663,7 @@ export const useTemari = create<TemariState>((set, get) => ({
         state.motif,
         state.kagariDir,
         state.kagariSpacing,
-        state.motif === "obi" ? "all" : state.facingPole,
+        state.facingPole,
         selectedColor,
         state.kikuLayers,
         state.motif === "kiku" ? state.kagariSet : "all",
@@ -938,7 +939,8 @@ export const useTemari = create<TemariState>((set, get) => ({
     set({ kikuLayers: Math.max(1, Math.min(max, Math.round(n))) });
   },
   setKagariDir: (dir) => {
-    set({ kagariDir: dir });
+    const next = get().motif === "kiku" ? "out" : dir;
+    set({ kagariDir: next });
     if (get().motif !== "none") get().startKagari();
   },
   setKagariSpacing: (spacing) => {
@@ -1025,6 +1027,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       }
       if (state.motif === "kiku") {
         const spec = kikuSpec(state.division, state.kagariSpacing, "fit");
+        if (state.kagariSet === 0) return;
         if (state.kikuLayers >= spec.fit) return;
         const nextL = state.kikuLayers + 1;
         const extraOf = (onlySet: 0 | 1) => {
@@ -1049,9 +1052,9 @@ export const useTemari = create<TemariState>((set, get) => ({
             onlySet,
           ).slice(before);
         };
-        // First four grow alone. After the other four, the whole flower grows.
-        const extra =
-          state.kagariSet === 1 ? [...extraOf(0), ...extraOf(1)] : extraOf(state.kagariSet);
+        // First four are one round. After the other four, Fill packs the next
+        // kai of both — GT14 alternate, not all-of-A then all-of-B.
+        const extra = [...extraOf(0), ...extraOf(1)];
         if (extra.length === 0) return;
         feel.stitch();
         set({

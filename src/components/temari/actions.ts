@@ -1,4 +1,4 @@
-import { isClosedContour, type KagariDir, type KagariSpacing, type MotifId } from "./patterns";
+import { isClosedContour, kikuSpec, type KagariDir, type KagariSpacing, type MotifId } from "./patterns";
 import type { Craft } from "./craft";
 import type { Division } from "./division";
 import type { JiwariPhase } from "./jiwari";
@@ -21,6 +21,10 @@ export type TemariCraftState = {
   undoEmpty: boolean;
   kagariDir: KagariDir;
   kagariSpacing: KagariSpacing;
+  kagariSet: 0 | 1;
+  kagariIdleComplete: boolean;
+  kikuLayers: number;
+  kikuFit: number;
   selectedColor: number;
   paletteId: PaletteId;
 };
@@ -58,6 +62,11 @@ export function getCraftState(): TemariCraftState {
     undoEmpty,
     kagariDir: s.kagariDir,
     kagariSpacing: s.kagariSpacing,
+    kagariSet: s.kagariSet,
+    kagariIdleComplete:
+      !s.kagariPlaying && s.kagariPlan.length > 0 && s.kagariLaid >= s.kagariPlan.length,
+    kikuLayers: s.kikuLayers,
+    kikuFit: kikuSpec(s.division, s.kagariSpacing, "fit").fit,
     selectedColor: s.selectedColor,
     paletteId: s.paletteId,
   };
@@ -172,10 +181,15 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "kagari-in",
     label: "Внутрь",
     cluster: "kagari",
-    canExecute: (s) => !needMarks(s) && canFillMotif(s),
+    canExecute: (s) => !needMarks(s) && canFillMotif(s) && s.motif !== "kiku",
     isActive: (s) => s.kagariDir === "in",
     getDisabledReason: (s) =>
-      needMarks(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
+      needMarks(s) ??
+      (s.motif === "kiku"
+        ? "Кику шьют от полюса. Сакаса — другой стежок."
+        : canFillMotif(s)
+          ? null
+          : "Сначала разметка или замкнутый контур"),
   },
   {
     id: "kagari-out",
@@ -190,9 +204,23 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "fill",
     label: "Залить",
     cluster: "kagari",
-    canExecute: (s) => !needMarks(s) && canFillMotif(s),
+    canExecute: (s) => {
+      if (needMarks(s) || !canFillMotif(s)) return false;
+      if (s.motif === "kiku" && s.kagariIdleComplete) {
+        if (s.kagariSet === 0) return false;
+        if (s.kikuLayers >= s.kikuFit) return false;
+      }
+      return true;
+    },
     getDisabledReason: (s) =>
-      needMarks(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
+      needMarks(s) ??
+      (s.motif === "kiku" && s.kagariIdleComplete && s.kagariSet === 0
+        ? "Сначала вторые 4 — снова «Кику»."
+        : s.motif === "kiku" && s.kagariIdleComplete && s.kikuLayers >= s.kikuFit
+          ? "До оби. Дальше — переверните шар."
+          : canFillMotif(s)
+            ? null
+            : "Сначала разметка или замкнутый контур"),
   },
   {
     id: "space-open",

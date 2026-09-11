@@ -14,7 +14,7 @@ describe("kagari recipe atom", () => {
     assert.equal(KIKU_8_POINT.stitch, "uwagake-chidori");
     assert.equal(KIKU_8_POINT.centers, "facing-pole");
     assert.equal(KIKU_8_POINT.sets, 2);
-    assert.equal(KIKU_8_POINT.innerMm, 10);
+    assert.equal(KIKU_8_POINT.innerMm, 5);
     assert.equal(KIKU_8_POINT.outerFromEquator, 1 / 3);
     assert.equal(KIKU_8_POINT.stretchMm, 2);
   });
@@ -161,12 +161,12 @@ describe("kagari recipe atom", () => {
     assert.equal(setB, 8);
   });
 
-  it("all kai of set 0 land before any of set 1", () => {
+  it("GT14 ring-major: A0, B0, A1, B1 — not all kai of A first", () => {
     const ops = compileKiku("simple", "out", "even", 0);
-    const firstB = ops.findIndex((op) => op.set === 1);
-    assert.ok(firstB > 0);
-    assert.ok(ops.slice(0, firstB).every((op) => op.set === 0));
-    assert.ok(ops.slice(firstB).every((op) => op.set === 1));
+    assert.ok(ops.slice(0, 8).every((op) => op.kai === 0 && op.set === 0));
+    assert.ok(ops.slice(8, 16).every((op) => op.kai === 0 && op.set === 1));
+    assert.ok(ops.slice(16, 24).every((op) => op.kai === 1 && op.set === 0));
+    assert.ok(ops.slice(24, 32).every((op) => op.kai === 1 && op.set === 1));
   });
 
   it("onlySet 0 with one kai is four petals, not eight", () => {

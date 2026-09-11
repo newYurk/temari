@@ -28,9 +28,10 @@ export type PatternRecipe = {
    */
   cornerMm: number;
   /**
-   * Outer step after round 0, millimetres. Ozaki / TemariKai: ~2 mm for
-   * pearl #5 so the thread can turn the corner. This IS the step, not
-   * an extra on top of one thread — else six rounds reach the equator.
+   * Outer step after round 0, millimetres. Ozaki / TemariKai Stretch Points:
+   * ~2 mm for pearl #5 so the thread can turn the corner *along the mark*.
+   * Round 0 already reaches the pin (⅓ up from the equator). Each later kai
+   * stretches that point toward the equator; the inner mark drops one thread.
    */
   stretchMm: number;
 };
@@ -41,7 +42,7 @@ export const KIKU_8_POINT: PatternRecipe = {
   stitch: "uwagake-chidori",
   centers: "facing-pole",
   sets: 2,
-  innerMm: 10,
+  innerMm: 5,
   outerFromEquator: 1 / 3,
   crossing: "over-all",
   cornerMm: 0.71,
@@ -148,6 +149,22 @@ export function stackOver(previous: number[], crossing: Crossing): number[] {
   if (crossing === "under" || previous.length === 0) return [];
   if (crossing === "over-1") return previous.slice(-1);
   return [...previous];
+}
+
+/**
+ * Local stack along a laid stitch, in counts of threads underneath.
+ * Peak 1 at the named site, zero elsewhere — the V is not lifted as a whole.
+ */
+export function stackBump(t: number, sitA: number, sitB: number, sitMid: number) {
+  const bump = (x: number, center: number, width: number) => {
+    const w = Math.max(1e-6, width);
+    const d = Math.abs(x - center) / w;
+    if (d >= 1) return 0;
+    const u = 1 - d;
+    return u * u * (3 - 2 * u);
+  };
+  const endW = 0.14 + 0.05 * Math.max(sitA, sitB);
+  return sitA * bump(t, 0, endW) + sitB * bump(t, 1, endW) + sitMid * bump(t, 0.5, 0.16);
 }
 
 /**

@@ -62,14 +62,14 @@ describe("kiku on Simple 8", () => {
     }
   });
 
-  it("upper marks sit ~1 cm from the pole; outer is the obi ceiling, not round 0", () => {
+  it("GT14: inner 5 mm from the pole; first outer is the pin ⅓ from the equator", () => {
     const spec = kikuSpec("simple");
-    assert.ok(Math.abs(spec.inner - unitFromMm(10)) < 1e-6);
+    assert.ok(Math.abs(spec.inner - unitFromMm(5)) < 1e-6);
     assert.ok(Math.abs(spec.outer - Math.PI / 3) < 1e-9);
     const first = kikuThetas(spec, 0);
-    assert.ok(first.tOuter < spec.outer * 0.65, "round 0 corners sit near the pole");
-    assert.ok(first.tOuter - first.tInner > unitFromMm(8), "first V is a petal, not a tick");
-    assert.ok(spec.inner + spec.rounds * spec.pitch <= spec.outer + spec.pitch);
+    assert.ok(Math.abs(first.tOuter - spec.outer) < 1e-9, "round 0 goes to the pin");
+    assert.ok(first.tOuter - first.tInner > 0.7, "first V is a long petal, not a tick");
+    assert.ok(spec.inner + spec.rounds * spec.pitch <= spec.ceiling + spec.pitch);
     assert.ok(Math.abs(spec.pitch - unitFromMm(STITCH_THREAD_MM.pearl5)) < 1e-6);
   });
 
@@ -87,10 +87,10 @@ describe("kiku on Simple 8", () => {
     const bB = polar(pole, b.b);
     const spanA = Math.abs(aA.theta - aB.theta);
     const spanB = Math.abs(bA.theta - bB.theta);
-    assert.ok(spanA > 0.18, `leg A span ${spanA}`);
-    assert.ok(spanB > 0.18, `leg B span ${spanB}`);
-    assert.ok(spanA < 0.45, `leg A still a hemisphere (${spanA})`);
-    assert.ok(Math.min(aA.theta, aB.theta, bA.theta, bB.theta) > 0.2, "inner is 1 cm, not 2 mm");
+    assert.ok(spanA > 0.7, `leg A span ${spanA} — GT14 first V reaches the pin`);
+    assert.ok(spanB > 0.7, `leg B span ${spanB}`);
+    assert.ok(spanA < 1.2, `leg A still a hemisphere (${spanA})`);
+    assert.ok(Math.min(aA.theta, aB.theta, bA.theta, bB.theta) > 0.1, "inner is 5 mm, not on the pole");
     const slopeA = wrapDelta(aA.phi, aB.phi) / (aB.theta - aA.theta);
     const slopeB = wrapDelta(bA.phi, bB.phi) / (bB.theta - bA.theta);
     assert.ok(slopeA * slopeB < 0, `same-way herringbone: ${slopeA} vs ${slopeB}`);
@@ -108,23 +108,22 @@ describe("kiku on Simple 8", () => {
     assert.deepEqual(sectors.slice(4, 8), [1, 3, 5, 7]);
   });
 
-  it("finishes the four petals (all kai) before the other four", () => {
+  it("GT14: one kai of A, then one kai of B, then the next kai of both", () => {
     const sewn = fillKikuSewn("simple", "out", "even");
-    const spec = kikuSpec("simple", "even");
-    const perSet = spec.rounds * 4;
-    const first = sewn.slice(0, 4).map((e) => e.key);
-    assert.deepEqual(first, ["0:0:0", "0:0:2", "0:0:4", "0:0:6"]);
-    assert.ok(
-      sewn.slice(0, perSet).every((e) => Number(e.key.split(":")[2]) % 2 === 0),
-      "set A is even meridians, all rounds",
+    assert.deepEqual(
+      sewn.slice(0, 4).map((e) => e.key),
+      ["0:0:0", "0:0:2", "0:0:4", "0:0:6"],
     );
-    assert.ok(
-      sewn.slice(perSet, perSet * 2).every((e) => Number(e.key.split(":")[2]) % 2 === 1),
-      "set B is odd meridians, after A",
+    assert.deepEqual(
+      sewn.slice(4, 8).map((e) => e.key),
+      ["0:0:1", "0:0:3", "0:0:5", "0:0:7"],
+    );
+    assert.deepEqual(
+      sewn.slice(8, 12).map((e) => e.key),
+      ["0:1:0", "0:1:2", "0:1:4", "0:1:6"],
     );
     const inward = fillKikuSewn("simple", "in", "even");
-    const lastRing = spec.rounds - 1;
-    assert.equal(inward[0]?.key, `0:${lastRing}:0`);
+    assert.equal(inward[0]?.key, "0:0:0", "kiku ignores dir — always pole-out");
   });
 
   it("finishes the north pole before turning to the south", () => {
@@ -187,7 +186,7 @@ describe("kiku on Simple 8", () => {
     const lastI = spec.rounds - 1;
     const last = kikuThetas(spec, lastI);
     assert.ok(last.tOuter > first.tOuter, "later rings move out");
-    assert.ok(last.tOuter <= spec.outer + 1e-9, "never past the obi ceiling");
+    assert.ok(last.tOuter <= spec.ceiling + 1e-9, "never past the obi ceiling");
     const q = around(pole, 0.5 * (last.tInner + last.tOuter), 0.1);
     const hN = hitKikuSlot(q[0], q[1], q[2], "simple");
     assert.equal(hN?.ring, lastI);
@@ -197,7 +196,7 @@ describe("kiku on Simple 8", () => {
     assert.ok(hPast, "drawn outer rows are hittable");
   });
 
-  it("one set of one kai is four petals near the pole", () => {
+  it("one set of one kai is four petals to the pin, not a short star", () => {
     const ops = compileKiku("simple", "out", "even", 0, 0, 1, 0);
     assert.equal(ops.length, 8);
     assert.ok(ops.every((op) => op.set === 0 && op.kai === 0));
@@ -206,14 +205,15 @@ describe("kiku on Simple 8", () => {
     if (!outer) return;
     const th = Math.acos(Math.min(1, Math.max(-1, outer.mark.at[1])));
     const spec = kikuSpec("simple", "even", 1);
-    assert.ok(th < spec.outer * 0.65, "first corners sit near the pole, not at the obi");
+    assert.ok(Math.abs(th - spec.outer) < 0.02, "first corners sit on the pin, ⅓ from the equator");
+    assert.ok(th > spec.inner + 0.5, "first V is long");
   });
 
-  it("fit is a few kai so the nested flower still reads", () => {
+  it("fit packs thread-to-thread toward the obi, not four nested outlines", () => {
     const spec = kikuSpec("simple", "even", "fit");
-    assert.ok(spec.fit >= 2 && spec.fit <= 4);
+    assert.ok(spec.fit >= 5 && spec.fit <= 14, `fit=${spec.fit}`);
     const last = kikuThetas(spec, spec.fit - 1);
-    assert.ok(last.tOuter <= spec.outer + 1e-9, "never past the obi mark");
-    assert.ok(last.tOuter < 0.8, "max corners stay inside the disk");
+    assert.ok(last.tOuter <= spec.ceiling + 1e-9, "never past the obi mark");
+    assert.ok(last.tOuter > spec.outer + spec.stretch, "later rounds stretch past the first pin");
   });
 });

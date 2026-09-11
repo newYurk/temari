@@ -18,6 +18,11 @@ export type Stitch =
       b: Vec3;
       color: number;
       lift?: number;
+      /** Threads already under this end — extra height is local, not the whole V. */
+      sitA?: number;
+      sitB?: number;
+      /** Set B crossing set A, at the mid of the leg. */
+      sitMid?: number;
       bite?: { enter: Vec3; exit: Vec3 };
       via?: Vec3[];
     }
@@ -248,7 +253,7 @@ export function hitKikuSlot(
 
 export function fillKikuSewn(
   division: Division,
-  dir: KagariDir = "out",
+  _dir: KagariDir = "out",
   spacing: KagariSpacing = "even",
   which: number | "all" = "all",
   wanted: number | "fit" = 3,
@@ -257,13 +262,12 @@ export function fillKikuSewn(
   const spec = kikuSpec(division, spacing, wanted);
   const skip = spec.sets;
   const rings = Array.from({ length: spec.rounds }, (_, i) => i);
-  if (dir === "in") rings.reverse();
   const sewn: SewnEntry[] = [];
   // One pole, then the player turns the mari. "all" is the finished recipe (title / Пример).
-  // Four petals all the way, then the other four — not a round of both sets mixed.
+  // GT14: Color A round 1, park, Color B round 1, then A2, B2 — alternate, not all kai of A first.
   for (const { index: pole } of kagariPolesToSew(division, which)) {
-    for (let pass = 0; pass < skip; pass++) {
-      for (const ring of rings) {
+    for (const ring of rings) {
+      for (let pass = 0; pass < skip; pass++) {
         const color = kikuColor(ring);
         for (let sector = 0; sector < n; sector++) {
           if (sector % skip !== pass) continue;
@@ -382,11 +386,11 @@ function starSkip(division: Division) {
 }
 
 /**
- * Upper marks sit ~1 cm from the pole (Barbara / TemariKai beginner).
- * Round 0 is a short V near the pole — the player decides how far the
- * corners go (Fill adds a kai). `outer` is the ceiling (room for an obi),
- * not the first stitch. Ozaki stretch is the outer step, not on top of pitch.
- * Default wanted is 3 kai (tests); studio starts at 1.
+ * GT14 / TemariKai beginner: enter ~5 mm from the pole; first outer stitch
+ * sits just below the pin ⅓ up from the equator. Later rounds pack beside
+ * that V — inner drops one pearl #5, outer stretches ~2 mm (Ozaki) toward
+ * the equator. `outer` is the first pin, not a short-V ceiling.
+ * Default wanted is 3 kai (tests); studio starts at 1; title uses "fit".
  */
 export function kikuSpec(
   division: Division,
@@ -396,25 +400,23 @@ export function kikuSpec(
   const recipe = kikuRecipe(division);
   const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
   const stretch = unitFromMm(recipe?.stretchMm ?? STITCH_THREAD_MM.pearl5);
-  const inner = unitFromMm(recipe?.innerMm ?? 10);
+  const inner = unitFromMm(recipe?.innerMm ?? 5);
   const outer = recipe
     ? (Math.PI / 2) * (1 - recipe.outerFromEquator)
     : division === "c8"
       ? Math.PI / 4
       : 0.52;
-  // First petal length ≈ the inner mark: 1 cm in, 1 cm of V. Corners sit
-  // around the pin, not at the obi.
-  const vDepth = inner;
-  const stepOut = stretch;
-  const room = Math.max(0, outer - inner - vDepth);
-  // Ozaki step is 2 mm; more than four nested thin-arc kai reads as a nest.
-  const packed = 1 + Math.floor(room / Math.max(stepOut, 1e-9));
-  const fit = Math.max(1, Math.min(4, packed));
+  // Room for a thin maki obi. GT14 works toward the equator, not past it.
+  const ceiling = Math.min(Math.PI / 2 - unitFromMm(8), Math.PI * 0.49);
+  const vDepth = Math.max(pitch, outer - inner);
+  const packed = 1 + Math.floor(Math.max(0, ceiling - outer) / Math.max(stretch, 1e-9));
+  const fit = Math.max(1, packed);
   const rounds =
     wanted === "fit" ? fit : Math.max(1, Math.min(fit, Math.round(wanted)));
   return {
     inner,
     outer,
+    ceiling,
     pitch,
     stretch,
     vDepth,
@@ -434,14 +436,19 @@ function kikuColor(_ring: number, base = 0) {
 }
 
 export function kikuThetas(
-  spec: { inner: number; outer: number; pitch: number; stretch: number; vDepth: number },
+  spec: {
+    inner: number;
+    outer: number;
+    pitch: number;
+    stretch: number;
+    vDepth: number;
+    ceiling?: number;
+  },
   ring: number,
 ) {
+  const ceiling = spec.ceiling ?? Math.min(Math.PI / 2 - unitFromMm(8), Math.PI * 0.49);
   const tInner = spec.inner + ring * spec.pitch;
-  const tOuter = Math.min(
-    spec.outer,
-    spec.inner + spec.vDepth + ring * spec.stretch,
-  );
+  const tOuter = Math.min(ceiling, spec.outer + ring * spec.stretch);
   return { tInner, tOuter };
 }
 
@@ -455,20 +462,39 @@ function kikuPetal(
 ): Stitch[] {
   if (ring < 0) return [];
   const { tInner, tOuter } = kikuThetas(spec, ring);
-  if (tOuter >= Math.PI * 0.49 || tInner >= tOuter - spec.pitch * 0.4) return [];
+  if (tInner >= tOuter - spec.pitch * 0.4) return [];
   const step = (2 * Math.PI) / n;
   const phi0 = step * sector;
   const phi1 = step * (sector + 1);
   const phi2 = step * (sector + 2);
-  const lift = ring * 0.00012;
   const a = around(pole, tInner, phi0);
   const b = around(pole, tOuter, phi1);
   const c = around(pole, tInner, phi2);
   const cornerMm = KIKU_8_POINT.cornerMm;
+  const sitInner = ring;
+  const sitMid = sector % 2 === 1 ? 1 : 0;
   // Downward V: uppers on meridians sector and sector+2, point on sector+1.
   return [
-    { kind: "arc", a, b, color, lift, bite: biteAcross(pole, b, cornerMm) },
-    { kind: "arc", a: b, b: c, color, lift, bite: biteAcross(pole, c, cornerMm) },
+    {
+      kind: "arc",
+      a,
+      b,
+      color,
+      sitA: sitInner,
+      sitB: 0,
+      sitMid,
+      bite: biteAcross(pole, b, cornerMm),
+    },
+    {
+      kind: "arc",
+      a: b,
+      b: c,
+      color,
+      sitA: 0,
+      sitB: sitInner,
+      sitMid,
+      bite: biteAcross(pole, c, cornerMm),
+    },
   ];
 }
 
@@ -508,7 +534,7 @@ function pushKikuLeg(
  */
 export function compileKiku(
   division: Division,
-  dir: KagariDir = "out",
+  _dir: KagariDir = "out",
   spacing: KagariSpacing = "even",
   which: number | "all" = "all",
   color = 0,
@@ -521,20 +547,21 @@ export function compileKiku(
   const recipe = spec.recipe;
   const cornerMm = recipe?.cornerMm ?? 2;
   const crossing = recipe?.crossing ?? "over-all";
+  // Beginner kiku is uwagake-chidori from the pole. Sakasa is a different
+  // stitch (fill a shape from the outside in), not a toggle on this flower.
   const rings = Array.from({ length: spec.rounds }, (_, i) => i);
-  if (dir === "in") rings.reverse();
   const ops: KagariOp[] = [];
   const step = (2 * Math.PI) / n;
   for (const { index: poleIndex, pole } of kagariPolesToSew(division, which)) {
     const innerOver: number[][] = Array.from({ length: n }, () => []);
-    for (let pass = 0; pass < skip; pass++) {
-      if (onlySet !== "all" && pass !== onlySet) continue;
-      const set = (pass === 0 ? 0 : 1) as 0 | 1;
-      let cursor: Vec3 | null = null;
-      for (const ring of rings) {
+    for (const ring of rings) {
+      const { tInner, tOuter } = kikuThetas(spec, ring);
+      if (tInner >= tOuter - spec.pitch * 0.4) continue;
+      for (let pass = 0; pass < skip; pass++) {
+        if (onlySet !== "all" && pass !== onlySet) continue;
+        const set = (pass === 0 ? 0 : 1) as 0 | 1;
         const thread = kikuColor(ring, color);
-        const { tInner, tOuter } = kikuThetas(spec, ring);
-        if (tOuter >= Math.PI * 0.49 || tInner >= tOuter - spec.pitch * 0.4) continue;
+        let cursor: Vec3 | null = null;
         for (let sector = 0; sector < n; sector++) {
           if (sector % skip !== pass) continue;
           const phi0 = step * sector;
@@ -579,15 +606,27 @@ export function compileKiku(
 }
 
 export function stitchesFromOps(ops: KagariOp[]): Stitch[] {
-  return ops.map((op) => ({
-    kind: "arc" as const,
-    a: op.lay.from,
-    b: op.lay.to,
-    color: op.color,
-    lift: op.kai * 0.00012 + op.over.length * 0.00008 + (op.set === 1 ? 0.00005 : 0),
-    bite: op.bite,
-    via: op.lay.via,
-  }));
+  return ops.map((op, i) => {
+    const prev = i > 0 ? ops[i - 1] : undefined;
+    const sitTo = op.mark.t === "inner" ? op.over.length : 0;
+    const sitFrom =
+      prev && prev.pole === op.pole && prev.set === op.set
+        ? prev.mark.t === "inner"
+          ? prev.over.length
+          : 0
+        : 0;
+    return {
+      kind: "arc" as const,
+      a: op.lay.from,
+      b: op.lay.to,
+      color: op.color,
+      sitA: sitFrom,
+      sitB: sitTo,
+      sitMid: op.set === 1 ? 1 : 0,
+      bite: op.bite,
+      via: op.lay.via,
+    };
+  });
 }
 
 function kiku(
@@ -772,7 +811,7 @@ export function sameFocus(a: Vec3 | null, b: Vec3 | null) {
 export function kagariPhaseHint(
   motif: MotifId,
   division: Division,
-  dir: KagariDir,
+  _dir: KagariDir,
   laid: number,
   total: number,
   playing: boolean,
@@ -783,13 +822,11 @@ export function kagariPhaseHint(
   if (motif === "none" || total === 0) return "";
   if (!playing && laid >= total) {
     if (motif === "kiku" && kagariSet === 0) {
-      return canGrow
-        ? "Залить — дальше от полюса. Снова «Кику» — следующие 4."
-        : "Снова «Кику» — следующие 4.";
+      return "Снова «Кику» — следующие 4.";
     }
     if (motif === "kiku") {
       return canGrow
-        ? "Залить — дальше от полюса. Другой полюс — переверните шар."
+        ? "Залить — следующий ряд обеих четвёрок."
         : "Кагари: ряд лежит. Другой полюс — переверните шар.";
     }
     return "Кагари: ряд лежит. Другой полюс — переверните шар.";
@@ -805,8 +842,7 @@ export function kagariPhaseHint(
   const kai = Math.floor(at / perRound) + 1;
   const where = poleIndex === 0 ? "север" : poleIndex === 1 ? "юг" : `полюс ${poleIndex + 1}`;
   const petals = kagariSet === 0 ? "первые 4" : "вторые 4";
-  const way = dir === "out" ? "от полюса" : "с края";
-  return `Кику · ${where} · ${petals} · круг ${kai} · ${way}`;
+  return `Кику · ${where} · ${petals} · круг ${kai} · от полюса`;
 }
 
 /** Classic first temari: Simple 8, kiku on both poles, maki obi. */
@@ -879,7 +915,7 @@ export function kikuArcsFromPins(
   pins: Vec3[],
   layers: number,
   color: number,
-  dir: KagariDir = "out",
+  _dir: KagariDir = "out",
   threadWidth = 0.42,
   density = 0.5,
 ): { a: Vec3; b: Vec3; color: number }[] {
@@ -895,11 +931,12 @@ export function kikuArcsFromPins(
     const n = sorted.length;
     const skip = kikuSkip(n);
     const L = Math.max(1, Math.min(cap.max, Math.round(layers)));
-    const inner = Math.max(cap.innerMin, unitFromMm(10));
+    const inner0 = Math.max(cap.innerMin, unitFromMm(5));
     const outer0 = Math.min(cap.span * (2 / 3), cap.span - cap.pitch);
-    const order = Array.from({ length: L }, (_, i) => (dir === "in" ? L - 1 - i : i));
+    const order = Array.from({ length: L }, (_, i) => i);
     for (const r of order) {
-      const outer = outer0 - r * cap.pitch;
+      const inner = inner0 + r * cap.pitch;
+      const outer = Math.min(cap.span - cap.pitch * 0.2, outer0 + r * cap.pitch * 2);
       if (outer <= inner + cap.pitch * 0.6) continue;
       const c = r % 2 === 0 ? color : (color + 1) % 4;
       for (const pass of [0, 1] as const) {
