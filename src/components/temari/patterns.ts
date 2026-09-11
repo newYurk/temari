@@ -415,7 +415,7 @@ function kikuPetal(
   const phi0 = step * sector;
   const phi1 = step * (sector + 1);
   const phi2 = step * (sector + 2);
-  const lift = 0.003 + ring * 0.0005;
+  const lift = ring * 0.00012;
   const a = around(pole, tInner, phi0);
   const b = around(pole, tOuter, phi1);
   const c = around(pole, tInner, phi2);
@@ -551,7 +551,7 @@ export function stitchesFromOps(ops: KagariOp[]): Stitch[] {
     a: op.lay.from,
     b: op.lay.to,
     color: op.color,
-    lift: 0.003 + op.kai * 0.00055 + op.over.length * 0.0007 + (op.set === 1 ? 0.0006 : 0),
+    lift: op.kai * 0.00012 + op.over.length * 0.00008 + (op.set === 1 ? 0.00005 : 0),
     bite: op.bite,
     via: op.lay.via,
   }));

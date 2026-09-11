@@ -144,7 +144,7 @@ export function simpleStitches(laid: number, color: number): Stitch[] {
     kind: "loop" as const,
     points: circle(n),
     color,
-    lift: 0.006,
+    lift: 0,
   }));
 }
 
@@ -153,7 +153,7 @@ export function c8Stitches(extraLaid: number, color: number): Stitch[] {
     kind: "loop" as const,
     points: circle(n),
     color,
-    lift: 0.006,
+    lift: 0,
   }));
   return [...simpleStitches(5, color), ...extra];
 }
@@ -318,7 +318,7 @@ export function jiwariStitches(division: Division, color = 1): Stitch[] {
     kind: "loop" as const,
     points: circle(n),
     color,
-    lift: 0.006,
+    lift: 0,
   }));
 }
 

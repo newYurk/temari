@@ -76,8 +76,8 @@ function ThreadLayer({
               depthWrite={opacity >= 1}
               side={THREE.DoubleSide}
               polygonOffset
-              polygonOffsetFactor={-8}
-              polygonOffsetUnits={-8}
+              polygonOffsetFactor={-1.2}
+              polygonOffsetUnits={-1.2}
             />
           </mesh>
         ) : null,
@@ -376,7 +376,7 @@ export function Ball() {
     const mesh = beads.current;
     if (!mesh) return;
     poles.forEach((p, i) => {
-      dummy.position.set(p[0] * 1.01, p[1] * 1.01, p[2] * 1.01);
+      dummy.position.set(p[0] * 1.006, p[1] * 1.006, p[2] * 1.006);
       dummy.scale.setScalar(1);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
@@ -431,12 +431,12 @@ export function Ball() {
     if (!shaft || !head) return;
     pins.forEach((pin, i) => {
       const n = _local.set(pin.p[0], pin.p[1], pin.p[2]).normalize();
-      dummy.position.copy(n).multiplyScalar(1.015);
+      dummy.position.copy(n).multiplyScalar(1.006);
       dummy.quaternion.setFromUnitVectors(Y_UP, n);
       dummy.scale.setScalar(i === activePin ? 1.28 : 1);
       dummy.updateMatrix();
       shaft.setMatrixAt(i, dummy.matrix);
-      dummy.position.copy(n).multiplyScalar(1.055);
+      dummy.position.copy(n).multiplyScalar(1.038);
       dummy.scale.setScalar(i === activePin ? 1.28 : 1);
       dummy.updateMatrix();
       head.setMatrixAt(i, dummy.matrix);
@@ -451,7 +451,7 @@ export function Ball() {
     const mesh = nodesMesh.current;
     if (!mesh) return;
     nodes.forEach((p, i) => {
-      dummy.position.set(p[0] * 1.012, p[1] * 1.012, p[2] * 1.012);
+      dummy.position.set(p[0] * 1.006, p[1] * 1.006, p[2] * 1.006);
       dummy.scale.setScalar(1);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);

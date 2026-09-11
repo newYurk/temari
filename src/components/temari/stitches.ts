@@ -2,11 +2,11 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import type { Stitch } from "./patterns";
-import { DEFAULT_KIND, ribbonWidth } from "./thread";
+import { DEFAULT_KIND, ribbonWidth, type ThreadKind } from "./thread";
+import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
 
 const ARC_SEGS = 32;
-const LIFT = 1.012;
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -49,8 +49,15 @@ export function slerpOnSphere(
   return slerp(a, b, t, out);
 }
 
-function vec(p: [number, number, number], lift = 0) {
-  return new THREE.Vector3(p[0], p[1], p[2]).normalize().multiplyScalar(LIFT + lift);
+function vec(p: [number, number, number], lift = 0, kind: ThreadKind = DEFAULT_KIND.stitch) {
+  const mm =
+    kind === "pearl8"
+      ? STITCH_THREAD_MM.pearl8
+      : kind === "metallic"
+        ? STITCH_THREAD_MM.mark
+        : STITCH_THREAD_MM.pearl5;
+  const r = 1 + unitFromMm(mm) * 0.5 + lift;
+  return new THREE.Vector3(p[0], p[1], p[2]).normalize().multiplyScalar(r);
 }
 
 export function ribbonFromPoints(pts: THREE.Vector3[], width: number, closed: boolean) {
@@ -207,13 +214,13 @@ export function createMotifGeometry(
     if (stitch.kind === "arc") {
       const via = stitch.via ?? [];
       const path = [
-        vec(stitch.a, lift + (via.length ? 0.0012 : 0)),
-        ...via.map((p) => vec(p, lift + 0.0024)),
-        vec(stitch.b, lift),
+        vec(stitch.a, lift + (via.length ? 0.0002 : 0), kind),
+        ...via.map((p) => vec(p, lift + 0.00035, kind)),
+        vec(stitch.b, lift, kind),
       ];
       parts.push(geodesicRibbon(path, width));
     } else {
-      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, lift)), width * 1.08, true));
+      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, lift, kind)), width * 1.08, true));
     }
   }
   if (parts.length === 0) return null;
