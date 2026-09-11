@@ -442,7 +442,7 @@ export function kikuThetas(
     outer: number;
     pitch: number;
     stretch: number;
-    vDepth: number;
+    vDepth?: number;
     ceiling?: number;
   },
   ring: number,
@@ -463,25 +463,114 @@ function offsetBy(p: Vec3, n: Vec3, delta: number): Vec3 {
   ]);
 }
 
-function offsetAxis(a: Vec3, b: Vec3, pole: Vec3): Vec3 {
-  const n = normalize(cross(a, b));
-  const mid = slerp3(a, b, 0.5);
-  const plus = offsetBy(mid, n, 0.02);
-  const th = (p: Vec3) =>
-    Math.acos(Math.min(1, Math.max(-1, dot(normalize(pole), p))));
-  return th(plus) > th(mid) ? n : [-n[0], -n[1], -n[2]];
-}
-
 function ease01(t: number) {
   const x = Math.min(1, Math.max(0, t));
   return x * x * (3 - 2 * x);
 }
 
+function pathSamples(a: Vec3, b: Vec3, via: Vec3[], count: number): Vec3[] {
+  const anchors = [a, ...via, b];
+  const out: Vec3[] = [];
+  for (let i = 0; i < count; i++) {
+    const t = count <= 1 ? 0 : i / (count - 1);
+    out.push(sampleAnchors(anchors, t));
+  }
+  return out;
+}
+
+function sampleAnchors(anchors: Vec3[], t: number): Vec3 {
+  if (anchors.length === 0) return [0, 1, 0];
+  if (anchors.length === 1) return anchors[0]!;
+  const x = Math.min(1, Math.max(0, t)) * (anchors.length - 1);
+  const s = Math.min(anchors.length - 2, Math.floor(x));
+  const a = anchors[s];
+  const b = anchors[s + 1];
+  if (!a) return anchors[0]!;
+  if (!b) return a;
+  return slerp3(a, b, x - s);
+}
+
+function angleBetween(a: Vec3, b: Vec3) {
+  return Math.acos(Math.min(1, Math.max(-1, dot(a, b))));
+}
+
+/** Even arc-length samples so the Ozaki turn isn't one fat hop. */
+function resampleArc(pts: Vec3[], count: number): Vec3[] {
+  if (pts.length === 0) return [];
+  if (pts.length === 1 || count <= 1) return [pts[0]!];
+  const dist = [0];
+  for (let i = 1; i < pts.length; i++) {
+    dist.push(dist[i - 1]! + angleBetween(pts[i - 1]!, pts[i]!));
+  }
+  const total = dist[dist.length - 1] || 1;
+  const out: Vec3[] = [];
+  for (let i = 0; i < count; i++) {
+    const target = (i / (count - 1)) * total;
+    let s = 0;
+    while (s + 1 < dist.length - 1 && (dist[s + 1] ?? 0) < target) s++;
+    const d0 = dist[s] ?? 0;
+    const d1 = dist[s + 1] ?? d0;
+    const span = d1 - d0;
+    const f = span < 1e-9 ? 0 : (target - d0) / span;
+    out.push(slerp3(pts[s]!, pts[s + 1] ?? pts[s]!, f));
+  }
+  out[0] = pts[0]!;
+  out[count - 1] = pts[pts.length - 1]!;
+  return out;
+}
+
+/** Move each sample one pearl perpendicular to the previous lay, away from the pole. */
+function parallelOffset(samples: Vec3[], pole: Vec3, delta: number): Vec3[] {
+  const p0 = normalize(pole);
+  return samples.map((p, i) => {
+    const prev = samples[i > 0 ? i - 1 : i]!;
+    const next = samples[i + 1 < samples.length ? i + 1 : i]!;
+    const raw: Vec3 = [next[0] - prev[0], next[1] - prev[1], next[2] - prev[2]];
+    const along = dot(raw, p);
+    let tangent = normalize([
+      raw[0] - p[0] * along,
+      raw[1] - p[1] * along,
+      raw[2] - p[2] * along,
+    ]);
+    if (hypot3(tangent) < 1e-6) {
+      tangent = normalize(cross(p0, p));
+    }
+    let n = normalize(cross(p, tangent));
+    const plus = offsetBy(p, n, 0.02);
+    const th = (q: Vec3) =>
+      Math.acos(Math.min(1, Math.max(-1, dot(p0, q))));
+    if (th(plus) < th(p)) n = [-n[0], -n[1], -n[2]];
+    return offsetBy(p, n, delta);
+  });
+}
+
+/**
+ * GT14 outer pins: on each meridian, ⅓ up from the equator.
+ * The first bottom stitch sits just below this pin. Later rounds stretch
+ * past it toward the equator — the pin is a mark, not a stop.
+ */
+export function kikuMarkPins(
+  division: Division,
+  which: number | "all" = "all",
+): { id: string; p: Vec3 }[] {
+  const n = petalCount(division);
+  const spec = kikuSpec(division);
+  const pins: { id: string; p: Vec3 }[] = [];
+  for (const { index, pole } of kagariPolesToSew(division, which)) {
+    for (let i = 0; i < n; i++) {
+      const phi = (2 * Math.PI * i) / n;
+      pins.push({ id: `kiku-${index}-${i}`, p: around(pole, spec.outer, phi) });
+    }
+  }
+  return pins;
+}
+
 /**
  * One kiku flank. Marks sit on meridians (inner + 1 thread, outer + Ozaki
- * 2 mm). The lay between them is a parallel offset of the first V — "lay
- * the thread parallel to the first round" — so the sides don't fan. The
- * extra at the point is a short turn, not a new angle for the whole petal.
+ * 2 mm). The body is a parallel offset of the *previous* round — the master
+ * lays the new thread next to the one just sewn, then takes the stitch where
+ * that lay crosses the jiwari, plus a short stretch at the point so the turn
+ * lays flat. Offsetting the first V for every kai leaves a 2 mm×ring hook.
  */
 export function kikuFlank(
   pole: Vec3,
@@ -500,20 +589,29 @@ export function kikuFlank(
   const a = around(pole, tInner, phiInner);
   const b = around(pole, tOuter, phiOuter);
   if (ring <= 0) return { a, b, via: [] };
-  const a0 = around(pole, spec.inner, phiInner);
-  const b0 = around(pole, spec.outer, phiOuter);
-  const n = offsetAxis(a0, b0, pole);
-  const delta = ring * spec.pitch;
-  const segs = 16;
+  const prev = kikuFlank(pole, spec, ring - 1, phiInner, phiOuter);
+  const samples = pathSamples(prev.a, prev.b, prev.via, 29);
+  const off = parallelOffset(samples, pole, spec.pitch);
+  const arc = Math.max(tOuter - tInner, spec.pitch);
+  const innerFrac = Math.min(0.18, Math.max(0.08, (spec.pitch * 2) / arc));
+  const outerFrac = Math.min(0.22, Math.max(0.14, (spec.stretch * 2.8) / arc));
+  const segs = 36;
   const via: Vec3[] = [];
   for (let i = 1; i < segs; i++) {
     const t = i / segs;
-    const off = offsetBy(slerp3(a0, b0, t), n, delta);
-    const along = slerp3(a, b, t);
-    const w = ease01(t / 0.08) * ease01((1 - t) / 0.07);
-    via.push(slerp3(along, off, w));
+    const packed = sampleAnchors(off, t);
+    if (t < innerFrac) {
+      const u = ease01(1 - t / innerFrac);
+      via.push(slerp3(packed, a, u));
+    } else if (t > 1 - outerFrac) {
+      const u = ease01((t - (1 - outerFrac)) / outerFrac);
+      via.push(slerp3(packed, b, u));
+    } else {
+      via.push(packed);
+    }
   }
-  return { a, b, via };
+  const even = resampleArc([a, ...via, b], 28);
+  return { a: even[0]!, b: even[even.length - 1]!, via: even.slice(1, -1) };
 }
 
 function kikuPetal(

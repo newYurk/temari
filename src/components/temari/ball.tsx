@@ -923,7 +923,7 @@ export function Ball() {
 
       <instancedMesh
         ref={shafts}
-        args={[undefined, undefined, 48]}
+        args={[undefined, undefined, 80]}
         frustumCulled={false}
         visible={jiwariOn && pins.length > 0}
         count={pins.length}
@@ -933,7 +933,7 @@ export function Ball() {
       </instancedMesh>
       <instancedMesh
         ref={heads}
-        args={[undefined, undefined, 48]}
+        args={[undefined, undefined, 80]}
         frustumCulled={false}
         visible={jiwariOn && pins.length > 0}
         count={pins.length}

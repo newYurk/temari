@@ -26,6 +26,7 @@ import {
   stitchPoleIndex,
   nextKagariPole,
   kikuSpec,
+  kikuMarkPins,
   sameFocus,
   slotKey,
   type KagariDir,
@@ -263,6 +264,21 @@ function currentCap(state: { pins: Pin[]; threadWidth: number; kagariSpacing: Ka
     state.threadWidth,
     KAGARI_SPACING_META[state.kagariSpacing].density,
   );
+}
+
+function withKikuMarks(
+  state: { division: Division; pins: Pin[]; jiwariLaid: number },
+  motif: MotifId,
+): Pin[] {
+  const base = state.pins.filter((pin) => !pin.id.startsWith("kiku-"));
+  if (motif !== "kiku") return base;
+  const extra = kikuMarkPins(state.division);
+  const out = base.length ? [...base] : jiwariVisiblePins(state.division, "done", state.jiwariLaid);
+  for (const pin of extra) {
+    if (out.some((q) => q.p[0] * pin.p[0] + q.p[1] * pin.p[1] + q.p[2] * pin.p[2] > 0.999)) continue;
+    out.push(pin);
+  }
+  return out;
 }
 
 function idleKagari(): Pick<
@@ -640,6 +656,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       kagariSet: 0,
       kikuLayers: 1,
       kagariDir: id === "kiku" ? "out" : get().kagariDir,
+      pins: withKikuMarks(get(), id),
       ...idleKagari(),
     });
     rememberStudio(get());
@@ -991,6 +1008,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       kagariFocus: stitchFocus(plan[0], state.division, state.motif),
       kagariKept: kept,
       craft: "stitch",
+      pins: withKikuMarks(state, state.motif),
     });
     rememberStudio(get());
   },
@@ -1148,7 +1166,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       jiwariOn: true,
       jiwariPhase: "done",
       jiwariLaid: 5,
-      pins: simplePins("done"),
+      pins: withKikuMarks({ division: "simple", pins: simplePins("done"), jiwariLaid: 5 }, "kiku"),
     });
     rememberStudio(get());
     get().startKagari();

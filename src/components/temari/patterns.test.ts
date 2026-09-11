@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { fillKikuSewn, kikuSpec, stitchesForSlot, hitKikuSlot, kikuThetas, around, nextKagariPole, compileKiku, stitchesFromOps } from "./patterns.ts";
+import { fillKikuSewn, kikuSpec, stitchesForSlot, hitKikuSlot, kikuThetas, around, nextKagariPole, compileKiku, stitchesFromOps, kikuFlank, kikuMarkPins } from "./patterns.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 
 function merPhi(p: [number, number, number]) {
@@ -195,6 +195,72 @@ describe("kiku on Simple 8", () => {
     const dot = tan0[0] * tanN[0] + tan0[1] * tanN[1] + tan0[2] * tanN[2];
     assert.ok(dot > 0.99, `mid-flank parallel, tan dot ${dot}`);
     assert.ok(midN.theta > mid0.theta, "offset sits further from the pole");
+  });
+
+  it("Ozaki turn is at the point: last via sits near the outer mark", () => {
+    const pole: [number, number, number] = [0, 1, 0];
+    const spec = kikuSpec("simple");
+    const step = Math.PI / 4;
+    const left = kikuFlank(pole, spec, 3, 0, step);
+    assert.ok(left.via.length > 8);
+    const last = left.via[left.via.length - 1]!;
+    const hop = Math.acos(Math.min(1, Math.max(-1, last[0] * left.b[0] + last[1] * left.b[1] + last[2] * left.b[2])));
+    assert.ok(hop < unitFromMm(3.2), `last hop ${hop} mm-units — a short turn, not a mid-petal hook`);
+    const pts = [left.a, ...left.via, left.b];
+    for (let i = 0; i < pts.length - 2; i++) {
+      const p = pts[i]!;
+      const q = pts[i + 1]!;
+      const d = Math.acos(Math.min(1, Math.max(-1, p[0] * q[0] + p[1] * q[1] + p[2] * q[2])));
+      assert.ok(
+        d < unitFromMm(3.5),
+        `interior hop ${i} is ${d} — stretch must live in the body, not one jump to the mark`,
+      );
+    }
+    const i = Math.floor(left.via.length * 0.7);
+    const p0 = left.via[i - 1]!;
+    const p1 = left.via[i]!;
+    const p2 = left.via[i + 1]!;
+    const v0 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]] as [number, number, number];
+    const v1 = [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]] as [number, number, number];
+    const l0 = Math.hypot(...v0) || 1;
+    const l1 = Math.hypot(...v1) || 1;
+    const tanDot = (v0[0] / l0) * (v1[0] / l1) + (v0[1] / l0) * (v1[1] / l1) + (v0[2] / l0) * (v1[2] / l1);
+    assert.ok(tanDot > 0.995, `outer third stays smooth, tan dot ${tanDot}`);
+  });
+
+  it("GT14 pins sit on meridians at the first outer mark, not the equator", () => {
+    const spec = kikuSpec("simple");
+    const pins = kikuMarkPins("simple");
+    assert.equal(pins.length, 16);
+    const pole: [number, number, number] = [0, 1, 0];
+    const north = pins.filter((pin) => pin.id.startsWith("kiku-0-"));
+    assert.equal(north.length, 8);
+    for (const pin of north) {
+      const { theta, phi } = polar(pole, pin.p);
+      assert.ok(Math.abs(theta - spec.outer) < 1e-6, "pin is the ⅓ mark");
+      const step = Math.PI / 4;
+      const k = Math.round(phi / step);
+      assert.ok(Math.abs(phi - k * step) < 0.04, "pin sits on a meridian");
+    }
+  });
+
+  it("later flank packs one pearl off the previous, not a fanned copy of the first V", () => {
+    const pole: [number, number, number] = [0, 1, 0];
+    const spec = kikuSpec("simple");
+    const step = Math.PI / 4;
+    const a = kikuFlank(pole, spec, 0, 0, step);
+    const b = kikuFlank(pole, spec, 1, 0, step);
+    const mid0 = slerp(a.a, a.b, 0.5);
+    let nearest = Infinity;
+    for (const p of b.via) {
+      const d = Math.acos(Math.min(1, Math.max(-1, mid0[0] * p[0] + mid0[1] * p[1] + mid0[2] * p[2])));
+      if (d < nearest) nearest = d;
+    }
+    assert.ok(
+      nearest < spec.pitch * 1.45 && nearest > spec.pitch * 0.4,
+      `nearest mid gap ${nearest} should be ~one pearl ${spec.pitch}`,
+    );
+    assert.ok(nearest < spec.stretch * 0.85, "mid-flank is packed, not the 2 mm stretch");
   });
 
   it("fit is Ozaki rounds to the obi, not seventeen tape layers", () => {
