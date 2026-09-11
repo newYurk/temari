@@ -367,8 +367,10 @@ export function kikuSpec(division: Division, spacing: KagariSpacing = "even") {
   const room = Math.max(stepOut, Math.PI / 2 - 0.08 - outer);
   const fit = Math.max(2, Math.floor(room / stepOut));
   const density = KAGARI_SPACING_META[spacing].density;
-  const rounds =
-    density <= 0.3 ? Math.max(2, Math.round(fit * 0.55)) : density >= 0.7 ? fit : fit;
+  let rounds =
+    density <= 0.3 ? Math.max(2, Math.round(fit * 0.55)) : fit;
+  if (rounds % 2 === 1) rounds -= 1;
+  rounds = Math.max(2, rounds);
   return {
     inner,
     outer,
@@ -425,6 +427,18 @@ function kikuPetal(
   ];
 }
 
+function extendPast(from: Vec3, to: Vec3, extra: number): Vec3 {
+  const d = Math.acos(Math.min(1, Math.max(-1, dot(from, to))));
+  if (d < 1e-4 || extra <= 0) return to;
+  const t = 1 + extra / d;
+  const s = Math.sin(d);
+  return normalize([
+    from[0] * Math.sin((1 - t) * d) / s + to[0] * Math.sin(t * d) / s,
+    from[1] * Math.sin((1 - t) * d) / s + to[1] * Math.sin(t * d) / s,
+    from[2] * Math.sin((1 - t) * d) / s + to[2] * Math.sin(t * d) / s,
+  ]);
+}
+
 function pushKikuLeg(
   ops: KagariOp[],
   pole: Vec3,
@@ -439,6 +453,7 @@ function pushKikuLeg(
   via: Vec3[] | undefined,
 ): Vec3 {
   const bite = biteAcross(pole, to.at, cornerMm);
+  const end = to.t === "inner" ? extendPast(from, to.at, unitFromMm(STITCH_THREAD_MM.pearl5) * 0.45) : to.at;
   ops.push({
     i: ops.length,
     kai,
@@ -446,7 +461,7 @@ function pushKikuLeg(
     pole: poleIndex,
     color,
     mark: { line: to.line, t: to.t, at: to.at },
-    lay: { from, to: to.at, via },
+    lay: { from, to: end, via },
     bite,
     over,
   });
