@@ -400,22 +400,31 @@ def kiku():
     bits = []
     n = 8
     da = 2 * math.pi / n
-    # jiwari: Simple 8 meridians + equator — kiku walks these rays
+    # One polar 8-petal motif on Simple 8. This is a motif silhouette,
+    # not a stitch-order diagram; the detailed kagari bite is shown separately.
     bits.append(circle_paths(gc_samples((0, 1, 0)), "mark-front", "mark-back", 0.95))
     for i in range(n // 2):
         bits.append(
             circle_paths(gc_samples(meridian_axis(i * da)), "mark-front", "mark-back", 1.05)
         )
-    for r in range(5):
-        inner = 0.22 + r * 0.15
-        outer = inner + 0.12
-        for i in range(n):
-            a0 = around_pole(NORTH, inner, i * da)
-            a1 = around_pole(NORTH, inner, (i + 1) * da)
-            b0 = around_pole(NORTH, outer, i * da)
-            b1 = around_pole(NORTH, outer, (i + 1) * da)
-            bits.append(front_only(arc_samples(a0, b1, 8), "beni-front", 1.2))
-            bits.append(front_only(arc_samples(b0, a1, 8), "beni-front", 1.2))
+    # Two continuous four-point zigzag sets, offset by 45 degrees. Alternating
+    # their rows creates the eight apparent petals; petals are not closed one by one.
+    for r in range(3):
+        inner = 0.09 + r * 0.035
+        outer = 0.72 + r * 0.035
+        for set_offset in (0, 1):
+            ring = []
+            for i in range(4):
+                ring.append(around_pole(NORTH, outer, (2 * i + set_offset) * da))
+                ring.append(around_pole(NORTH, inner, (2 * i + 1 + set_offset) * da))
+            for i in range(len(ring)):
+                bits.append(
+                    front_only(arc_samples(ring[i], ring[(i + 1) % len(ring)], 14), "beni-front", 1.2)
+                )
+    # GT14 places one temporary lower-point pin on every Simple-8 line,
+    # one third of the pole-to-equator distance up from the equator.
+    for i in range(n):
+        bits.append(pin(around_pole(NORTH, 0.72, i * da), 2.35))
     bits.append(pin(NORTH, 3.2))
     set_cam("hand")
     return svg("Кику от полюса", "\n            ".join(x for x in bits if x))
@@ -423,15 +432,17 @@ def kiku():
 
 def hoshi():
     set_cam("face")
-    n, skip, theta = 8, 3, 0.72
+    # Hoshi kagari is specifically a five-point star: 1-3-5-2-4-1.
+    n, skip, theta = 5, 2, 0.72
     pts = [around_pole(NORTH, theta, 2 * math.pi * i / n) for i in range(n)]
     bits = [
         circle_paths(gc_samples((0, 1, 0)), "mark-front", "mark-back", 0.9),
     ]
-    for i in range(n // 2):
+    # Five great circles give the ten rays of a Simple 10; the star uses every other ray.
+    for i in range(n):
         bits.append(
             circle_paths(
-                gc_samples(meridian_axis(i * 2 * math.pi / n)),
+                gc_samples(meridian_axis(i * math.pi / n)),
                 "mark-front",
                 "mark-back",
                 0.95,
@@ -448,19 +459,34 @@ def hoshi():
 
 def hishi():
     set_cam("face")
-    n = 8
+    # Concrete C8 context. The 8-point pole is enclosed by a spherical square.
+    # One adjacent 4-point center is enclosed by a diamond (hishi) whose corners
+    # are two 8-centers and two 6-centers. This avoids inventing a diamond on an
+    # isolated orthogonal cross.
     bits = [circle_paths(gc_samples((0, 1, 0)), "mark-front", "mark-back", 0.9)]
-    da = 2 * math.pi / n
-    for i in range(n // 2):
-        bits.append(circle_paths(gc_samples(meridian_axis(i * da)), "mark-front", "mark-back", 1.0))
-    for k, theta in enumerate((0.32, 0.52, 0.72, 0.92)):
-        pts = [around_pole(NORTH, theta, i * da) for i in range(n)]
-        w = 1.5 if k % 2 == 0 else 1.2
-        for i in range(n):
-            bits.append(front_only(arc_samples(pts[i], pts[(i + 1) % n], 12), "beni-front", w))
-    bits.append(pin(NORTH, 3.0))
+    for lam in (0.0, math.pi / 4, math.pi / 2, 3 * math.pi / 4):
+        bits.append(circle_paths(gc_samples(meridian_axis(lam)), "mark-front", "mark-back", 0.85))
+
+    cube_n = [norm((sx, 1.0, sz)) for sx in (-1, 1) for sz in (-1, 1)]
+    _, u, v = basis(NORTH)
+
+    def around_north(p):
+        return math.atan2(
+            p[0] * v[0] + p[1] * v[1] + p[2] * v[2],
+            p[0] * u[0] + p[1] * u[1] + p[2] * u[2],
+        )
+
+    cube_n.sort(key=around_north)
+    for i, a in enumerate(cube_n):
+        bits.append(front_only(arc_samples(a, cube_n[(i + 1) % 4], 24), "mark-front", 1.25))
+
+    diamond = [NORTH, norm((1, 1, 1)), (1, 0, 0), norm((1, 1, -1))]
+    for i, a in enumerate(diamond):
+        bits.append(front_only(arc_samples(a, diamond[(i + 1) % 4], 24), "beni-front", 2.0))
+        bits.append(pin(a, 2.4))
+    bits.append(pin(norm((1, 1, 0)), 2.6))
     set_cam("hand")
-    return svg("Хиси — вложенные", "\n            ".join(x for x in bits if x))
+    return svg("Хиси — грань C8", "\n            ".join(x for x in bits if x))
 
 
 def obi():
@@ -468,8 +494,11 @@ def obi():
         circle_paths(gc_samples((0, 1, 0)), "mark-front", "mark-back", 1.2),
         circle_paths(gc_samples(meridian_axis(0.0)), "mark-front", "mark-back", 0.95),
         circle_paths(gc_samples(meridian_axis(math.pi / 2)), "mark-front", "mark-back", 0.95),
-        circle_paths(parallel_samples((0, 1, 0), 0.2), "beni-front", "beni-back", 2.05),
-        circle_paths(parallel_samples((0, 1, 0), -0.2), "beni-front", "beni-back", 2.05),
+        circle_paths(parallel_samples((0, 1, 0), 0.045), "beni-front", "beni-back", 1.7),
+        circle_paths(parallel_samples((0, 1, 0), 0.015), "beni-front", "beni-back", 1.7),
+        circle_paths(parallel_samples((0, 1, 0), -0.015), "beni-front", "beni-back", 1.7),
+        circle_paths(parallel_samples((0, 1, 0), -0.045), "beni-front", "beni-back", 1.7),
+        pin((1, 0, 0), 2.8),
     ]
     return svg("Оби по экватору", "\n            ".join(bits))
 
