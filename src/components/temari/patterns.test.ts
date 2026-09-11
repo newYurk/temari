@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { fillKikuSewn, kikuSpec, stitchesForSlot } from "./patterns.ts";
+import { fillKikuSewn, kikuSpec, stitchesForSlot, hitKikuSlot, kikuThetas, around } from "./patterns.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 
 function merPhi(p: [number, number, number]) {
@@ -156,5 +156,25 @@ describe("kiku on Simple 8", () => {
       bOut - aOut > bIn - aIn + 0.02,
       "outer drops extra (растяжка) so the V point stays sharp",
     );
+  });
+
+  it("hitKikuSlot asks kikuThetas, not an inward band", () => {
+    const spec = kikuSpec("simple");
+    const pole: [number, number, number] = [0, 1, 0];
+    const first = kikuThetas(spec, 0);
+    const p = around(pole, 0.5 * (first.tInner + first.tOuter), 0.1);
+    const h0 = hitKikuSlot(p[0], p[1], p[2], "simple");
+    assert.equal(h0?.ring, 0);
+
+    const lastI = spec.rounds - 1;
+    const last = kikuThetas(spec, lastI);
+    assert.ok(last.tOuter > spec.outer + spec.pitch, "later rings sit past spec.outer");
+    const q = around(pole, 0.5 * (last.tInner + last.tOuter), 0.1);
+    const hN = hitKikuSlot(q[0], q[1], q[2], "simple");
+    assert.equal(hN?.ring, lastI);
+
+    const past = around(pole, last.tOuter - spec.pitch * 0.1, 0.1);
+    const hPast = hitKikuSlot(past[0], past[1], past[2], "simple");
+    assert.ok(hPast, "drawn outer rows are hittable");
   });
 });

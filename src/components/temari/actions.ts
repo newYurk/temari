@@ -120,10 +120,12 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     isActive: (s) => s.craft === "stitch",
     getDisabledReason: (s) =>
       needWrap(s) ??
-      (jiwariReady(s) || s.hasPin
-        ? null
-        : s.jiwariOn
-          ? "Сначала доведите разметку полоской"
+      (s.jiwariOn
+        ? jiwariReady(s)
+          ? null
+          : "Сначала доведите разметку полоской"
+        : s.hasPin
+          ? null
           : "Сначала выберите опорную булавку или линию разметки"),
   },
   {

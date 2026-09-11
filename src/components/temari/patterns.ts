@@ -228,9 +228,18 @@ export function hitKikuSlot(
   const { theta, phi } = polarAround(poles[pole], p);
   const n = petalCount(division);
   const spec = kikuSpec(division);
-  if (theta < spec.inner * 0.45 || theta > spec.outer + spec.pitch * 0.5) return null;
-  const ring = Math.floor((spec.outer - theta + spec.pitch * 0.35) / spec.pitch);
-  if (ring < 0 || ring >= spec.rounds) return null;
+  const last = kikuThetas(spec, spec.rounds - 1);
+  if (theta < spec.inner * 0.4 || theta > last.tOuter + spec.pitch * 0.8) return null;
+  let ring = 0;
+  let nearest = Infinity;
+  for (let r = 0; r < spec.rounds; r++) {
+    const { tInner, tOuter } = kikuThetas(spec, r);
+    const d = Math.abs(theta - 0.5 * (tInner + tOuter));
+    if (d < nearest) {
+      nearest = d;
+      ring = r;
+    }
+  }
   let sector = Math.floor((phi / (Math.PI * 2)) * n);
   if (sector >= n) sector = n - 1;
   if (sector < 0) sector = 0;
@@ -390,7 +399,7 @@ function kikuColor(_ring: number, base = 0) {
   return ((base % COLOR_COUNT) + COLOR_COUNT) % COLOR_COUNT;
 }
 
-function kikuThetas(
+export function kikuThetas(
   spec: { inner: number; outer: number; pitch: number; stretch: number },
   ring: number,
 ) {

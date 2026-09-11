@@ -41,7 +41,10 @@ export const STITCH_THREAD_MM = {
 export function wrapsToCover(Ccm: number, dMm: number, overlap = WRAP_OVERLAP) {
   const Rcm = Ccm / (2 * Math.PI);
   const dCm = dMm / 10;
-  return Math.max(1, Math.ceil((Math.PI * Rcm * overlap) / dCm));
+  const raw = (Math.PI * Rcm * overlap) / dCm;
+  const nearest = Math.round(raw);
+  const wraps = Math.abs(raw - nearest) < 1e-9 ? nearest : Math.ceil(raw);
+  return Math.max(1, wraps);
 }
 
 export function unitFromMm(mm: number, Ccm = MARI_C_CM) {
