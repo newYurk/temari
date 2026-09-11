@@ -69,7 +69,7 @@ function Slot({
       aria-label={action.label}
       aria-disabled={!available}
       aria-pressed={active}
-      title={reason ?? action.label}
+      title={available ? action.label : undefined}
       onClick={() => {
         if (!available) {
           if (reason) onBlocked(reason);

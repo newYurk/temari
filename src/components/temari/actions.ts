@@ -37,9 +37,6 @@ export interface CraftAction {
 const needWrap = (s: TemariCraftState) =>
   s.mode === "studio" && s.layerDone ? null : "Сначала намотайте базу";
 
-const needKagari = (s: TemariCraftState) =>
-  needWrap(s) ?? (s.craft === "stitch" ? null : "Сначала стежок");
-
 export function getCraftState(): TemariCraftState {
   const s = useTemari.getState();
   const undoEmpty =
@@ -68,8 +65,8 @@ export function getCraftState(): TemariCraftState {
 
 const jiwariReady = (s: TemariCraftState) => s.jiwariOn && s.jiwariPhase === "done";
 
-const simpleDone = (s: TemariCraftState) =>
-  s.jiwariOn && s.division === "simple" && s.jiwariPhase === "done";
+const needMarks = (s: TemariCraftState) =>
+  needWrap(s) ?? (jiwariReady(s) || s.hasPin ? null : "Сначала разметка");
 
 const canFillMotif = (s: TemariCraftState) =>
   s.closedContour || s.motif !== "none" || jiwariReady(s);
@@ -103,13 +100,9 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "jiwari-c8",
     label: "C8",
     cluster: "jiwari",
-    canExecute: (s) => !needWrap(s) && (simpleDone(s) || s.division === "c8"),
+    canExecute: (s) => !needWrap(s),
     isActive: (s) => s.jiwariOn && s.division === "c8",
-    getDisabledReason: (s) =>
-      needWrap(s) ??
-      (simpleDone(s) || s.division === "c8"
-        ? null
-        : "Сначала Простое — C8 из него"),
+    getDisabledReason: needWrap,
   },
   {
     id: "jiwari-c10",
@@ -137,94 +130,94 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "motif-none",
     label: "Ряд",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s),
+    canExecute: (s) => !needMarks(s),
     isActive: (s) => s.motif === "none",
-    getDisabledReason: needKagari,
+    getDisabledReason: needMarks,
   },
   {
     id: "motif-kiku",
     label: "Кику",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s),
+    canExecute: (s) => !needMarks(s),
     isActive: (s) => s.motif === "kiku",
-    getDisabledReason: needKagari,
+    getDisabledReason: needMarks,
   },
   {
     id: "motif-hoshi",
     label: "Хоси",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s),
+    canExecute: (s) => !needMarks(s),
     isActive: (s) => s.motif === "hoshi",
-    getDisabledReason: needKagari,
+    getDisabledReason: needMarks,
   },
   {
     id: "motif-hishi",
     label: "Хиси",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s),
+    canExecute: (s) => !needMarks(s),
     isActive: (s) => s.motif === "hishi",
-    getDisabledReason: needKagari,
+    getDisabledReason: needMarks,
   },
   {
     id: "motif-obi",
     label: "Оби",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s),
+    canExecute: (s) => !needMarks(s),
     isActive: (s) => s.motif === "obi",
-    getDisabledReason: needKagari,
+    getDisabledReason: needMarks,
   },
   {
     id: "kagari-in",
     label: "Внутрь",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s) && canFillMotif(s),
+    canExecute: (s) => !needMarks(s) && canFillMotif(s),
     isActive: (s) => s.kagariDir === "in",
     getDisabledReason: (s) =>
-      needKagari(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
+      needMarks(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
   },
   {
     id: "kagari-out",
     label: "Наружу",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s) && canFillMotif(s),
+    canExecute: (s) => !needMarks(s) && canFillMotif(s),
     isActive: (s) => s.kagariDir === "out",
     getDisabledReason: (s) =>
-      needKagari(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
+      needMarks(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
   },
   {
     id: "fill",
     label: "Залить",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s) && canFillMotif(s),
+    canExecute: (s) => !needMarks(s) && canFillMotif(s),
     getDisabledReason: (s) =>
-      needKagari(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
+      needMarks(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
   },
   {
     id: "space-open",
     label: "Реже",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s) && canFillMotif(s),
+    canExecute: (s) => !needMarks(s) && canFillMotif(s),
     isActive: (s) => s.kagariSpacing === "open",
     getDisabledReason: (s) =>
-      needKagari(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
+      needMarks(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
   },
   {
     id: "space-even",
     label: "Так",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s) && canFillMotif(s),
+    canExecute: (s) => !needMarks(s) && canFillMotif(s),
     isActive: (s) => s.kagariSpacing === "even",
     getDisabledReason: (s) =>
-      needKagari(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
+      needMarks(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
   },
   {
     id: "space-tight",
     label: "Плотнее",
     cluster: "kagari",
-    canExecute: (s) => !needKagari(s) && canFillMotif(s),
+    canExecute: (s) => !needMarks(s) && canFillMotif(s),
     isActive: (s) => s.kagariSpacing === "tight",
     getDisabledReason: (s) =>
-      needKagari(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
+      needMarks(s) ?? (canFillMotif(s) ? null : "Сначала разметка или замкнутый контур"),
   },
   {
     id: "undo",

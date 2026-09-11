@@ -51,8 +51,6 @@ function TitleLayer() {
   const setPalette = useTemari((s) => s.setPalette);
   const wrapColor = useTemari((s) => s.wrapColor);
   const setWrapColor = useTemari((s) => s.setWrapColor);
-  const threadWidth = useTemari((s) => s.threadWidth);
-  const setThreadWidth = useTemari((s) => s.setThreadWidth);
   const palette = PALETTES[paletteId];
 
   return (
@@ -100,16 +98,6 @@ function TitleLayer() {
               style={{ backgroundColor: color }}
             />
           ))}
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={threadWidth}
-            aria-label="Толщина нити базы"
-            onChange={(e) => setThreadWidth(Number(e.target.value))}
-            className="h-10 min-w-0 flex-1 accent-ink"
-          />
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <Button
