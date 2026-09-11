@@ -9,6 +9,25 @@ export type Palette = {
   colors: [string, string, string, string];
 };
 
+/** Flat tray for now — any action, any of these. Groups later. */
+export const THREAD_COLORS = [
+  "#8f3d32",
+  "#c4a574",
+  "#ece8e1",
+  "#2a2420",
+  "#2a3a4a",
+] as const;
+
+export const COLOR_COUNT = THREAD_COLORS.length;
+
+export function clampColor(index: number) {
+  return Math.min(COLOR_COUNT - 1, Math.max(0, Math.round(index)));
+}
+
+export function threadHex(index: number) {
+  return THREAD_COLORS[clampColor(index)] ?? THREAD_COLORS[0];
+}
+
 export const PALETTES: Record<PaletteId, Palette> = {
   beni: {
     id: "beni",

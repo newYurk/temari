@@ -13,7 +13,7 @@ import {
   type Pin,
   type PinArc,
 } from "./craft";
-import { isPaletteId, PALETTES, type PaletteId } from "./palettes";
+import { clampColor, isPaletteId, threadHex, type PaletteId } from "./palettes";
 import {
   isMotifId,
   kikuArcsFromPins,
@@ -131,7 +131,7 @@ let studioDraft: Omit<Save, "v" | "solved"> = {
   paletteId: isPaletteId(initial.paletteId) ? initial.paletteId : "beni",
   selectedColor:
     typeof initial.selectedColor === "number"
-      ? Math.min(3, Math.max(0, initial.selectedColor))
+      ? clampColor(initial.selectedColor)
       : 0,
   fills: Array.isArray(initial.fills) ? initial.fills : emptyFills("c8"),
   motif: isMotifId(initial.motif) ? initial.motif : "none",
@@ -600,7 +600,7 @@ export const useTemari = create<TemariState>((set, get) => ({
     const wrapLocked = get().mode === "studio" && get().layerDone;
     set({
       paletteId: id,
-      ...(wrapLocked ? {} : { wrapHex: PALETTES[id].colors[get().wrapColor] }),
+      ...(wrapLocked ? {} : { wrapHex: threadHex(get().wrapColor) }),
     });
     rememberStudio(get());
   },
@@ -631,7 +631,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   },
 
   setColor: (index) => {
-    const selectedColor = Math.min(3, Math.max(0, index));
+    const selectedColor = clampColor(index);
     const state = get();
     if (state.motif === "kiku" && state.kagariPlan.length > 0) {
       const fresh = motifStitchPlan(
@@ -653,9 +653,9 @@ export const useTemari = create<TemariState>((set, get) => ({
   },
   setWrapColor: (index) => {
     if (get().mode === "studio" && get().layerDone) return;
-    const wrapColor = Math.min(3, Math.max(0, index));
-    const wrapHex = PALETTES[get().paletteId].colors[wrapColor] ?? "#8f3d32";
-    set({ wrapColor, wrapHex });
+    const wrapColor = clampColor(index);
+    const wrapHex = threadHex(wrapColor);
+    set({ wrapColor, wrapHex, selectedColor: wrapColor });
     rememberStudio(get());
   },
 

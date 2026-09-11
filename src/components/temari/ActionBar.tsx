@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { RotateCcw, Undo2, Pin } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { PALETTES } from "./palettes";
+import { THREAD_COLORS } from "./palettes";
 import { jiwariPhaseHint } from "./jiwari";
 import { kagariPhaseHint, stitchPoleIndex } from "./patterns";
 import { useTemari } from "./store";
@@ -144,7 +144,6 @@ export function ActionBar() {
     ],
   );
 
-  const palette = PALETTES[paletteId];
   const undo = actionById("undo");
   const reset = actionById("reset");
   const fill = actionById("fill");
@@ -305,7 +304,7 @@ export function ActionBar() {
             )}
 
             <div className="flex flex-1 items-center justify-center gap-2">
-              {palette.colors.map((color, i) => (
+              {THREAD_COLORS.map((color, i) => (
                 <button
                   key={color}
                   type="button"

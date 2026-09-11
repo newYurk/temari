@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { arcsToStitches, getWrapBuffer, pinHit, MariWinder, strokePx, toVec3, type WrapBuffer } from "./craft";
 import { gridNodes, polePositions, regionIndex, snapToNode } from "./division";
 import { createGuideGeometry } from "./guides";
-import { PALETTES } from "./palettes";
+import { PALETTES, THREAD_COLORS, threadHex } from "./palettes";
 import {
   generateMotif,
   generateTitleMari,
@@ -45,14 +45,14 @@ function ThreadLayer({
   order = 6,
 }: {
   stitches: Stitch[];
-  colors: [string, string, string, string];
+  colors: readonly string[];
   opacity?: number;
   kind?: ThreadKind;
   order?: number;
 }) {
   const geos = useMemo(() => {
-    return [0, 1, 2, 3].map((i) => createMotifGeometry(stitches, i, kind));
-  }, [stitches, kind]);
+    return colors.map((_, i) => createMotifGeometry(stitches, i, kind));
+  }, [stitches, kind, colors]);
   const yarn = useMemo(() => getYarnTexture(), []);
 
   useEffect(() => {
@@ -529,7 +529,7 @@ export function Ball() {
         _q.setFromAxisAngle(_axis, wind.vis);
         g.quaternion.premultiply(_q);
         omega.current.copy(_axis).multiplyScalar(wind.vis / dt);
-        const hex = PALETTES[st.paletteId].colors[st.selectedColor] ?? "#8f3d32";
+        const hex = threadHex(st.selectedColor);
         mari.current.spin(wind.mag, wrap, st.selectedColor, hex);
         if (!st.wrapStarted) setWrapStarted();
         return;
@@ -744,7 +744,7 @@ export function Ball() {
   });
 
   const canWork = mode !== "title";
-  const threadHex = palette.colors[selectedColor] ?? palette.thread;
+  const stitchHex = threadHex(selectedColor);
 
   const localFromEvent = (e: THREE.Intersection) => {
     _local.copy(e.point);
@@ -838,30 +838,30 @@ export function Ball() {
       {markStitches.length > 0 ? (
         <ThreadLayer
           stitches={markStitches}
-          colors={palette.colors}
+          colors={THREAD_COLORS}
           kind={DEFAULT_KIND.mark}
           order={12}
         />
       ) : null}
       {presetStitches.length > 0 ? (
-        <ThreadLayer stitches={presetStitches} colors={palette.colors} order={14} />
+        <ThreadLayer stitches={presetStitches} colors={THREAD_COLORS} order={14} />
       ) : null}
       {playingStitches.length > 0 ? (
-        <ThreadLayer stitches={playingStitches} colors={palette.colors} order={14} />
+        <ThreadLayer stitches={playingStitches} colors={THREAD_COLORS} order={14} />
       ) : null}
       {sewnStitches.length > 0 ? (
-        <ThreadLayer stitches={sewnStitches} colors={palette.colors} order={14} />
+        <ThreadLayer stitches={sewnStitches} colors={THREAD_COLORS} order={14} />
       ) : null}
       {pinStitches.length > 0 ? (
-        <ThreadLayer stitches={pinStitches} colors={palette.colors} order={10} />
+        <ThreadLayer stitches={pinStitches} colors={THREAD_COLORS} order={10} />
       ) : null}
       {ghostStitches.length > 0 ? (
-        <ThreadLayer stitches={ghostStitches} colors={palette.colors} opacity={0.42} order={11} />
+        <ThreadLayer stitches={ghostStitches} colors={THREAD_COLORS} opacity={0.42} order={11} />
       ) : null}
 
       <mesh ref={needle} visible={false}>
         <sphereGeometry args={[0.018, 12, 10]} />
-        <meshStandardMaterial color={threadHex} roughness={0.38} metalness={0.14} />
+        <meshStandardMaterial color={stitchHex} roughness={0.38} metalness={0.14} />
       </mesh>
 
       <instancedMesh
@@ -878,7 +878,7 @@ export function Ball() {
       <mesh ref={snapGhost} visible={false}>
         <sphereGeometry args={[0.026, 12, 10]} />
         <meshStandardMaterial
-          color={threadHex}
+          color={stitchHex}
           roughness={0.4}
           metalness={0.1}
           transparent
@@ -931,7 +931,7 @@ export function Ball() {
         count={pins.length}
       >
         <sphereGeometry args={[0.02, 12, 10]} />
-        <meshStandardMaterial color={threadHex} roughness={0.36} metalness={0.12} />
+        <meshStandardMaterial color={stitchHex} roughness={0.36} metalness={0.12} />
       </instancedMesh>
     </group>
   );

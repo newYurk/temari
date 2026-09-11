@@ -2,7 +2,7 @@ import { LocateFixed } from "lucide-react";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { PALETTE_LIST, PALETTES } from "./palettes";
+import { THREAD_COLORS } from "./palettes";
 import { PUZZLES } from "./puzzles";
 import { fillsMatch } from "./division";
 import { useTemari } from "./store";
@@ -47,11 +47,8 @@ function RecenterButton({ className }: { className?: string }) {
 
 function TitleLayer() {
   const enterStudio = useTemari((s) => s.enterStudio);
-  const paletteId = useTemari((s) => s.paletteId);
-  const setPalette = useTemari((s) => s.setPalette);
   const wrapColor = useTemari((s) => s.wrapColor);
   const setWrapColor = useTemari((s) => s.setWrapColor);
-  const palette = PALETTES[paletteId];
 
   return (
     <div className="flex h-full flex-col px-5 py-6 md:px-10 md:py-10">
@@ -69,27 +66,12 @@ function TitleLayer() {
       </div>
       <div className="min-h-0 flex-1" aria-hidden />
       <div className="temari-rise temari-rise-3 pointer-events-auto max-w-md pb-[env(safe-area-inset-bottom)]">
-        <div className="mb-2 flex gap-1">
-          {PALETTE_LIST.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setPalette(item.id)}
-              className={cn(
-                "min-h-8 flex-1 rounded-full px-1 text-xs tracking-wide",
-                paletteId === item.id ? "text-ink" : "text-stone",
-              )}
-            >
-              {item.name}
-            </button>
-          ))}
-        </div>
         <div className="mb-3 flex items-center gap-2">
-          {palette.colors.map((color, i) => (
+          {THREAD_COLORS.map((color, i) => (
             <button
               key={color}
               type="button"
-              aria-label={`Цвет базы ${i + 1}`}
+              aria-label={`Цвет ${i + 1}`}
               onClick={() => setWrapColor(i)}
               className={cn(
                 "size-8 rounded-full",

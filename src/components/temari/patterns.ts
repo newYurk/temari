@@ -1,5 +1,6 @@
 import { polePositions, type Division } from "./division.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
+import { COLOR_COUNT } from "./palettes.ts";
 import { biteAcross, stackOver, uwagakeVia, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
 
 export type KikuSlot = { pole: number; ring: number; sector: number };
@@ -385,7 +386,7 @@ export function kikuRecipe(division: Division): PatternRecipe | null {
 
 function kikuColor(ring: number, base = 0) {
   const cycle = [0, 1, 0, 2, 0, 1, 0];
-  return (base + (cycle[ring % cycle.length] ?? 0)) % 4;
+  return (base + (cycle[ring % cycle.length] ?? 0)) % COLOR_COUNT;
 }
 
 function kikuThetas(
