@@ -360,11 +360,10 @@ export function createMotifGeometry(
   const merged = mergeGeometries(parts, false);
   for (const geo of parts) geo.dispose();
   if (!merged) return null;
-  merged.computeVertexNormals();
+  // Keep authored tube normals. Recomputing would average the filled-disk
+  // (along the cord) with the wall (radial) and light a crease as a горб.
   return merged;
 }
-
-/** Round threads: yarn under, sewing on top. `pass` 1–3 = how many layers. */
 export function createWrapGeometry(
   strands: THREE.Vector3[][],
   width: number,
@@ -389,7 +388,6 @@ export function createWrapGeometry(
   const merged = mergeGeometries(parts, false);
   for (const geo of parts) geo.dispose();
   if (!merged) return null;
-  merged.computeVertexNormals();
   return merged;
 }
 
@@ -413,30 +411,81 @@ export function createWrapLineGeometry(strands: THREE.Vector3[][]) {
   return geo;
 }
 
-class SpherePolyline extends THREE.Curve<THREE.Vector3> {
-  pts: THREE.Vector3[];
-  constructor(pts: THREE.Vector3[]) {
-    super();
-    this.pts = pts;
-  }
-  getPoint(t: number, optionalTarget = new THREE.Vector3()) {
-    const pts = this.pts;
-    const n = pts.length - 1;
-    if (n < 1) return optionalTarget.set(1, 0, 0);
-    const f = Math.max(0, Math.min(1, t)) * n;
-    const i = Math.min(n - 1, Math.floor(f));
-    const u = f - i;
-    const a = pts[i];
-    const b = pts[i + 1];
-    if (!a) return optionalTarget.set(1, 0, 0);
-    if (!b) return optionalTarget.copy(a);
-    const r = a.length();
-    return optionalTarget.lerpVectors(a, b, u).normalize().multiplyScalar(r);
-  }
-}
-
+/**
+ * Solid pearl on the mari: sphere-radial frames, and a filled disk at every
+ * station. A hollow pipe reads as a горб at the limb — you look down the tube
+ * and see a loop off the ball. Frenet TubeGeometry had the same silhouette.
+ */
 function tubeOnSphere(pts: THREE.Vector3[], radius: number) {
-  const curve = new SpherePolyline(pts);
-  const segs = Math.max(12, pts.length);
-  return new THREE.TubeGeometry(curve, segs, radius, 6, false);
+  if (pts.length < 2) return new THREE.BufferGeometry();
+  const path: THREE.Vector3[] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i]!;
+    const b = pts[i + 1]!;
+    const steps = 3;
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      slerp(a, b, t, _a);
+      path.push(_a.clone());
+    }
+  }
+  path.push(pts[pts.length - 1]!.clone());
+  const radialSegs = 8;
+  const ring = radialSegs + 1;
+  const stride = ring + 1;
+  const pos: number[] = [];
+  const nrm: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  for (let i = 0; i < path.length; i++) {
+    const p = path[i]!;
+    const prev = path[Math.max(0, i - 1)]!;
+    const next = path[Math.min(path.length - 1, i + 1)]!;
+    _t.subVectors(next, prev);
+    if (_t.lengthSq() < 1e-12) {
+      _t.crossVectors(p, Math.abs(p.y) < 0.9 ? _mid.set(0, 1, 0) : _mid.set(1, 0, 0));
+    }
+    _t.normalize();
+    _radial.copy(p).normalize();
+    _side.copy(_radial).addScaledVector(_t, -_radial.dot(_t));
+    if (_side.lengthSq() < 1e-12) {
+      _side.crossVectors(_t, Math.abs(_t.y) < 0.9 ? _mid.set(0, 1, 0) : _mid.set(1, 0, 0));
+    }
+    _side.normalize();
+    _mid.crossVectors(_t, _side).normalize();
+    for (let j = 0; j <= radialSegs; j++) {
+      const ang = (j / radialSegs) * Math.PI * 2;
+      const c = Math.cos(ang);
+      const s = Math.sin(ang);
+      const nx = _side.x * c + _mid.x * s;
+      const ny = _side.y * c + _mid.y * s;
+      const nz = _side.z * c + _mid.z * s;
+      pos.push(p.x + nx * radius, p.y + ny * radius, p.z + nz * radius);
+      nrm.push(nx, ny, nz);
+      uv.push(i / Math.max(1, path.length - 1), j / radialSegs);
+    }
+    pos.push(p.x, p.y, p.z);
+    nrm.push(_t.x, _t.y, _t.z);
+    uv.push(i / Math.max(1, path.length - 1), 0.5);
+  }
+  for (let i = 0; i < path.length - 1; i++) {
+    for (let j = 0; j < radialSegs; j++) {
+      const a = i * stride + j;
+      const b = a + stride;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  for (let i = 0; i < path.length; i++) {
+    const c = i * stride + ring;
+    const base = i * stride;
+    for (let j = 0; j < radialSegs; j++) {
+      idx.push(c, base + j, base + j + 1, c, base + j + 1, base + j);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  return geo;
 }

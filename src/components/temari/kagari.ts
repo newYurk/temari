@@ -30,7 +30,7 @@ export type PatternRecipe = {
   /**
    * Ozaki / TemariKai Stretch Points: ~2 mm *below the previous outer stitch*
    * for pearl #5, so the point lays flat and there is room for the turn.
-   * Flanks still pack parallel to the previous thread (one pearl wide);
+   * Flanks pack parallel to the previous thread (one pearl wide);
    * this value is the mark along the jiwari, not a fanning of the V.
    */
   stretchMm: number;
@@ -164,7 +164,9 @@ export function stackBump(t: number, sitA: number, sitB: number, sitMid: number)
     return u * u * (3 - 2 * u);
   };
   const endW = 0.14 + 0.05 * Math.max(sitA, sitB);
-  return sitA * bump(t, 0, endW) + sitB * bump(t, 1, endW) + sitMid * bump(t, 0.5, 0.16);
+  // Crossing is a point, not a hill along the flank — 0.16 of the leg
+  // lifted the middle off the mari (a горб at the limb).
+  return sitA * bump(t, 0, endW) + sitB * bump(t, 1, endW) + sitMid * bump(t, 0.5, 0.04);
 }
 
 /**
