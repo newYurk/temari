@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { biteAcross, KIKU_8_POINT, stackOver, uwagakeVia } from "./kagari.ts";
+import { biteAcross, KIKU_8_POINT, stackOver, uwagakeVia, scoopAway, scoopRadius, KAGARI_SCOOP_MM } from "./kagari.ts";
 import { compileKiku, fillKikuSewn, kikuSpec, stitchesFromOps } from "./patterns.ts";
 import { unitFromMm } from "./measure.ts";
 
@@ -192,5 +192,43 @@ describe("kagari recipe atom", () => {
     assert.ok(w(outerN) < w(innerN) * 0.6, "outer point stays a tiny scoop");
     assert.ok(innerN.bite.enter[1] > innerN.mark.at[1], "inner scoop sits toward the pole");
     assert.ok(dist(innerN.lay.to, innerN.mark.at) < 1e-9, "flanks still meet on the mark");
+  });
+
+  it("working start/stop scoops under the wrap, ~2 mm, no chord", () => {
+    const at: [number, number, number] = [0, Math.cos(0.4), -Math.sin(0.4)];
+    const from: [number, number, number] = [0, Math.cos(0.55), -Math.sin(0.55)];
+    const walk = scoopAway(at, from);
+    assert.ok(walk.length >= 6);
+    const last = walk[walk.length - 1]!;
+    const ang = Math.acos(Math.min(1, Math.max(-1, at[0] * last[0] + at[1] * last[1] + at[2] * last[2])));
+    assert.ok(Math.abs(ang - unitFromMm(KAGARI_SCOOP_MM)) < 1e-6, "scoop is the kagari 2 mm");
+    const dFrom = dist(from, at);
+    const dWalk = dist(from, last);
+    assert.ok(dWalk > dFrom, "walks away from the laid stitch, not back along it");
+    for (const p of walk) {
+      assert.ok(Math.abs(Math.hypot(...p) - 1) < 1e-9, "stays on the sphere, not a chord");
+    }
+    const half = unitFromMm(0.71) * 0.5;
+    const surface = 1 + half;
+    const buried = scoopRadius(1, surface, half);
+    assert.ok(buried + half < 1.0, "whole pearl sits under the wrap cover");
+    assert.ok(buried > 0.97, "upper wrap layers, not the core");
+    assert.ok(scoopRadius(0, surface, half) === surface, "t=0 is still on the mari");
+  });
+
+  it("a finished set-round closes; one petal does not", () => {
+    const round = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, 1, 0));
+    assert.equal(round.length, 8);
+    const first = round[0];
+    const last = round[round.length - 1];
+    assert.ok(first && last && first.kind === "arc" && last.kind === "arc");
+    if (!first || !last || first.kind !== "arc" || last.kind !== "arc") return;
+    assert.ok(dist(first.a, last.b) < 0.02, "complete set-round is a closed zigzag");
+    const petal = round.slice(0, 2);
+    const p0 = petal[0];
+    const p1 = petal[1];
+    assert.ok(p0 && p1 && p0.kind === "arc" && p1.kind === "arc");
+    if (!p0 || !p1 || p0.kind !== "arc" || p1.kind !== "arc") return;
+    assert.ok(dist(p0.a, p1.b) > 0.1, "one petal is an open working length");
   });
 });

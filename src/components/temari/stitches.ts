@@ -5,7 +5,7 @@ import type { Stitch } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
-import { stackBump } from "./kagari";
+import { stackBump, scoopAway, scoopRadius } from "./kagari";
 
 const ARC_SEGS = 32;
 
@@ -222,6 +222,35 @@ function nearVec(a: THREE.Vector3, b: THREE.Vector3) {
   return a.distanceToSquared(b) < 1.6e-4;
 }
 
+/**
+ * TemariKai: start comes up from the wrap; end goes back in.
+ * Walks away from the laid stitch, dropping under the cover (r=1).
+ * Closed chidori rounds stay on the mari — the anchor is not seen.
+ */
+function scoopOnPath(
+  at: THREE.Vector3,
+  from: THREE.Vector3,
+  kind: ThreadKind,
+): THREE.Vector3[] {
+  const half = unitFromMm(kindMm(kind)) * 0.5;
+  const surfaceR = at.length();
+  const units = scoopAway([at.x, at.y, at.z], [from.x, from.y, from.z]);
+  const n = units.length;
+  if (n === 0) return [];
+  return units.map((p, i) => {
+    const r = scoopRadius((i + 1) / n, surfaceR, half);
+    return new THREE.Vector3(p[0] * r, p[1] * r, p[2] * r);
+  });
+}
+
+function buryWorkingEnds(pts: THREE.Vector3[], kind: ThreadKind): THREE.Vector3[] {
+  if (pts.length < 2) return pts;
+  const head = scoopOnPath(pts[0]!, pts[1]!, kind);
+  const tail = scoopOnPath(pts[pts.length - 1]!, pts[pts.length - 2]!, kind);
+  if (head.length === 0 && tail.length === 0) return pts;
+  return [...head.reverse(), ...pts, ...tail];
+}
+
 function chainArcs(arcs: Extract<Stitch, { kind: "arc" }>[]) {
   const chains: Extract<Stitch, { kind: "arc" }>[][] = [];
   let cur: Extract<Stitch, { kind: "arc" }>[] = [];
@@ -243,8 +272,9 @@ function stackedArcCord(
 ) {
   const pts = arcPath(stitch, kind);
   if (pts.length < 2) return new THREE.BufferGeometry();
-  // Open working end: keep most of the pearl, no coin, no needle.
-  return tubeOnSphere(pts, stitchRadius(kind), true, false);
+  // Open working length: emerge from the wrap, bury at the last stitch.
+  // Full pearl — the cover hides the ends, so no taper and no coin.
+  return tubeOnSphere(buryWorkingEnds(pts, kind), stitchRadius(kind), false, false);
 }
 
 function stackedArcChain(
@@ -287,8 +317,10 @@ function stackedArcChain(
   if (closed && pts.length > 6) {
     if (nearVec(pts[0]!, pts[pts.length - 1]!)) pts.pop();
   }
-  // Closed chidori round: full pearl, a loop at each mark, no tapered ends.
-  return tubeOnSphere(pts, stitchRadius(kind), false, closed);
+  // Closed chidori round: full pearl on the mari, the start/stop is hidden.
+  // Open working length: emerge at the first mark, bury at the last.
+  const path = closed ? pts : buryWorkingEnds(pts, kind);
+  return tubeOnSphere(path, stitchRadius(kind), false, closed);
 }
 
 function stackedArcRibbon(
@@ -493,10 +525,9 @@ export function createWrapLineGeometry(strands: THREE.Vector3[][]) {
 /**
  * Pearl on the mari. Sphere-radial frames, not Frenet.
  *
- * Open stitch ends taper to a point — a full-radius disk at the mark
- * faces the camera as a bead. A complete chidori round is a closed
- * zigzag: no ends, the pearl turns at the marks. Wrap tubes stay
- * untapered (closed circles, open seam).
+ * Closed chidori round: no ends. Open working length dives under the wrap
+ * at start and stop, so the cover hides the ends — no taper, no coin.
+ * Wrap tubes stay untapered (closed circles, open seam).
  */
 function tubeOnSphere(
   pts: THREE.Vector3[],
@@ -583,21 +614,25 @@ function tubeOnSphere(
     }
   }
   if (!taperEnds && !closed) {
-    const c0 = nPath * ring;
-    const c1 = c0 + 1;
     const first = path[0]!;
     const last = path[nPath - 1]!;
-    const t0 = tangents[0]!;
-    const t1 = tangents[tangents.length - 1]!;
-    pos.push(first.x, first.y, first.z);
-    nrm.push(-t0.x, -t0.y, -t0.z);
-    uv.push(0, 0.5);
-    pos.push(last.x, last.y, last.z);
-    nrm.push(t1.x, t1.y, t1.z);
-    uv.push(1, 0.5);
-    for (let j = 0; j < radialSegs; j++) {
-      idx.push(c0, j + 1, j);
-      idx.push(c1, (nPath - 1) * ring + j, (nPath - 1) * ring + j + 1);
+    // Working enter/exit sit under the wrap cover. A disk there reads as a
+    // coin on a shallow scoop; skip caps once the ends have dived in.
+    if (first.length() >= 1.0 && last.length() >= 1.0) {
+      const c0 = nPath * ring;
+      const c1 = c0 + 1;
+      const t0 = tangents[0]!;
+      const t1 = tangents[tangents.length - 1]!;
+      pos.push(first.x, first.y, first.z);
+      nrm.push(-t0.x, -t0.y, -t0.z);
+      uv.push(0, 0.5);
+      pos.push(last.x, last.y, last.z);
+      nrm.push(t1.x, t1.y, t1.z);
+      uv.push(1, 0.5);
+      for (let j = 0; j < radialSegs; j++) {
+        idx.push(c0, j + 1, j);
+        idx.push(c1, (nPath - 1) * ring + j, (nPath - 1) * ring + j + 1);
+      }
     }
   }
   const geo = new THREE.BufferGeometry();

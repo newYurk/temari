@@ -100,6 +100,9 @@ function dot(a: Vec3, b: Vec3) {
  * Tiny bite across the jiwari: enter one side, scoop wrap+mark, exit the other.
  * Inner uwagake: wider with the stack, sitting slightly toward the pole so the
  * needle goes around previous rounds. Both flanks still meet at `mark`.
+ *
+ * These points live on the unit sphere. The renderer still has to *sew* them —
+ * a stored bite is not a dive.
  */
 export function biteAcross(
   pole: Vec3,
@@ -124,6 +127,59 @@ export function biteAcross(
     center[2] + across[2] * half,
   ]);
   return { enter, exit };
+}
+
+/**
+ * TemariKai kagari / Enter the Thread / Exit the Thread.
+ * Visible scoop is ~2 mm — same size as a regular stitch. The 3–4 cm
+ * friction run under the wrap is not drawn (no bleed-through).
+ */
+export const KAGARI_SCOOP_MM = 2;
+
+function rotateAxis(v: Vec3, axis: Vec3, ang: number): Vec3 {
+  const c = Math.cos(ang);
+  const s = Math.sin(ang);
+  const d = dot(axis, v);
+  const axv = cross(axis, v);
+  const k = 1 - c;
+  return [
+    v[0] * c + axv[0] * s + axis[0] * d * k,
+    v[1] * c + axv[1] * s + axis[1] * d * k,
+    v[2] * c + axv[2] * s + axis[2] * d * k,
+  ];
+}
+
+/**
+ * Unit-sphere walk from `at` continuing away from `from`.
+ * Does not include `at`. Last point is ~KAGARI_SCOOP_MM along the mari.
+ */
+export function scoopAway(at: Vec3, from: Vec3, n = 8): Vec3[] {
+  const a = normalize(at);
+  const b = normalize(from);
+  let axis = cross(b, a);
+  if (hypot3(axis) < 1e-8) {
+    axis = cross(a, Math.abs(a[1]) < 0.9 ? ([0, 1, 0] as Vec3) : ([1, 0, 0] as Vec3));
+  }
+  if (hypot3(axis) < 1e-8) return [];
+  axis = normalize(axis);
+  const along = unitFromMm(KAGARI_SCOOP_MM);
+  const out: Vec3[] = [];
+  for (let i = 1; i <= n; i++) {
+    out.push(normalize(rotateAxis(a, axis, along * (i / n))));
+  }
+  return out;
+}
+
+/**
+ * Centerline radius of the scoop. t=0 sits on the mari; t=1 is buried in
+ * the upper wrap layers so the whole pearl is under the cover (r=1).
+ */
+export function scoopRadius(t: number, surfaceR: number, half: number): number {
+  const u = Math.min(1, Math.max(0, t));
+  const h = u * u * (3 - 2 * u);
+  const buried = Math.min(0.988, 1 - half - unitFromMm(0.3));
+  const floor = 0.975;
+  return surfaceR + (Math.max(floor, buried) - surfaceR) * h;
 }
 
 function shiftTowardPole(pole: Vec3, mark: Vec3, along: number): Vec3 {
