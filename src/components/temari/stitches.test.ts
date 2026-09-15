@@ -7,10 +7,10 @@ describe("thread stack is local, not a lifted petal", () => {
   it("stackBump peaks at the named sites and is ~0 on a bare mid-leg", () => {
     assert.ok(stackBump(0, 2, 0, 0) > 1.5);
     assert.ok(stackBump(1, 0, 3, 0) > 2.5);
-    assert.ok(stackBump(0.5, 0, 0, 1) > 0.9);
+    assert.ok(stackBump(0.5, 0, 0, 1) < 0.05, "set-B crossing is draw order, not a hill");
     assert.ok(stackBump(0.5, 2, 0, 0) < 0.05, "mid-leg of a pole stack stays on the mari");
     assert.ok(stackBump(0.22, 0, 0, 0) === 0);
-    assert.ok(stackBump(0.35, 0, 0, 1) < 0.05, "set-B crossing is a point, not a hill along the flank");
+    assert.ok(stackBump(0.42, 0, 0, 1) < 0.05, "set-B crossing is a point, not a hill along the flank");
   });
 
   it("pearl #5 diameter is the unit of stack, not a whole-V lift", () => {

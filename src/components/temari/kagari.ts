@@ -155,7 +155,7 @@ export function stackOver(previous: number[], crossing: Crossing): number[] {
  * Local stack along a laid stitch, in counts of threads underneath.
  * Peak 1 at the named site, zero elsewhere — the V is not lifted as a whole.
  */
-export function stackBump(t: number, sitA: number, sitB: number, sitMid: number) {
+export function stackBump(t: number, sitA: number, sitB: number, _sitMid: number) {
   const bump = (x: number, center: number, width: number) => {
     const w = Math.max(1e-6, width);
     const d = Math.abs(x - center) / w;
@@ -164,9 +164,10 @@ export function stackBump(t: number, sitA: number, sitB: number, sitMid: number)
     return u * u * (3 - 2 * u);
   };
   const endW = 0.14 + 0.05 * Math.max(sitA, sitB);
-  // Crossing is a point, not a hill along the flank — 0.16 of the leg
-  // lifted the middle off the mari (a горб at the limb).
-  return sitA * bump(t, 0, endW) + sitB * bump(t, 1, endW) + sitMid * bump(t, 0.5, 0.04);
+  // Crossing is draw order (set B after A), not a radial hill.
+  // Any extra radius at mid-flank tents off the mari at the limb —
+  // that's the rise on every other petal.
+  return sitA * bump(t, 0, endW) + sitB * bump(t, 1, endW);
 }
 
 /**

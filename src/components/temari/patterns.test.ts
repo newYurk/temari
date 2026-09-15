@@ -295,6 +295,33 @@ describe("kiku on Simple 8", () => {
     assert.ok(hPast, "drawn outer rows are hittable");
   });
 
+  it("later kai flanks stay smooth — the Ozaki turn is a short ease, not a 14° knuckle", () => {
+    const pole: [number, number, number] = [0, 1, 0];
+    const spec = kikuSpec("simple", "even", "fit");
+    const step = Math.PI / 4;
+    const minDotFor = (ring: number) => {
+      const left = kikuFlank(pole, spec, ring, 0, step);
+      const pts = [left.a, ...left.via, left.b];
+      let minDot = 1;
+      for (let i = 1; i < pts.length - 1; i++) {
+        const a = pts[i - 1]!;
+        const b = pts[i]!;
+        const c = pts[i + 1]!;
+        const v0 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]] as [number, number, number];
+        const v1 = [c[0] - b[0], c[1] - b[1], c[2] - b[2]] as [number, number, number];
+        const l0 = Math.hypot(...v0) || 1;
+        const l1 = Math.hypot(...v1) || 1;
+        const d = (v0[0] / l0) * (v1[0] / l1) + (v0[1] / l0) * (v1[1] / l1) + (v0[2] / l0) * (v1[2] / l1);
+        if (d < minDot) minDot = d;
+      }
+      return minDot;
+    };
+    for (const ring of [1, 3, spec.fit - 1]) {
+      const d = minDotFor(ring);
+      assert.ok(d > 0.975, `ring ${ring} min tanDot ${d} — later kai must not rib`);
+    }
+  });
+
   it("one set of one kai is four petals to the pin, not a short star", () => {
     const ops = compileKiku("simple", "out", "even", 0, 0, 1, 0);
     assert.equal(ops.length, 8);

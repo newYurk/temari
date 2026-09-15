@@ -130,7 +130,7 @@ export function ribbonWidth(kind: ThreadKind) {
   return unitFromMm(mm) * (kind === "metallic" ? 0.55 : 0.5);
 }
 
-/** Round pearl on the mari. Slightly under half a millimetre so cords read. */
+/** Round pearl on the mari. Half a millimetre: cords nestle at one-pearl pitch. */
 export function stitchRadius(kind: ThreadKind) {
   const mm =
     kind === "pearl8"
@@ -138,7 +138,7 @@ export function stitchRadius(kind: ThreadKind) {
       : kind === "metallic"
         ? STITCH_THREAD_MM.mark
         : STITCH_THREAD_MM.pearl5;
-  return unitFromMm(mm) * 0.46;
+  return unitFromMm(mm) * 0.5;
 }
 
 /** Slider 0–1 → tube diameter on the unit sphere for the wrap thread. */

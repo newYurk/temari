@@ -50,7 +50,6 @@ function ThreadLayer({
   kind?: ThreadKind;
   order?: number;
 }) {
-  const camera = useThree((s) => s.camera);
   const geos = useMemo(() => {
     return colors.map((_, i) => createMotifGeometry(stitches, i, kind));
   }, [stitches, kind, colors]);
@@ -75,30 +74,7 @@ function ThreadLayer({
               transparent={opacity < 1}
               opacity={opacity}
               depthWrite={opacity >= 1}
-              depthTest
               side={THREE.FrontSide}
-              onBeforeCompile={(shader) => {
-                shader.uniforms.uCamPos = { value: camera.position };
-                shader.vertexShader = shader.vertexShader
-                  .replace(
-                    "#include <common>",
-                    "#include <common>\nvarying vec3 vWorldDir;",
-                  )
-                  .replace(
-                    "#include <begin_vertex>",
-                    "#include <begin_vertex>\nvWorldDir = (modelMatrix * vec4(transformed, 1.0)).xyz;",
-                  );
-                shader.fragmentShader = shader.fragmentShader
-                  .replace(
-                    "#include <common>",
-                    "#include <common>\nvarying vec3 vWorldDir;\nuniform vec3 uCamPos;",
-                  )
-                  .replace(
-                    "void main() {",
-                    "void main() {\nif (dot(normalize(vWorldDir), normalize(uCamPos)) < 0.0) discard;",
-                  );
-              }}
-              customProgramCacheKey={() => "temari-thread-clip"}
             />
           </mesh>
         ) : null,
@@ -679,26 +655,6 @@ export function Ball() {
           kagariFocus: stitchFocus(newest, st.division, st.motif),
           viewNonce: st.viewNonce + 1,
         });
-      },
-      motifStats: () => {
-        const g = group.current;
-        if (!g) return [];
-        const out: { count: number; rMin: number; rMax: number; order: number }[] = [];
-        g.traverse((obj) => {
-          const mesh = obj as THREE.Mesh;
-          if (!mesh.isMesh || !mesh.geometry) return;
-          const pos = mesh.geometry.getAttribute("position");
-          if (!pos || pos.count < 8) return;
-          let rMin = Infinity;
-          let rMax = 0;
-          for (let i = 0; i < pos.count; i++) {
-            const r = Math.hypot(pos.getX(i), pos.getY(i), pos.getZ(i));
-            if (r < rMin) rMin = r;
-            if (r > rMax) rMax = r;
-          }
-          out.push({ count: pos.count, rMin, rMax, order: mesh.renderOrder });
-        });
-        return out;
       },
     };
     (window as Window & { __temari?: typeof probe }).__temari = probe;

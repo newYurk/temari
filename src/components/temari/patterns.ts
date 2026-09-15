@@ -463,11 +463,6 @@ function offsetBy(p: Vec3, n: Vec3, delta: number): Vec3 {
   ]);
 }
 
-function ease01(t: number) {
-  const x = Math.min(1, Math.max(0, t));
-  return x * x * (3 - 2 * x);
-}
-
 function pathSamples(a: Vec3, b: Vec3, via: Vec3[], count: number): Vec3[] {
   const anchors = [a, ...via, b];
   const out: Vec3[] = [];
@@ -565,6 +560,48 @@ export function kikuMarkPins(
   return pins;
 }
 
+function hermiteSphere(p0: Vec3, m0: Vec3, p1: Vec3, m1: Vec3, t: number): Vec3 {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const h00 = 2 * t3 - 3 * t2 + 1;
+  const h10 = t3 - 2 * t2 + t;
+  const h01 = -2 * t3 + 3 * t2;
+  const h11 = t3 - t2;
+  return normalize([
+    h00 * p0[0] + h10 * m0[0] + h01 * p1[0] + h11 * m1[0],
+    h00 * p0[1] + h10 * m0[1] + h01 * p1[1] + h11 * m1[1],
+    h00 * p0[2] + h10 * m0[2] + h01 * p1[2] + h11 * m1[2],
+  ]);
+}
+
+function tangentAt(pts: Vec3[], i: number): Vec3 {
+  const a = pts[Math.max(0, i - 1)]!;
+  const b = pts[Math.min(pts.length - 1, i + 1)]!;
+  const t: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const p = pts[Math.max(0, Math.min(pts.length - 1, i))]!;
+  const along = dot(t, p);
+  const side: Vec3 = [t[0] - p[0] * along, t[1] - p[1] * along, t[2] - p[2] * along];
+  return hypot3(side) < 1e-9 ? normalize(t) : normalize(side);
+}
+
+function scale3(v: Vec3, s: number): Vec3 {
+  return [v[0] * s, v[1] * s, v[2] * s];
+}
+
+/** Smooth mark → body join: same tangent as the parallel lay, so the miss is an S, not a knuckle. */
+function hermiteJoin(from: Vec3, to: Vec3, mFrom: Vec3, mTo: Vec3, count: number): Vec3[] {
+  const chord = Math.max(angleBetween(from, to), 1e-6);
+  const a = scale3(normalize(mFrom), chord);
+  const b = scale3(normalize(mTo), chord);
+  const out: Vec3[] = [];
+  for (let i = 0; i <= count; i++) {
+    out.push(hermiteSphere(from, a, to, b, i / count));
+  }
+  out[0] = from;
+  out[count] = to;
+  return out;
+}
+
 /**
  * One kiku flank. Marks sit on meridians (inner + 1 thread, outer + Ozaki
  * 2 mm). The body is a parallel offset of the *previous* round — the master
@@ -590,27 +627,30 @@ export function kikuFlank(
   const b = around(pole, tOuter, phiOuter);
   if (ring <= 0) return { a, b, via: [] };
   const prev = kikuFlank(pole, spec, ring - 1, phiInner, phiOuter);
-  const samples = pathSamples(prev.a, prev.b, prev.via, 29);
+  const samples = pathSamples(prev.a, prev.b, prev.via, 36);
   const off = parallelOffset(samples, pole, spec.pitch);
-  const arc = Math.max(tOuter - tInner, spec.pitch);
-  const innerFrac = Math.min(0.18, Math.max(0.08, (spec.pitch * 2) / arc));
-  const outerFrac = Math.min(0.22, Math.max(0.14, (spec.stretch * 2.8) / arc));
-  const segs = 36;
-  const via: Vec3[] = [];
-  for (let i = 1; i < segs; i++) {
-    const t = i / segs;
-    const packed = sampleAnchors(off, t);
-    if (t < innerFrac) {
-      const u = ease01(1 - t / innerFrac);
-      via.push(slerp3(packed, a, u));
-    } else if (t > 1 - outerFrac) {
-      const u = ease01((t - (1 - outerFrac)) / outerFrac);
-      via.push(slerp3(packed, b, u));
-    } else {
-      via.push(packed);
-    }
-  }
-  const even = resampleArc([a, ...via, b], 28);
+  const n = off.length;
+  if (n < 6) return { a, b, via: off };
+  // Ozaki ~2 mm at the point — not 12% of the petal (that left air
+  // between later kai) and not a one-sample knuckle.
+  const join = Math.max(
+    3,
+    Math.round((unitFromMm(2.6) / Math.max(tOuter - tInner, spec.pitch)) * n),
+  );
+  const i0 = Math.min(Math.floor(n / 4), join);
+  const i1 = Math.max(i0 + 2, n - 1 - i0);
+  const p0 = off[i0]!;
+  const p1 = off[i1]!;
+  const head = hermiteJoin(a, p0, tangentAt(off, 0), tangentAt(off, i0), 10);
+  const tail = hermiteJoin(p1, b, tangentAt(off, i1), tangentAt(off, n - 1), 10);
+  const pts: Vec3[] = [
+    a,
+    ...head.slice(1, -1),
+    ...off.slice(i0, i1 + 1),
+    ...tail.slice(1, -1),
+    b,
+  ];
+  const even = resampleArc(pts, 40);
   return { a: even[0]!, b: even[even.length - 1]!, via: even.slice(1, -1) };
 }
 

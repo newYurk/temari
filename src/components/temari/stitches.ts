@@ -158,15 +158,18 @@ function arcRibbon(a: THREE.Vector3, b: THREE.Vector3, width: number) {
  * Pearl on the mari: a round cord. Path follows `via` when the stitch is a
  * parallel offset (later kiku kai). Local extra height only where the
  * stitch sits on thread — pole bundle and set-B crossing.
+ *
+ * Consecutive legs that share a mark are one cord: the master does not
+ * cut the pearl at the outer point or the inner stitch. A complete
+ * chidori round is a closed zigzag; only a parked / working end tapers.
  */
-function stackedArcCord(
+function arcPath(
   stitch: Extract<Stitch, { kind: "arc" }>,
   kind: ThreadKind,
-) {
+): THREE.Vector3[] {
   const mm = kindMm(kind);
   const half = unitFromMm(mm) * 0.5;
   const diameter = unitFromMm(mm);
-  const radius = stitchRadius(kind);
   const sitA = stitch.sitA ?? 0;
   const sitB = stitch.sitB ?? 0;
   const sitMid = stitch.sitMid ?? 0;
@@ -192,7 +195,7 @@ function stackedArcCord(
     }
   } else {
     const steps = anchors.length - 1;
-    const sub = 2;
+    const sub = 4;
     for (let s = 0; s < steps; s++) {
       const a = anchors[s];
       const b = anchors[s + 1];
@@ -205,20 +208,87 @@ function stackedArcCord(
       }
     }
   }
+  return pts;
+}
+
+function sameMark(a: [number, number, number], b: [number, number, number]) {
+  const dx = a[0] - b[0];
+  const dy = a[1] - b[1];
+  const dz = a[2] - b[2];
+  return dx * dx + dy * dy + dz * dz < 1.6e-4;
+}
+
+function nearVec(a: THREE.Vector3, b: THREE.Vector3) {
+  return a.distanceToSquared(b) < 1.6e-4;
+}
+
+function chainArcs(arcs: Extract<Stitch, { kind: "arc" }>[]) {
+  const chains: Extract<Stitch, { kind: "arc" }>[][] = [];
+  let cur: Extract<Stitch, { kind: "arc" }>[] = [];
+  for (const s of arcs) {
+    if (cur.length > 0 && sameMark(cur[cur.length - 1]!.b, s.a)) {
+      cur.push(s);
+      continue;
+    }
+    if (cur.length) chains.push(cur);
+    cur = [s];
+  }
+  if (cur.length) chains.push(cur);
+  return chains;
+}
+
+function stackedArcCord(
+  stitch: Extract<Stitch, { kind: "arc" }>,
+  kind: ThreadKind,
+) {
+  const pts = arcPath(stitch, kind);
   if (pts.length < 2) return new THREE.BufferGeometry();
-  const tube = tubeOnSphere(pts, radius);
-  const a = pts[0];
-  const b = pts[pts.length - 1];
-  if (!a || !b) return tube;
-  const capA = new THREE.SphereGeometry(radius, 8, 6);
-  capA.translate(a.x, a.y, a.z);
-  const capB = new THREE.SphereGeometry(radius, 8, 6);
-  capB.translate(b.x, b.y, b.z);
-  const merged = mergeGeometries([tube, capA, capB], false);
-  tube.dispose();
-  capA.dispose();
-  capB.dispose();
-  return merged ?? new THREE.BufferGeometry();
+  // Open working end: keep most of the pearl, no coin, no needle.
+  return tubeOnSphere(pts, stitchRadius(kind), true, false);
+}
+
+function stackedArcChain(
+  chain: Extract<Stitch, { kind: "arc" }>[],
+  kind: ThreadKind,
+) {
+  if (chain.length === 1) return stackedArcCord(chain[0]!, kind);
+  const pts: THREE.Vector3[] = [];
+  for (let i = 0; i < chain.length; i++) {
+    const piece = arcPath(chain[i]!, kind);
+    if (piece.length < 2) continue;
+    if (pts.length === 0) {
+      pts.push(...piece);
+      continue;
+    }
+    // Through the mark, on the mari. A chord across the V is a tent at the
+    // limb; the pearl turns at the point (Ozaki), like the kiku loop.
+    if (nearVec(pts[pts.length - 1]!, piece[0]!) && pts.length > 1 && piece.length > 1) {
+      const mark = pts[pts.length - 1]!;
+      const from = pts[pts.length - 2]!;
+      const to = piece[1]!;
+      pts.pop();
+      for (let s = 1; s <= 3; s++) {
+        slerp(from, mark, s / 3, _a);
+        pts.push(_a.clone());
+      }
+      for (let s = 1; s < 3; s++) {
+        slerp(mark, to, s / 3, _a);
+        pts.push(_a.clone());
+      }
+      for (let k = 2; k < piece.length; k++) pts.push(piece[k]!);
+    } else {
+      const start = nearVec(pts[pts.length - 1]!, piece[0]!) ? 1 : 0;
+      for (let k = start; k < piece.length; k++) pts.push(piece[k]!);
+    }
+  }
+  if (pts.length < 2) return new THREE.BufferGeometry();
+  const closed =
+    chain.length > 2 && sameMark(chain[0]!.a, chain[chain.length - 1]!.b);
+  if (closed && pts.length > 6) {
+    if (nearVec(pts[0]!, pts[pts.length - 1]!)) pts.pop();
+  }
+  // Closed chidori round: full pearl, a loop at each mark, no tapered ends.
+  return tubeOnSphere(pts, stitchRadius(kind), false, closed);
 }
 
 function stackedArcRibbon(
@@ -348,22 +418,31 @@ export function createMotifGeometry(
   const width = ribbonWidth(kind);
   const cord = kind !== "metallic";
   const parts: THREE.BufferGeometry[] = [];
+  const arcs: Extract<Stitch, { kind: "arc" }>[] = [];
   for (const stitch of stitches) {
     if (stitch.color !== colorIndex) continue;
     if (stitch.kind === "arc") {
-      parts.push(cord ? stackedArcCord(stitch, kind) : stackedArcRibbon(stitch, width, kind));
+      arcs.push(stitch);
     } else {
       parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, stitch.lift ?? 0, kind)), width * 1.08, true));
+    }
+  }
+  if (cord) {
+    for (const chain of chainArcs(arcs)) {
+      parts.push(stackedArcChain(chain, kind));
+    }
+  } else {
+    for (const stitch of arcs) {
+      parts.push(stackedArcRibbon(stitch, width, kind));
     }
   }
   if (parts.length === 0) return null;
   const merged = mergeGeometries(parts, false);
   for (const geo of parts) geo.dispose();
   if (!merged) return null;
-  // Keep authored tube normals. Recomputing would average the filled-disk
-  // (along the cord) with the wall (radial) and light a crease as a горб.
   return merged;
 }
+
 export function createWrapGeometry(
   strands: THREE.Vector3[][],
   width: number,
@@ -412,40 +491,67 @@ export function createWrapLineGeometry(strands: THREE.Vector3[][]) {
 }
 
 /**
- * Solid pearl on the mari: sphere-radial frames, and a filled disk at every
- * station. A hollow pipe reads as a горб at the limb — you look down the tube
- * and see a loop off the ball. Frenet TubeGeometry had the same silhouette.
+ * Pearl on the mari. Sphere-radial frames, not Frenet.
+ *
+ * Open stitch ends taper to a point — a full-radius disk at the mark
+ * faces the camera as a bead. A complete chidori round is a closed
+ * zigzag: no ends, the pearl turns at the marks. Wrap tubes stay
+ * untapered (closed circles, open seam).
  */
-function tubeOnSphere(pts: THREE.Vector3[], radius: number) {
+function tubeOnSphere(
+  pts: THREE.Vector3[],
+  radius: number,
+  taperEnds = false,
+  closed = false,
+) {
   if (pts.length < 2) return new THREE.BufferGeometry();
   const path: THREE.Vector3[] = [];
-  for (let i = 0; i < pts.length - 1; i++) {
+  const segs = closed ? pts.length : pts.length - 1;
+  for (let i = 0; i < segs; i++) {
     const a = pts[i]!;
-    const b = pts[i + 1]!;
-    const steps = 3;
+    const b = pts[(i + 1) % pts.length]!;
+    const steps = 4;
     for (let s = 0; s < steps; s++) {
       const t = s / steps;
       slerp(a, b, t, _a);
       path.push(_a.clone());
     }
   }
-  path.push(pts[pts.length - 1]!.clone());
-  const radialSegs = 8;
+  if (!closed) path.push(pts[pts.length - 1]!.clone());
+  const nPath = path.length;
+  if (nPath < 2) return new THREE.BufferGeometry();
+  const along = [0];
+  for (let i = 1; i < nPath; i++) {
+    along.push(along[i - 1]! + path[i]!.distanceTo(path[i - 1]!));
+  }
+  const total = along[along.length - 1] || 1;
+  const taperLen = Math.max(radius * 3, total * 0.03);
+  const scaleAt = (s: number) => {
+    if (!taperEnds || closed) return 1;
+    const hermite = (u: number) => {
+      if (u >= 1) return 1;
+      if (u <= 0) return 0.55;
+      return 0.55 + 0.45 * u * u * (3 - 2 * u);
+    };
+    return Math.min(hermite(s / taperLen), hermite((total - s) / taperLen));
+  };
+  const radialSegs = 10;
   const ring = radialSegs + 1;
-  const stride = ring + 1;
   const pos: number[] = [];
   const nrm: number[] = [];
   const uv: number[] = [];
   const idx: number[] = [];
-  for (let i = 0; i < path.length; i++) {
+  const tangents: THREE.Vector3[] = [];
+  for (let i = 0; i < nPath; i++) {
     const p = path[i]!;
-    const prev = path[Math.max(0, i - 1)]!;
-    const next = path[Math.min(path.length - 1, i + 1)]!;
+    const prev = path[closed ? (i - 1 + nPath) % nPath : Math.max(0, i - 1)]!;
+    const next = path[closed ? (i + 1) % nPath : Math.min(nPath - 1, i + 1)]!;
     _t.subVectors(next, prev);
     if (_t.lengthSq() < 1e-12) {
       _t.crossVectors(p, Math.abs(p.y) < 0.9 ? _mid.set(0, 1, 0) : _mid.set(1, 0, 0));
     }
     _t.normalize();
+    tangents.push(_t.clone());
     _radial.copy(p).normalize();
     _side.copy(_radial).addScaledVector(_t, -_radial.dot(_t));
     if (_side.lengthSq() < 1e-12) {
@@ -453,6 +559,7 @@ function tubeOnSphere(pts: THREE.Vector3[], radius: number) {
     }
     _side.normalize();
     _mid.crossVectors(_t, _side).normalize();
+    const r = radius * scaleAt(along[i] ?? 0);
     for (let j = 0; j <= radialSegs; j++) {
       const ang = (j / radialSegs) * Math.PI * 2;
       const c = Math.cos(ang);
@@ -460,26 +567,37 @@ function tubeOnSphere(pts: THREE.Vector3[], radius: number) {
       const nx = _side.x * c + _mid.x * s;
       const ny = _side.y * c + _mid.y * s;
       const nz = _side.z * c + _mid.z * s;
-      pos.push(p.x + nx * radius, p.y + ny * radius, p.z + nz * radius);
+      pos.push(p.x + nx * r, p.y + ny * r, p.z + nz * r);
       nrm.push(nx, ny, nz);
-      uv.push(i / Math.max(1, path.length - 1), j / radialSegs);
+      uv.push(i / Math.max(1, nPath - 1), j / radialSegs);
     }
-    pos.push(p.x, p.y, p.z);
-    nrm.push(_t.x, _t.y, _t.z);
-    uv.push(i / Math.max(1, path.length - 1), 0.5);
   }
-  for (let i = 0; i < path.length - 1; i++) {
+  const wallSegs = closed ? nPath : nPath - 1;
+  for (let i = 0; i < wallSegs; i++) {
+    const i0 = i;
+    const i1 = (i + 1) % nPath;
     for (let j = 0; j < radialSegs; j++) {
-      const a = i * stride + j;
-      const b = a + stride;
+      const a = i0 * ring + j;
+      const b = i1 * ring + j;
       idx.push(a, b, a + 1, b, b + 1, a + 1);
     }
   }
-  for (let i = 0; i < path.length; i++) {
-    const c = i * stride + ring;
-    const base = i * stride;
+  if (!taperEnds && !closed) {
+    const c0 = nPath * ring;
+    const c1 = c0 + 1;
+    const first = path[0]!;
+    const last = path[nPath - 1]!;
+    const t0 = tangents[0]!;
+    const t1 = tangents[tangents.length - 1]!;
+    pos.push(first.x, first.y, first.z);
+    nrm.push(-t0.x, -t0.y, -t0.z);
+    uv.push(0, 0.5);
+    pos.push(last.x, last.y, last.z);
+    nrm.push(t1.x, t1.y, t1.z);
+    uv.push(1, 0.5);
     for (let j = 0; j < radialSegs; j++) {
-      idx.push(c, base + j, base + j + 1, c, base + j + 1, base + j);
+      idx.push(c0, j + 1, j);
+      idx.push(c1, (nPath - 1) * ring + j, (nPath - 1) * ring + j + 1);
     }
   }
   const geo = new THREE.BufferGeometry();
