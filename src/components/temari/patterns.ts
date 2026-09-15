@@ -1,7 +1,7 @@
 import { polePositions, type Division } from "./division.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 import { COLOR_COUNT } from "./palettes.ts";
-import { biteAcross, stackOver, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
+import { biteAcross, closestApproachT, stackOver, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
 
 export type KikuSlot = { pole: number; ring: number; sector: number };
 
@@ -21,10 +21,16 @@ export type Stitch =
       /** Threads already under this end — extra height is local, not the whole V. */
       sitA?: number;
       sitB?: number;
-      /** Set B crossing set A, at the mid of the leg. */
+      /** Set B sitting on A at the kousa, not a mid-flank hill. */
       sitMid?: number;
+      /** Parameter along this leg of the A/B closest approach. */
+      sitMidT?: number;
       bite?: { enter: Vec3; exit: Vec3 };
       via?: Vec3[];
+      /** Working thread: one cord per pole+set, parked between kai. */
+      set?: 0 | 1;
+      pole?: number;
+      kai?: number;
     }
   | { kind: "loop"; points: Vec3[]; color: number; lift?: number };
 
@@ -210,7 +216,7 @@ export function stitchesForSlot(
   const n = petalCount(division);
   const spec = kikuSpec(division);
   if (slot.sector < 0 || slot.sector >= n) return [];
-  return kikuPetal(pole, spec, slot.ring, slot.sector, n, color);
+  return kikuPetal(pole, spec, slot.ring, slot.sector, n, color, slot.pole);
 }
 
 export function hitKikuSlot(
@@ -285,7 +291,7 @@ export function stitchesFromSewn(division: Division, sewn: SewnEntry[]): Stitch[
     const [pole, ring, sector] = item.key.split(":").map(Number);
     out.push(...stitchesForSlot(division, { pole, ring, sector }, item.color));
   }
-  return out;
+  return annotateSetCrossings(out);
 }
 
 function smallCircle(normal: Vec3, height: number, count = 96): Vec3[] {
@@ -669,6 +675,7 @@ function kikuPetal(
   sector: number,
   n: number,
   color: number,
+  poleIndex = 0,
 ): Stitch[] {
   if (ring < 0) return [];
   const { tInner, tOuter } = kikuThetas(spec, ring);
@@ -681,7 +688,7 @@ function kikuPetal(
   const right = kikuFlank(pole, spec, ring, phi2, phi1);
   const cornerMm = KIKU_8_POINT.cornerMm;
   const sitInner = ring;
-  const sitMid = sector % 2 === 1 ? 1 : 0;
+  const set = (sector % 2 === 0 ? 0 : 1) as 0 | 1;
   return [
     {
       kind: "arc",
@@ -690,9 +697,12 @@ function kikuPetal(
       color,
       sitA: sitInner,
       sitB: 0,
-      sitMid,
+      sitMid: 0,
       bite: biteAcross(pole, left.b, cornerMm),
       via: left.via,
+      set,
+      pole: poleIndex,
+      kai: ring,
     },
     {
       kind: "arc",
@@ -701,9 +711,12 @@ function kikuPetal(
       color,
       sitA: 0,
       sitB: sitInner,
-      sitMid,
+      sitMid: 0,
       bite: biteAcross(pole, right.a, cornerMm),
       via: [...right.via].reverse(),
+      set,
+      pole: poleIndex,
+      kai: ring,
     },
   ];
 }
@@ -818,7 +831,7 @@ export function compileKiku(
 }
 
 export function stitchesFromOps(ops: KagariOp[]): Stitch[] {
-  return ops.map((op, i) => {
+  const stitches: Stitch[] = ops.map((op, i) => {
     const prev = i > 0 ? ops[i - 1] : undefined;
     const sitTo = op.mark.t === "inner" ? op.over.length : 0;
     const sitFrom =
@@ -834,10 +847,123 @@ export function stitchesFromOps(ops: KagariOp[]): Stitch[] {
       color: op.color,
       sitA: sitFrom,
       sitB: sitTo,
-      sitMid: op.set === 1 ? 1 : 0,
+      sitMid: 0,
       bite: op.bite,
       via: op.lay.via,
+      set: op.set,
+      pole: op.pole,
+      kai: op.kai,
     };
+  });
+  return annotateSetCrossings(stitches);
+}
+
+const SAME_MARK2 = 1.6e-4;
+
+function dist2(a: Vec3, b: Vec3) {
+  const dx = a[0] - b[0];
+  const dy = a[1] - b[1];
+  const dz = a[2] - b[2];
+  return dx * dx + dy * dy + dz * dz;
+}
+
+function sequentialChains(arcs: Extract<Stitch, { kind: "arc" }>[]) {
+  const chains: Extract<Stitch, { kind: "arc" }>[][] = [];
+  let cur: Extract<Stitch, { kind: "arc" }>[] = [];
+  for (const s of arcs) {
+    if (cur.length > 0 && dist2(cur[cur.length - 1]!.b, s.a) < SAME_MARK2) {
+      cur.push(s);
+      continue;
+    }
+    if (cur.length) chains.push(cur);
+    cur = [s];
+  }
+  if (cur.length) chains.push(cur);
+  return chains;
+}
+
+/**
+ * One working thread per pole+set. GT14 parks Color A after a round, sews B,
+ * resumes A — same pearl, not a new cord. Join across kai if the gap is
+ * ≤ 2.2 pearls. Never weld a round closed: returning to the start mark is
+ * a park on the mari, not the thread joining itself.
+ */
+export function groupWorkingThreads(arcs: Extract<Stitch, { kind: "arc" }>[]) {
+  const tagged: Extract<Stitch, { kind: "arc" }>[] = [];
+  const untagged: Extract<Stitch, { kind: "arc" }>[] = [];
+  for (const s of arcs) {
+    if (s.set != null && s.pole != null) tagged.push(s);
+    else untagged.push(s);
+  }
+  if (tagged.length === 0) return sequentialChains(arcs);
+
+  const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
+  const parkJoin = (2.2 * pearl) ** 2;
+  const buckets = new Map<string, Extract<Stitch, { kind: "arc" }>[]>();
+  for (const s of tagged) {
+    const k = `${s.pole}:${s.set}`;
+    const list = buckets.get(k);
+    if (list) list.push(s);
+    else buckets.set(k, [s]);
+  }
+  const chains: Extract<Stitch, { kind: "arc" }>[][] = [];
+  for (const list of buckets.values()) {
+    let cur: Extract<Stitch, { kind: "arc" }>[] = [];
+    for (const s of list) {
+      if (cur.length === 0) {
+        cur = [s];
+        continue;
+      }
+      const d = dist2(cur[cur.length - 1]!.b, s.a);
+      if (d < SAME_MARK2 || d < parkJoin) {
+        cur.push(s);
+      } else {
+        chains.push(cur);
+        cur = [s];
+      }
+    }
+    if (cur.length) chains.push(cur);
+  }
+  if (untagged.length) chains.push(...sequentialChains(untagged));
+  return chains;
+}
+
+function stitchSamples(s: Extract<Stitch, { kind: "arc" }>, n = 20): Vec3[] {
+  return pathSamples(s.a, s.b, s.via ?? [], n);
+}
+
+/**
+ * B sits on A at the actual kousa, near the inner marks.
+ * Mid-flank (t=0.5) stays on the mari — that was the every-other-petal hill.
+ */
+export function annotateSetCrossings(stitches: Stitch[]): Stitch[] {
+  const arcs = stitches.filter((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc");
+  const byKai = new Map<string, Extract<Stitch, { kind: "arc" }>[]>();
+  for (const s of arcs) {
+    if (s.set !== 0 || s.pole == null || s.kai == null) continue;
+    const k = `${s.pole}:${s.kai}`;
+    const list = byKai.get(k);
+    if (list) list.push(s);
+    else byKai.set(k, [s]);
+  }
+  const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
+  const reach = pearl * 3;
+  return stitches.map((s) => {
+    if (s.kind !== "arc" || s.set !== 1 || s.pole == null || s.kai == null) return s;
+    const as = byKai.get(`${s.pole}:${s.kai}`) ?? [];
+    if (as.length === 0) return s;
+    const self = stitchSamples(s);
+    let bestT = 0.5;
+    let bestD = Infinity;
+    for (const a of as) {
+      const c = closestApproachT(self, stitchSamples(a));
+      if (c.dist < bestD) {
+        bestD = c.dist;
+        bestT = c.tA;
+      }
+    }
+    if (bestD > reach) return s;
+    return { ...s, sitMid: 1, sitMidT: bestT };
   });
 }
 

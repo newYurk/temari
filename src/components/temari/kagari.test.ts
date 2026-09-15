@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { biteAcross, KIKU_8_POINT, stackOver, uwagakeVia, scoopAway, scoopRadius, KAGARI_SCOOP_MM } from "./kagari.ts";
-import { compileKiku, fillKikuSewn, kikuSpec, stitchesFromOps } from "./patterns.ts";
+import { biteAcross, KIKU_8_POINT, stackOver, uwagakeVia, scoopAway, scoopRadius, KAGARI_SCOOP_MM, closestApproachT } from "./kagari.ts";
+import { compileKiku, fillKikuSewn, kikuSpec, stitchesFromOps, groupWorkingThreads } from "./patterns.ts";
 import { unitFromMm } from "./measure.ts";
 
 function dist(a: [number, number, number], b: [number, number, number]) {
@@ -216,19 +216,74 @@ describe("kagari recipe atom", () => {
     assert.ok(scoopRadius(0, surface, half) === surface, "t=0 is still on the mari");
   });
 
-  it("a finished set-round closes; one petal does not", () => {
+  it("a finished set-round parks at the start; one petal does not", () => {
     const round = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, 1, 0));
     assert.equal(round.length, 8);
     const first = round[0];
     const last = round[round.length - 1];
     assert.ok(first && last && first.kind === "arc" && last.kind === "arc");
     if (!first || !last || first.kind !== "arc" || last.kind !== "arc") return;
-    assert.ok(dist(first.a, last.b) < 0.02, "complete set-round is a closed zigzag");
+    assert.ok(dist(first.a, last.b) < 0.02, "complete set-round returns to the start mark");
+    const chains = groupWorkingThreads(round.filter((s): s is Extract<typeof s, { kind: "arc" }> => s.kind === "arc"));
+    assert.equal(chains.length, 1, "one working thread for the round");
     const petal = round.slice(0, 2);
     const p0 = petal[0];
     const p1 = petal[1];
     assert.ok(p0 && p1 && p0.kind === "arc" && p1.kind === "arc");
     if (!p0 || !p1 || p0.kind !== "arc" || p1.kind !== "arc") return;
     assert.ok(dist(p0.a, p1.b) > 0.1, "one petal is an open working length");
+  });
+
+  it("two working threads per pole: A and B park/resume across kai, never weld", () => {
+    const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, 3, "all"));
+    const arcs = stitches.filter((s): s is Extract<typeof s, { kind: "arc" }> => s.kind === "arc");
+    const chains = groupWorkingThreads(arcs);
+    assert.equal(chains.length, 2, "one cord for A, one for B");
+    const sets = chains.map((c) => c[0]?.set).sort();
+    assert.deepEqual(sets, [0, 1]);
+    for (const chain of chains) {
+      const head = chain[0];
+      const tail = chain[chain.length - 1];
+      assert.ok(head && tail && head.kind === "arc" && tail.kind === "arc");
+      if (!head || !tail || head.kind !== "arc" || tail.kind !== "arc") return;
+      assert.ok(
+        dist(head.a, tail.b) > 0.02,
+        "later kai parks further out — not a welded loop",
+      );
+      const kais = [...new Set(chain.map((s) => s.kai))];
+      assert.deepEqual(kais, [0, 1, 2], "same pearl resumes across kai");
+    }
+  });
+
+  it("A/B kousa is near the inner marks, not mid-flank", () => {
+    const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, 1, "all"));
+    const b = stitches.filter((s) => s.kind === "arc" && s.set === 1);
+    assert.ok(b.length >= 8);
+    for (const s of b) {
+      if (s.kind !== "arc") continue;
+      assert.equal(s.sitMid, 1);
+      assert.ok(s.sitMidT != null, "crossing has a real t");
+      const t = s.sitMidT ?? 0.5;
+      assert.ok(t < 0.28 || t > 0.72, `kousa t=${t} is near an end, not 0.5`);
+    }
+    const a = stitches.filter((s) => s.kind === "arc" && s.set === 0);
+    assert.ok(a.every((s) => s.kind !== "arc" || !s.sitMid), "A stays on the mari");
+  });
+
+  it("closestApproachT finds the meeting of two polylines", () => {
+    const a: [number, number, number][] = [
+      [0, 1, 0],
+      [0.2, 0.98, 0],
+      [0.4, 0.9, 0],
+    ];
+    const b: [number, number, number][] = [
+      [0.4, 0.9, 0.2],
+      [0.4, 0.9, 0],
+      [0.4, 0.9, -0.2],
+    ];
+    const hit = closestApproachT(a, b);
+    assert.ok(hit.dist < 1e-9);
+    assert.ok(Math.abs(hit.tA - 1) < 1e-9);
+    assert.ok(Math.abs(hit.tB - 0.5) < 1e-9);
   });
 });

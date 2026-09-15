@@ -208,10 +208,42 @@ export function stackOver(previous: number[], crossing: Crossing): number[] {
 }
 
 /**
+ * Closest approach of two unit-sphere polylines, as parameters in [0, 1].
+ * Used for the A/B kousa: the crossing is near the inner marks, not mid-flank.
+ */
+export function closestApproachT(
+  a: readonly Vec3[],
+  b: readonly Vec3[],
+): { tA: number; tB: number; dist: number } {
+  let bestD = Infinity;
+  let tA = 0.5;
+  let tB = 0.5;
+  const nA = Math.max(1, a.length - 1);
+  const nB = Math.max(1, b.length - 1);
+  for (let i = 0; i < a.length; i++) {
+    const pa = a[i];
+    if (!pa) continue;
+    for (let j = 0; j < b.length; j++) {
+      const pb = b[j];
+      if (!pb) continue;
+      const d = Math.hypot(pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]);
+      if (d < bestD) {
+        bestD = d;
+        tA = i / nA;
+        tB = j / nB;
+      }
+    }
+  }
+  return { tA, tB, dist: bestD };
+}
+
+/**
  * Local stack along a laid stitch, in counts of threads underneath.
  * Peak 1 at the named site, zero elsewhere — the V is not lifted as a whole.
+ * `midT` is the actual A/B kousa along this leg. Without it, sitMid is ignored:
+ * a bump at t=0.5 was the every-other-petal hill.
  */
-export function stackBump(t: number, sitA: number, sitB: number, _sitMid: number) {
+export function stackBump(t: number, sitA: number, sitB: number, sitMid: number, midT?: number) {
   const bump = (x: number, center: number, width: number) => {
     const w = Math.max(1e-6, width);
     const d = Math.abs(x - center) / w;
@@ -220,10 +252,11 @@ export function stackBump(t: number, sitA: number, sitB: number, _sitMid: number
     return u * u * (3 - 2 * u);
   };
   const endW = 0.14 + 0.05 * Math.max(sitA, sitB);
-  // Crossing is draw order (set B after A), not a radial hill.
-  // Any extra radius at mid-flank tents off the mari at the limb —
-  // that's the rise on every other petal.
-  return sitA * bump(t, 0, endW) + sitB * bump(t, 1, endW);
+  let h = sitA * bump(t, 0, endW) + sitB * bump(t, 1, endW);
+  if (sitMid > 0 && midT != null) {
+    h += sitMid * bump(t, midT, 0.07);
+  }
+  return h;
 }
 
 /**

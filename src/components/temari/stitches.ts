@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import type { Stitch } from "./patterns";
+import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
@@ -161,7 +162,7 @@ function arcRibbon(a: THREE.Vector3, b: THREE.Vector3, width: number) {
  *
  * Consecutive legs that share a mark are one cord: the master does not
  * cut the pearl at the outer point or the inner stitch. A complete
- * chidori round is a closed zigzag; only a parked / working end tapers.
+ * chidori round *returns* to the start mark — that is a park, not a weld.
  */
 function arcPath(
   stitch: Extract<Stitch, { kind: "arc" }>,
@@ -173,6 +174,7 @@ function arcPath(
   const sitA = stitch.sitA ?? 0;
   const sitB = stitch.sitB ?? 0;
   const sitMid = stitch.sitMid ?? 0;
+  const sitMidT = stitch.sitMidT;
   const uniform = stitch.lift ?? 0;
   const via = stitch.via ?? [];
   const anchors: THREE.Vector3[] = [
@@ -182,7 +184,7 @@ function arcPath(
   ];
   const pts: THREE.Vector3[] = [];
   const lift = (t: number, dir: THREE.Vector3) => {
-    const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid)) * diameter * 0.7;
+    const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT)) * diameter * 0.7;
     return dir.clone().multiplyScalar(1 + half + extra);
   };
   if (via.length === 0) {
@@ -225,7 +227,8 @@ function nearVec(a: THREE.Vector3, b: THREE.Vector3) {
 /**
  * TemariKai: start comes up from the wrap; end goes back in.
  * Walks away from the laid stitch, dropping under the cover (r=1).
- * Closed chidori rounds stay on the mari — the anchor is not seen.
+ * A parked round emerges at the start and sits on the mari at the end —
+ * a closed drawing is not the thread joining itself.
  */
 function scoopOnPath(
   at: THREE.Vector3,
@@ -251,19 +254,11 @@ function buryWorkingEnds(pts: THREE.Vector3[], kind: ThreadKind): THREE.Vector3[
   return [...head.reverse(), ...pts, ...tail];
 }
 
-function chainArcs(arcs: Extract<Stitch, { kind: "arc" }>[]) {
-  const chains: Extract<Stitch, { kind: "arc" }>[][] = [];
-  let cur: Extract<Stitch, { kind: "arc" }>[] = [];
-  for (const s of arcs) {
-    if (cur.length > 0 && sameMark(cur[cur.length - 1]!.b, s.a)) {
-      cur.push(s);
-      continue;
-    }
-    if (cur.length) chains.push(cur);
-    cur = [s];
-  }
-  if (cur.length) chains.push(cur);
-  return chains;
+function buryWorkingStart(pts: THREE.Vector3[], kind: ThreadKind): THREE.Vector3[] {
+  if (pts.length < 2) return pts;
+  const head = scoopOnPath(pts[0]!, pts[1]!, kind);
+  if (head.length === 0) return pts;
+  return [...head.reverse(), ...pts];
 }
 
 function stackedArcCord(
@@ -290,37 +285,57 @@ function stackedArcChain(
       pts.push(...piece);
       continue;
     }
-    // Through the mark, on the mari. A chord across the V is a tent at the
-    // limb; the pearl turns at the point (Ozaki), like the kiku loop.
-    if (nearVec(pts[pts.length - 1]!, piece[0]!) && pts.length > 1 && piece.length > 1) {
-      const mark = pts[pts.length - 1]!;
-      const from = pts[pts.length - 2]!;
-      const to = piece[1]!;
+    const mark = pts[pts.length - 1]!;
+    const next0 = piece[0]!;
+    if (nearVec(mark, next0) && pts.length > 1 && piece.length > 1) {
+      const bite = chain[i - 1]!.bite;
       pts.pop();
-      for (let s = 1; s <= 3; s++) {
-        slerp(from, mark, s / 3, _a);
-        pts.push(_a.clone());
+      if (bite) {
+        const r = next0.length();
+        const enter = new THREE.Vector3(bite.enter[0], bite.enter[1], bite.enter[2])
+          .normalize()
+          .multiplyScalar(r);
+        const exit = new THREE.Vector3(bite.exit[0], bite.exit[1], bite.exit[2])
+          .normalize()
+          .multiplyScalar(r);
+        const from = pts[pts.length - 1]!;
+        for (let s = 1; s <= 2; s++) {
+          slerp(from, enter, s / 2, _a);
+          pts.push(_a.clone());
+        }
+        for (let s = 1; s <= 2; s++) {
+          slerp(enter, exit, s / 2, _a);
+          pts.push(_a.clone());
+        }
+        const to = piece[1]!;
+        for (let s = 1; s < 3; s++) {
+          slerp(exit, to, s / 3, _a);
+          pts.push(_a.clone());
+        }
+        for (let k = 2; k < piece.length; k++) pts.push(piece[k]!);
+      } else {
+        const from = pts[pts.length - 1]!;
+        const to = piece[1]!;
+        for (let s = 1; s <= 3; s++) {
+          slerp(from, mark, s / 3, _a);
+          pts.push(_a.clone());
+        }
+        for (let s = 1; s < 3; s++) {
+          slerp(mark, to, s / 3, _a);
+          pts.push(_a.clone());
+        }
+        for (let k = 2; k < piece.length; k++) pts.push(piece[k]!);
       }
-      for (let s = 1; s < 3; s++) {
-        slerp(mark, to, s / 3, _a);
-        pts.push(_a.clone());
-      }
-      for (let k = 2; k < piece.length; k++) pts.push(piece[k]!);
     } else {
-      const start = nearVec(pts[pts.length - 1]!, piece[0]!) ? 1 : 0;
+      const start = nearVec(mark, next0) ? 1 : 0;
       for (let k = start; k < piece.length; k++) pts.push(piece[k]!);
     }
   }
   if (pts.length < 2) return new THREE.BufferGeometry();
-  const closed =
-    chain.length > 2 && sameMark(chain[0]!.a, chain[chain.length - 1]!.b);
-  if (closed && pts.length > 6) {
-    if (nearVec(pts[0]!, pts[pts.length - 1]!)) pts.pop();
-  }
-  // Closed chidori round: full pearl on the mari, the start/stop is hidden.
-  // Open working length: emerge at the first mark, bury at the last.
-  const path = closed ? pts : buryWorkingEnds(pts, kind);
-  return tubeOnSphere(path, stitchRadius(kind), false, closed);
+  // Closed drawing ≠ the thread joined itself. Park on the mari; don't weld.
+  const parks = chain.length > 2 && sameMark(chain[0]!.a, chain[chain.length - 1]!.b);
+  const path = parks ? buryWorkingStart(pts, kind) : buryWorkingEnds(pts, kind);
+  return tubeOnSphere(path, stitchRadius(kind), false, false);
 }
 
 function stackedArcRibbon(
@@ -336,13 +351,14 @@ function stackedArcRibbon(
   const sitA = stitch.sitA ?? 0;
   const sitB = stitch.sitB ?? 0;
   const sitMid = stitch.sitMid ?? 0;
+  const sitMidT = stitch.sitMidT;
   const uniform = stitch.lift ?? 0;
   const via = stitch.via ?? [];
   const pts: THREE.Vector3[] = [];
   if (via.length === 0) {
     for (let i = 0; i <= ARC_SEGS; i++) {
       const t = i / ARC_SEGS;
-      const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid));
+      const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT));
       const extra = uniform + stacked * diameter * 0.7;
       slerpUnit(_pa, _pb, t, _a);
       pts.push(_a.clone().multiplyScalar(1 + half + extra));
@@ -361,7 +377,7 @@ function stackedArcRibbon(
       const start = s === 0 ? 0 : 1;
       for (let i = start; i <= 1; i++) {
         const t = (s + i) / steps;
-        const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid));
+        const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT));
         const extra = uniform + stacked * diameter * 0.7;
         slerpUnit(a, b, i, _a);
         pts.push(_a.clone().multiplyScalar(1 + half + extra));
@@ -450,8 +466,9 @@ export function createMotifGeometry(
   const width = ribbonWidth(kind);
   const cord = kind !== "metallic";
   const parts: THREE.BufferGeometry[] = [];
+  const annotated = annotateSetCrossings(stitches);
   const arcs: Extract<Stitch, { kind: "arc" }>[] = [];
-  for (const stitch of stitches) {
+  for (const stitch of annotated) {
     if (stitch.color !== colorIndex) continue;
     if (stitch.kind === "arc") {
       arcs.push(stitch);
@@ -460,7 +477,7 @@ export function createMotifGeometry(
     }
   }
   if (cord) {
-    for (const chain of chainArcs(arcs)) {
+    for (const chain of groupWorkingThreads(arcs)) {
       parts.push(stackedArcChain(chain, kind));
     }
   } else {
@@ -525,9 +542,9 @@ export function createWrapLineGeometry(strands: THREE.Vector3[][]) {
 /**
  * Pearl on the mari. Sphere-radial frames, not Frenet.
  *
- * Closed chidori round: no ends. Open working length dives under the wrap
- * at start and stop, so the cover hides the ends — no taper, no coin.
- * Wrap tubes stay untapered (closed circles, open seam).
+ * Working thread: emerge from the wrap at the true start, bury at the true
+ * stop. A round that returns to the start parks on the mari — never a
+ * welded loop. Wrap tubes stay untapered (closed circles, open seam).
  */
 function tubeOnSphere(
   pts: THREE.Vector3[],
