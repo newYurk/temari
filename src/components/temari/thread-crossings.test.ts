@@ -127,3 +127,47 @@ describe("finite chronological crossing and capture validation", () => {
     assert.deepEqual(validateThreadCrossings(c, .005 * scale), []);
   });
 });
+
+describe("crossings over a chain of computed target pieces", () => {
+  // The old thread is split into three consecutive G1 pieces along x.
+  function chained(pieces: [PointMm, PointMm][], above: ThreadCurve): C8ThreadCoupon {
+    const old = pieces.map(([a, b], i) => span(`old-${i}`, "old-op", line(a, b)));
+    return {
+      kind: "engineering-thread-path", bodyRadiusMm: 1, threadRadiusMm: .1, threadId: "thread", assumptions: [], fixture: {}, marks: [], supports: [],
+      spans: [...old, span("above", "lay", above)],
+      operations: [{ id: "old-op", order: 0, step: 1, kind: "lay", spanIds: old.map((s) => s.id) }, { id: "lay", order: 1, step: 1, kind: "lay", spanIds: ["above"] }],
+      crossings: [{ id: "over-chain", opId: "lay", working: [{ spanId: "above", t0: 0, t1: 1 }], target: { id: "old-0", t0: 0, t1: 1 },
+        targetChain: old.map((s) => ({ spanId: s.id, t0: 0, t1: 1 })), pass: "over" }],
+    };
+  }
+  const straight: [PointMm, PointMm][] = [[[-3, 0, 11], [-1, 0, 11]], [[-1, 0, 11], [1, 0, 11]], [[1, 0, 11], [3, 0, 11]]];
+
+  it("finds the single crossing in any piece, including exactly at a join", () => {
+    for (const x of [-2, .3, 1]) assert.deepEqual(codes(chained(straight, line([x, -1, 12], [x, 1, 12]))), [], String(x));
+    // A single-piece target misses a crossing that lies in another piece.
+    const single = chained(straight, line([2, -1, 12], [2, 1, 12]));
+    delete single.crossings![0].targetChain;
+    assert.ok(codes(single).includes("crossing-missing"));
+  });
+
+  it("does not accept a second crossing hidden in another piece of the chain", () => {
+    const zigzag: ThreadCurve = { kind: "bezier", controls: [[-2.5, -1, 12], [-2.5, 3, 12], [2.5, -3, 12], [2.5, 1, 12]] };
+    assert.ok(codes(chained(straight, zigzag)).includes("crossing-unresolved"));
+  });
+
+  it("checks the side and the chain contract", () => {
+    const below = chained(straight, line([.3, -1, 10], [.3, 1, 10]));
+    assert.ok(codes(below).includes("crossing-wrong-side"));
+    const gap = chained(straight, line([.3, -1, 12], [.3, 1, 12]));
+    gap.crossings![0].targetChain = [{ spanId: "old-0", t0: 0, t1: 1 }, { spanId: "old-2", t0: 0, t1: 1 }];
+    assert.ok(codes(gap).includes("crossing-contract"));
+    const mismatch = chained(straight, line([.3, -1, 12], [.3, 1, 12]));
+    mismatch.crossings![0].target = { id: "old-1", t0: 0, t1: 1 };
+    assert.ok(codes(mismatch).includes("crossing-contract"));
+    const future = chained(straight, line([.3, -1, 12], [.3, 1, 12]));
+    future.operations[0].order = 2;
+    assert.ok(codes(future).includes("crossing-future-target"));
+    const elbow = chained([[[-3, 0, 11], [-1, 0, 11]], [[-1, 0, 11], [1, .5, 11]], [[1, .5, 11], [3, .5, 11]]], line([.3, -1, 12], [.3, 1, 12]));
+    assert.ok(codes(elbow).includes("crossing-contract"));
+  });
+});

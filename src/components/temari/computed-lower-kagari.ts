@@ -1,8 +1,8 @@
 import { boundCurvatureTimesRadius, type CurvatureBound } from './curvature-bound';
 import { createLowerKagariFixture, type LowerKagariFixture, type LowerKagariInput } from './lower-kagari';
-import { fitSpatialSeed } from './spatial-spline-seed';
-import { solveSpatialContact, splineToBezier, type SpatialContactOptions, type SpatialContactResult, type SpatialSupport } from './spatial-contact';
-import { curveDerivative, sampleCurve, validateThreadCoupon } from './thread-geometry';
+import { splineToBezier, type SpatialContactOptions, type SpatialContactResult, type SpatialSupport } from './spatial-contact';
+import { sampleCurve, validateThreadCoupon } from './thread-geometry';
+import { solveThickRopeLadder, THICK_ROPE_LADDER, type ThickRopeRefinement } from './thick-rope-ladder';
 import type { C8ThreadCoupon, PathValidation, PointMm, ThreadCurve, ThreadSpan } from './thread-path';
 
 export type ComputedLowerKagariOptions = {
@@ -29,7 +29,7 @@ export type LowerKagariResolution = {
   /** Independent certified r*kappa bound over the complete working thread. */
   curvature: CurvatureBound;
 };
-export type LowerKagariRefinement = { from: number; to: number; lengthDifferenceMm: number; shapeDifferenceMm: number };
+export type LowerKagariRefinement = ThickRopeRefinement;
 export type ComputedLowerKagari = {
   status: 'accepted' | 'rejected' | 'unresolved';
   fixture: LowerKagariFixture;
@@ -49,15 +49,13 @@ export type ComputedLowerKagari = {
 };
 
 const DEFAULTS = Object.freeze({
-  spansPerBendRadius: 1,
+  spansPerBendRadius: THICK_ROPE_LADDER.spansPerBendRadius,
   numericalClearanceMm: .003,
   obstacleToleranceMm: .0005,
   validationToleranceMm: .001,
   lengthToleranceMm: .002,
   shapeToleranceMm: .02,
 });
-const LADDER = [1, 1.5, 2];
-const MAX_CONTROLS = 128;
 
 function obstaclesFor(fixture: LowerKagariFixture, margin: number, tolerance: number): SpatialSupport[] {
   const obstacles: SpatialSupport[] = [];
@@ -96,37 +94,6 @@ function assemble(fixture: LowerKagariFixture, result: SpatialContactResult, con
   };
 }
 
-function arcLengthSampler(curves: readonly ThreadCurve[], tolerance: number) {
-  const points: PointMm[] = [], cumulative: number[] = [];
-  let total = 0;
-  for (const curve of curves) for (const point of sampleCurve(curve, tolerance).points) {
-    if (points.length) {
-      const previous = points.at(-1)!, distance = Math.hypot(...point.map((v, j) => v - previous[j]));
-      if (distance < 1e-12) continue;
-      total += distance;
-    }
-    points.push(point); cumulative.push(total);
-  }
-  return (fraction: number): PointMm => {
-    const length = fraction * total;
-    let i = 1;
-    while (i < cumulative.length - 1 && cumulative[i] < length) i++;
-    const t = (length - cumulative[i - 1]) / (cumulative[i] - cumulative[i - 1]);
-    return points[i - 1].map((v, j) => v + t * (points[i][j] - v)) as unknown as PointMm;
-  };
-}
-
-function curveLength(curves: readonly ThreadCurve[]) {
-  let total = 0;
-  for (const curve of curves) {
-    const n = 2048;
-    let integral = Math.hypot(...curveDerivative(curve, 0)) + Math.hypot(...curveDerivative(curve, 1));
-    for (let i = 1; i < n; i++) integral += (i % 2 ? 4 : 2) * Math.hypot(...curveDerivative(curve, i / n));
-    total += integral / (3 * n);
-  }
-  return total;
-}
-
 /**
  * Isolated integration experiment. The fixed lower backbite is never fitted or
  * moved. Solver convergence alone cannot make this result accepted: every
@@ -142,40 +109,19 @@ export function computeLowerKagari(input: LowerKagariInput = {}, options: Comput
   if ([o.numericalClearanceMm, o.obstacleToleranceMm, o.validationToleranceMm, o.lengthToleranceMm, o.shapeToleranceMm, o.spansPerBendRadius]
     .some(value => !(value > 0) || !Number.isFinite(value))) throw new RangeError('Computed backbite requires positive numerical tolerances.');
   const fixture = createLowerKagariFixture(input);
-  const seedLengthMm = curveLength(fixture.looseOutgoing), bend = fixture.dimensions.minBendRadiusMm;
-  const minimumSpans = Math.ceil(o.spansPerBendRadius * seedLengthMm / bend);
-  const counts = [...(o.controlCounts ?? LADDER.map(f => Math.ceil(minimumSpans * f) + 3))];
-  if (counts.length < 2 || counts.length > 4 || counts.some((n, i) => !Number.isInteger(n) || n < 6 || n > MAX_CONTROLS || (i > 0 && n <= counts[i - 1])))
-    throw new RangeError('Computed backbite requires two to four increasing resolutions of at most 128 controls.');
+  const bend = fixture.dimensions.minBendRadiusMm;
   const obstacles = obstaclesFor(fixture, o.numericalClearanceMm, o.obstacleToleranceMm);
   const seed = validateThreadCoupon(fixture.coupon, o.validationToleranceMm);
-  const resolutions: LowerKagariResolution[] = [];
-  const coupons: C8ThreadCoupon[] = [];
-  for (const controlCount of counts) {
-    const result = solveSpatialContact({ controlPointsMm: fitSpatialSeed(fixture.looseOutgoing, controlCount),
-      threadRadiusMm: fixture.threadRadiusMm, minBendRadiusMm: bend, body: { centerMm: [0, 0, 0], radiusMm: fixture.bodyRadiusMm + o.numericalClearanceMm },
-      supports: obstacles, options: { maxIterations: 8000, maxOuterIterations: 60, feasibilityToleranceMm: .0005,
-        complementarityToleranceMm: .000005, ...o.solverOptions } });
-    const coupon = assemble(fixture, result, controlCount, o.numericalClearanceMm);
-    coupons.push(coupon);
-    resolutions.push({ controlCount, resolved: controlCount - 3 >= minimumSpans, result,
-      validation: validateThreadCoupon(coupon, o.validationToleranceMm),
-      curvature: boundCurvatureTimesRadius(coupon.spans.map(span => span.curve), coupon.threadRadiusMm) });
-  }
-  const refinements: LowerKagariRefinement[] = [];
-  const outgoing = (coupon: C8ThreadCoupon) => coupon.spans.filter(s => s.opId === 'lower-outgoing').map(s => s.curve);
-  for (let i = 1; i < resolutions.length; i++) {
-    let shapeDifferenceMm = 0;
-    const a = arcLengthSampler(outgoing(coupons[i - 1]), .0001), b = arcLengthSampler(outgoing(coupons[i]), .0001);
-    for (let j = 0; j <= 200; j++) {
-      const p = a(j / 200), q = b(j / 200);
-      shapeDifferenceMm = Math.max(shapeDifferenceMm, Math.hypot(...p.map((v, k) => v - q[k])));
-    }
-    refinements.push({ from: counts[i - 1], to: counts[i], shapeDifferenceMm,
-      lengthDifferenceMm: Math.abs(resolutions[i].result.lengthMm - resolutions[i - 1].result.lengthMm) });
-  }
-  const lengthDifferenceMm = Math.max(...refinements.map(r => r.lengthDifferenceMm));
-  const maxShapeDifferenceMm = Math.max(...refinements.map(r => r.shapeDifferenceMm));
+  const ladder = solveThickRopeLadder({ seed: fixture.looseOutgoing, threadRadiusMm: fixture.threadRadiusMm, minBendRadiusMm: bend,
+    body: { centerMm: [0, 0, 0], radiusMm: fixture.bodyRadiusMm + o.numericalClearanceMm }, supports: obstacles,
+    controlCounts: o.controlCounts, spansPerBendRadius: o.spansPerBendRadius,
+    solverOptions: { maxIterations: 8000, maxOuterIterations: 60, feasibilityToleranceMm: .0005,
+      complementarityToleranceMm: .000005, ...o.solverOptions } });
+  const { seedLengthMm, minimumSpans, refinements, lengthDifferenceMm, maxShapeDifferenceMm } = ladder;
+  const coupons = ladder.resolutions.map(r => assemble(fixture, r.result, r.controlCount, o.numericalClearanceMm));
+  const resolutions: LowerKagariResolution[] = ladder.resolutions.map((r, i) => ({ ...r,
+    validation: validateThreadCoupon(coupons[i], o.validationToleranceMm),
+    curvature: boundCurvatureTimesRadius(coupons[i].spans.map(span => span.curve), coupons[i].threadRadiusMm) }));
   const last = resolutions.at(-1)!, diagnostics: string[] = [];
   if (seed.status !== 'passed') diagnostics.push('The engineering seed does not pass the complete path validator.');
   for (const check of resolutions) {
