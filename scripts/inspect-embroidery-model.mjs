@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { polePositions } from "../src/components/temari/division.ts";
 import { jiwariNormals } from "../src/components/temari/jiwari.ts";
 import { MARI_C_CM, unitFromMm, jiwariLengthM } from "../src/components/temari/measure.ts";
-import { around, compileKiku, kikuRecipe, annotateSetCrossings } from "../src/components/temari/patterns.ts";
+import { around, compileKiku, kikuRecipe, motifSupport, annotateSetCrossings } from "../src/components/temari/patterns.ts";
 import { innerBiteJoin, closestApproachT } from "../src/components/temari/kagari.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -82,6 +82,8 @@ function inspectDivision(division) {
 }
 
 function inspectCompilation(division) {
+  const support = motifSupport(division, "kiku");
+  if (!support.supported) return { recipe: null, support, opCount: 0 };
   const ops = compileKiku(division, "out", "even", 0, 0, 1);
   if (!Array.isArray(ops)) return { recipe: kikuRecipe(division), result: ops };
   let layPolylineMmAtC24 = 0;

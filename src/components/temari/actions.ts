@@ -1,4 +1,4 @@
-import { isClosedContour, kikuMarksReady as kikuPinsComplete, kikuSpec, type KagariDir, type KagariSpacing, type MotifId } from "./patterns";
+import { isClosedContour, kikuMarksReady as kikuPinsComplete, kikuSpec, motifSupport, type KagariDir, type KagariSpacing, type MotifId } from "./patterns";
 import type { Craft } from "./craft";
 import type { Division } from "./division";
 import type { JiwariPhase } from "./jiwari";
@@ -79,6 +79,14 @@ const jiwariReady = (s: TemariCraftState) => s.jiwariOn && s.jiwariPhase === "do
 const needMarks = (s: TemariCraftState) =>
   needWrap(s) ?? (jiwariReady(s) || s.hasPin ? null : "Сначала разметка");
 
+const needRecipe = (s: TemariCraftState, motif = s.motif) => {
+  const support = motifSupport(s.division, motif);
+  return support.supported ? null : support.reason;
+};
+
+const needMotif = (s: TemariCraftState, motif: MotifId) =>
+  needWrap(s) ?? needRecipe(s, motif) ?? needMarks(s);
+
 const canFillMotif = (s: TemariCraftState) =>
   s.closedContour || s.motif !== "none" || jiwariReady(s);
 
@@ -127,10 +135,11 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "stitch",
     label: "Стежок",
     cluster: "kagari",
-    canExecute: (s) => !needWrap(s) && (s.jiwariOn ? jiwariReady(s) : s.hasPin) && s.kikuMarksReady,
+    canExecute: (s) => !needWrap(s) && !needRecipe(s) && (s.jiwariOn ? jiwariReady(s) : s.hasPin) && s.kikuMarksReady,
     isActive: (s) => s.craft === "stitch",
     getDisabledReason: (s) =>
       needWrap(s) ??
+      needRecipe(s) ??
       (!s.kikuMarksReady
         ? "Воткните булавки: полюс и ⅓ на меридианах"
         : s.jiwariOn
@@ -153,33 +162,33 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "motif-kiku",
     label: "Кику",
     cluster: "kagari",
-    canExecute: (s) => !needMarks(s),
+    canExecute: (s) => !needMotif(s, "kiku"),
     isActive: (s) => s.motif === "kiku",
-    getDisabledReason: needMarks,
+    getDisabledReason: (s) => needMotif(s, "kiku"),
   },
   {
     id: "motif-hoshi",
     label: "Хоси",
     cluster: "kagari",
-    canExecute: (s) => !needMarks(s),
+    canExecute: (s) => !needMotif(s, "hoshi"),
     isActive: (s) => s.motif === "hoshi",
-    getDisabledReason: needMarks,
+    getDisabledReason: (s) => needMotif(s, "hoshi"),
   },
   {
     id: "motif-hishi",
     label: "Хиси",
     cluster: "kagari",
-    canExecute: (s) => !needMarks(s),
+    canExecute: (s) => !needMotif(s, "hishi"),
     isActive: (s) => s.motif === "hishi",
-    getDisabledReason: needMarks,
+    getDisabledReason: (s) => needMotif(s, "hishi"),
   },
   {
     id: "motif-obi",
     label: "Оби",
     cluster: "kagari",
-    canExecute: (s) => !needMarks(s),
+    canExecute: (s) => !needMotif(s, "obi"),
     isActive: (s) => s.motif === "obi",
-    getDisabledReason: needMarks,
+    getDisabledReason: (s) => needMotif(s, "obi"),
   },
   {
     id: "kagari-in",
@@ -209,7 +218,7 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     label: "Залить",
     cluster: "kagari",
     canExecute: (s) => {
-      if (needMarks(s) || !canFillMotif(s) || !s.kikuMarksReady) return false;
+      if (needMarks(s) || needRecipe(s) || !canFillMotif(s) || !s.kikuMarksReady) return false;
       if (s.motif === "kiku" && s.kagariIdleComplete) {
         if (s.kagariSet === 0) return false;
         if (s.kikuLayers >= s.kikuFit) return false;
@@ -218,6 +227,7 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     },
     getDisabledReason: (s) =>
       needMarks(s) ??
+      needRecipe(s) ??
       (!s.kikuMarksReady
         ? "Воткните булавки: полюс и ⅓ на меридианах"
         : s.motif === "kiku" && s.kagariIdleComplete && s.kagariSet === 0

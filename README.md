@@ -9,7 +9,11 @@
 **Схема нити:** https://newyurk.github.io/temari/design.html  
 Короткий адрес `/design/` перенаправляет на эту же страницу. Источник — `public/design.html`.
 
-Исходники — в `src/`. GitHub Pages настроен на Actions: workflow `pages.yml` публикует `docs/` из `main` (проверено 16 сентября 2026). Корневые HTML и `dist-pages/` — унаследованные копии для локального просмотра; они не определяют источник текущей публикации. Новая ветка не обновляет живой сайт.
+**Образец C8:** https://newyurk.github.io/temari/lab.html — метки и порядок обхода, ещё без физической нити и полного рецепта GT55.
+
+Исходники — в `src/`, вход игры — `index.html` → `src/pages.tsx`. GitHub Pages собирается Actions из `main`: тесты → проверка типов → сборка → публикация `dist/`. Результат сборки не хранится в Git. Старые `docs/assets`, `assets` и `dist-pages` оставлены как исторические копии и больше не служат источником публикации.
+
+Для разработки нужен Node 24: `npm ci`, затем `npm run dev`. Проверки: `npm test`, `npm run typecheck`, `npm run build`. Локальный просмотр сборки: `npm run preview`; браузерная проверка с установленным Chrome: `node scripts/check-pages.mjs http://127.0.0.1:4173/`. Снимок опубликованных исходников — `/build.json`.
 
 Модель разработки: [архитектура и математика](spec/embroidery-model.md), [ремесленные источники](spec/craft-sources.md), [контракты проверки](src/components/temari/rules.md). Поддержка рецепта, его реализация и ремесленная приёмка отмечаются раздельно.
 

@@ -97,8 +97,8 @@ function TitleLayer() {
             Темари
           </h1>
           <p className="temari-rise temari-rise-2 mt-2 max-w-sm text-sm leading-relaxed text-stone">
-            Сначала тонкая намотка. Потом кагари: увагакэ тидори от полюса,
-            ряд за рядом. Булавки только метят углы.
+            Подготовленная мари, разметка и кагари: увагакэ тидори от полюса,
+            ряд за рядом. Булавки метят опоры для вышивки.
           </p>
         </div>
         <RecenterButton />
@@ -126,13 +126,19 @@ function TitleLayer() {
             onClick={enterStudio}
             className="bg-ink text-linen"
           >
-            Намотать базу
+            К вышивке
           </Button>
           <a
             href="./design.html"
             className="inline-flex h-9 items-center px-2 text-xs tracking-wide text-stone underline-offset-4 hover:text-ink hover:underline"
           >
             схема нити
+          </a>
+          <a
+            href="./lab.html"
+            className="inline-flex h-9 items-center px-2 text-xs tracking-wide text-stone underline-offset-4 hover:text-ink hover:underline"
+          >
+            образец C8
           </a>
         </div>
       </div>

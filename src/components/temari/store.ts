@@ -17,6 +17,7 @@ import {
 import { clampColor, isPaletteId, threadHex, type PaletteId } from "./palettes";
 import {
   isMotifId,
+  motifSupport,
   kikuArcsFromPins,
   sakasaArcsFromPins,
   kikuCapacity,
@@ -457,6 +458,8 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   setDivision: (division) => {
     if (get().mode === "kata") return;
+    const support = motifSupport(division, get().motif);
+    const motif = support.supported ? get().motif : "none";
     const on = get().jiwariOn;
     const phase = get().jiwariPhase;
     if (on && get().division === division) {
@@ -485,11 +488,15 @@ export const useTemari = create<TemariState>((set, get) => ({
     if (division === "c8") {
       set({
         division: "c8",
+        motif,
+        pinNote: support.supported ? null : support.reason,
+        facingPole: 0,
         jiwariOn: true,
         jiwariPhase: "combine",
         jiwariLaid: 1,
         fills: emptyFills("c8"),
         sewn: [],
+        pinHistory: [],
         history: [],
         sewnHistory: [],
         hover: -1,
@@ -505,11 +512,15 @@ export const useTemari = create<TemariState>((set, get) => ({
     if (division === "c10") {
       set({
         division: "c10",
+        motif,
+        pinNote: support.supported ? null : support.reason,
+        facingPole: 0,
         jiwariOn: true,
         jiwariPhase: "vruler",
         jiwariLaid: 0,
         fills: emptyFills("c10"),
         sewn: [],
+        pinHistory: [],
         history: [],
         sewnHistory: [],
         hover: -1,
@@ -525,11 +536,15 @@ export const useTemari = create<TemariState>((set, get) => ({
     const simple = division === "simple";
     set({
       division,
+      motif,
+      pinNote: support.supported ? null : support.reason,
+      facingPole: 0,
       jiwariOn: true,
       jiwariPhase: simple ? "strip" : "done",
       jiwariLaid: simple ? 0 : 5,
       fills: emptyFills(division),
       sewn: [],
+      pinHistory: [],
       history: [],
       sewnHistory: [],
       hover: -1,
@@ -644,6 +659,11 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   setMotif: (id) => {
     if (get().mode === "kata") return;
+    const support = motifSupport(get().division, id);
+    if (!support.supported) {
+      set({ pinNote: support.reason });
+      return;
+    }
     if (get().motif === id && id !== "none") {
       if (id === "kiku") {
         const s = get();
@@ -719,7 +739,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   setColor: (index) => {
     const selectedColor = clampColor(index);
     const state = get();
-    if (state.motif === "kiku" && state.kagariPlan.length > 0) {
+    if (state.motif === "kiku" && motifSupport(state.division, state.motif).supported && state.kagariPlan.length > 0) {
       const fresh = motifStitchPlan(
         state.division,
         state.motif,
@@ -1090,6 +1110,11 @@ export const useTemari = create<TemariState>((set, get) => ({
   startKagari: () => {
     const state = get();
     if (state.mode !== "studio" || !state.layerDone) return;
+    const support = motifSupport(state.division, state.motif);
+    if (!support.supported) {
+      set({ ...idleKagari(), pinNote: support.reason });
+      return;
+    }
     if (state.motif === "none") {
       set(idleKagari());
       return;
@@ -1153,6 +1178,11 @@ export const useTemari = create<TemariState>((set, get) => ({
   fillKiku: () => {
     const state = get();
     if (state.mode !== "studio" || !state.layerDone) return;
+    const support = motifSupport(state.division, state.motif);
+    if (!support.supported) {
+      set({ ...idleKagari(), pinNote: support.reason });
+      return;
+    }
     if (state.motif !== "none") {
       if (state.kagariPlaying) return;
       if (state.kagariLaid < state.kagariPlan.length) {
@@ -1268,6 +1298,12 @@ export const useTemari = create<TemariState>((set, get) => ({
       paletteId: "beni",
       motif: "kiku",
       sewn: [],
+      history: [],
+      sewnHistory: [],
+      pinHistory: [],
+      pinNote: null,
+      facingPole: 0,
+      ...idleKagari(),
       fills: emptyFills("simple"),
       pinArcs: [],
       activePin: null,

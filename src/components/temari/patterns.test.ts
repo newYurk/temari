@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { fillKikuSewn, kikuSpec, stitchesForSlot, hitKikuSlot, kikuThetas, around, nextKagariPole, compileKiku, stitchesFromOps, kikuFlank, kikuMarkPins, kikuWorkingPins, kikuMarksReady, snapToKikuMark, kikuPinHint, generateTitleMari } from "./patterns.ts";
+import { fillKikuSewn, kikuSpec, stitchesForSlot, hitKikuSlot, kikuThetas, around, nextKagariPole, compileKiku, stitchesFromOps, kikuFlank, kikuMarkPins, kikuWorkingPins, kikuMarksReady, snapToKikuMark, kikuPinHint, generateTitleMari, motifSupport, UnsupportedPatternError, generateMotif, motifStitchPlan, stitchesFromSewn, kagariPhaseHint, MOTIF_LIST, type MotifId } from "./patterns.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 
 function merPhi(p: [number, number, number]) {
@@ -39,6 +39,79 @@ function slerp(
   const len = Math.hypot(x, y, z) || 1;
   return [x / len, y / len, z / len];
 }
+
+describe("recipe compatibility", () => {
+  it("supports free stitching on every division and the Simple 8 kiku recipe only", () => {
+    for (const division of ["simple", "c8", "c10"] as const) {
+      const free = motifSupport(division, "none");
+      assert.deepEqual(free, { supported: true, kind: "free", recipe: null });
+      assert.deepEqual(motifStitchPlan(division, "none"), []);
+      for (const motif of ["kiku", "hoshi", "hishi", "obi"] as const) {
+        const support = motifSupport(division, motif);
+        if (division === "simple" && motif === "kiku") {
+          assert.ok(support.supported && support.kind === "recipe");
+          assert.equal(support.recipe.id, "kiku-8-point");
+          assert.equal(support.recipe.requires, division);
+        } else {
+          assert.ok(!support.supported);
+          assert.equal(support.code, "recipe-unavailable");
+          assert.equal(support.division, division);
+          assert.equal(support.motif, motif);
+          assert.match(support.reason, /ещё не реализован/);
+        }
+      }
+    }
+    assert.deepEqual(MOTIF_LIST, ["none", "kiku"]);
+  });
+
+  function rejectsRecipe(action: () => unknown, division: "simple" | "c8" | "c10", motif: MotifId) {
+    assert.throws(action, (error: unknown) => {
+      assert.ok(error instanceof UnsupportedPatternError);
+      assert.deepEqual(error.support, motifSupport(division, motif));
+      assert.equal(error.message, error.support.reason);
+      return true;
+    });
+  }
+
+  it("rejects unsupported compiles and placeholder plans instead of producing geometry", () => {
+    for (const division of ["c8", "c10"] as const) {
+      rejectsRecipe(() => compileKiku(division), division, "kiku");
+      rejectsRecipe(() => compileKiku(division, "out", "tight", 0, 2, "fit", 1), division, "kiku");
+    }
+    for (const division of ["simple", "c8", "c10"] as const) {
+      for (const motif of ["kiku", "hoshi", "hishi", "obi"] as const) {
+        if (motifSupport(division, motif).supported) continue;
+        rejectsRecipe(() => generateMotif(division, motif), division, motif);
+        rejectsRecipe(() => motifStitchPlan(division, motif), division, motif);
+        assert.match(kagariPhaseHint(motif, division, "out", 0, 0, false), /ещё не реализован/);
+      }
+    }
+  });
+
+  it("does not manufacture C8/C10 marks, readiness, capacity, or legacy stitches", () => {
+    const oldMarks = kikuWorkingPins("simple", 0);
+    for (const division of ["c8", "c10"] as const) {
+      for (const wanted of [1, 3, "fit"] as const) {
+        const spec = kikuSpec(division, "even", wanted);
+        assert.equal(spec.recipe, null);
+        for (const [key, value] of Object.entries(spec)) {
+          if (key !== "recipe") assert.equal(value, 0, key);
+        }
+      }
+      for (const pole of [0, "all"] as const) {
+        assert.deepEqual(kikuMarkPins(division, pole), []);
+        assert.deepEqual(kikuWorkingPins(division, pole), []);
+        assert.equal(kikuMarksReady([], division, pole), false);
+        assert.equal(kikuMarksReady(oldMarks, division, pole), false);
+        assert.equal(snapToKikuMark([0, 1, 0], division, pole), null);
+        assert.deepEqual(fillKikuSewn(division, "out", "even", pole), []);
+      }
+      assert.equal(hitKikuSlot(0, 1, 0, division), null);
+      assert.deepEqual(stitchesForSlot(division, { pole: 0, ring: 0, sector: 0 }, 0), []);
+      assert.deepEqual(stitchesFromSewn(division, [{ key: "0:0:0", color: 0 }]), []);
+    }
+  });
+});
 
 describe("kiku on Simple 8", () => {
   it("sits on meridians, not in the wedges", () => {

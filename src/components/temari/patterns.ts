@@ -9,6 +9,51 @@ export type SewnEntry = { key: string; color: number };
 
 export type MotifId = "none" | "kiku" | "hoshi" | "hishi" | "obi";
 
+export type UnsupportedMotif = {
+  supported: false;
+  code: "recipe-unavailable";
+  division: Division;
+  motif: MotifId;
+  reason: string;
+};
+
+export type MotifSupport =
+  | { supported: true; kind: "free"; recipe: null }
+  | { supported: true; kind: "recipe"; recipe: PatternRecipe }
+  | UnsupportedMotif;
+
+/** Compiler availability, not a claim of complete craft or physical verification. */
+export function motifSupport(division: Division, motif: MotifId): MotifSupport {
+  if (motif === "none") return { supported: true, kind: "free", recipe: null };
+  const recipe = motif === "kiku" ? kikuRecipe(division) : null;
+  if (recipe) return { supported: true, kind: "recipe", recipe };
+  return {
+    supported: false,
+    code: "recipe-unavailable",
+    division,
+    motif,
+    reason:
+      motif === "kiku"
+        ? `Рецепт кику для ${division.toUpperCase()} ещё не реализован. Доступна кику на Simple 8.`
+        : `Рецепт «${MOTIF_META[motif].label}» ещё не реализован.`,
+  };
+}
+
+export class UnsupportedPatternError extends Error {
+  readonly support: UnsupportedMotif;
+
+  constructor(support: UnsupportedMotif) {
+    super(support.reason);
+    this.name = "UnsupportedPatternError";
+    this.support = support;
+  }
+}
+
+function requireMotifSupport(division: Division, motif: MotifId): void {
+  const support = motifSupport(division, motif);
+  if (!support.supported) throw new UnsupportedPatternError(support);
+}
+
 export type Vec3 = [number, number, number];
 
 export type Stitch =
@@ -44,7 +89,8 @@ export const MOTIF_META: Record<MotifId, { label: string; hint: string }> = {
   obi: { label: "Оби", hint: "пояса — малые круги параллельно экватору" },
 };
 
-export const MOTIF_LIST: MotifId[] = ["none", "kiku", "hoshi", "hishi", "obi"];
+/** Selectable families; check motifSupport for the current division as well. */
+export const MOTIF_LIST: MotifId[] = ["none", "kiku"];
 
 export type KagariDir = "out" | "in";
 
@@ -212,6 +258,7 @@ export function stitchesForSlot(
   slot: KikuSlot,
   color: number,
 ): Stitch[] {
+  if (!kikuRecipe(division)) return [];
   const poles = polePositions(division);
   const pole = poles[slot.pole];
   if (!pole) return [];
@@ -227,6 +274,7 @@ export function hitKikuSlot(
   z: number,
   division: Division,
 ): KikuSlot | null {
+  if (!kikuRecipe(division)) return null;
   const poles = polePositions(division);
   const p: Vec3 = [x, y, z];
   let pole = 0;
@@ -266,6 +314,7 @@ export function fillKikuSewn(
   which: number | "all" = "all",
   wanted: number | "fit" = 3,
 ): SewnEntry[] {
+  if (!kikuRecipe(division)) return [];
   const n = petalCount(division);
   const spec = kikuSpec(division, spacing, wanted);
   const skip = spec.sets;
@@ -380,17 +429,13 @@ export function stitchPoleIndex(
 }
 
 /**
- * Simple 8 / C10: two sets of every-other petal.
+ * Legacy free-pin geometry: two sets of every-other petal for 8+ pins.
  * Each petal is a V on adjacent meridians (chidori both ways).
  * skip=2 is the set, not the stitch: even petals, then odd.
  * Adjacent-only (skip=1 as the stitch) hugs the ray and never crosses.
  */
 function kikuSkip(n: number) {
   return n >= 8 ? 2 : 1;
-}
-
-function starSkip(division: Division) {
-  return division === "c10" ? 3 : 3;
 }
 
 /**
@@ -400,6 +445,9 @@ function starSkip(division: Division) {
  * Ozaki ~2 mm below the previous point so the turn lays flat. Work toward
  * the equator. `outer` is the first pin, not a short-V ceiling.
  * Default wanted is 3 kai (tests); studio starts at 1; title uses "fit".
+ * Legacy display adapter: unsupported divisions retain the numeric shape with
+ * zero capacity and recipe:null. These zeros are not usable recipe geometry.
+ * Compilers reject unsupported combinations through motifSupport instead.
  */
 export function kikuSpec(
   division: Division,
@@ -407,14 +455,26 @@ export function kikuSpec(
   wanted: number | "fit" = 3,
 ) {
   const recipe = kikuRecipe(division);
+  if (!recipe) {
+    return {
+      inner: 0,
+      outer: 0,
+      obi: 0,
+      ceiling: 0,
+      pitch: 0,
+      stretch: 0,
+      vDepth: 0,
+      rounds: 0,
+      fit: 0,
+      capacity: 0,
+      sets: 0,
+      recipe: null,
+    };
+  }
   const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
-  const stretch = unitFromMm(recipe?.stretchMm ?? STITCH_THREAD_MM.pearl5);
-  const inner = unitFromMm(recipe?.innerMm ?? 5);
-  const outer = recipe
-    ? (Math.PI / 2) * (1 - recipe.outerFromEquator)
-    : division === "c8"
-      ? Math.PI / 4
-      : 0.52;
+  const stretch = unitFromMm(recipe.stretchMm);
+  const inner = unitFromMm(recipe.innerMm);
+  const outer = (Math.PI / 2) * (1 - recipe.outerFromEquator);
   const equator = Math.PI / 2;
   const obi = Math.min(equator - unitFromMm(8), Math.PI * 0.49);
   // This pole's kiku may walk to the equator. Crossing it is the other flower.
@@ -437,7 +497,7 @@ export function kikuSpec(
     rounds,
     fit,
     capacity,
-    sets: recipe?.sets ?? kikuSkip(petalCount(division)),
+    sets: recipe.sets,
     recipe,
   };
 }
@@ -564,6 +624,7 @@ export function kikuMarkPins(
   division: Division,
   which: number | "all" = "all",
 ): { id: string; p: Vec3 }[] {
+  if (!kikuRecipe(division)) return [];
   const n = petalCount(division);
   const spec = kikuSpec(division);
   const pins: { id: string; p: Vec3 }[] = [];
@@ -585,6 +646,7 @@ export function kikuWorkingPins(
   division: Division,
   which: number | "all" = 0,
 ): { id: string; p: Vec3 }[] {
+  if (!kikuRecipe(division)) return [];
   const sewn = kagariPolesToSew(division, which);
   return [
     ...sewn.map(({ index, pole }) => ({ id: `pole-${index}`, p: pole })),
@@ -844,6 +906,7 @@ function pushKikuLeg(
  * Compile the 8-point kiku recipe to KagariOp[].
  * One op = one chidori leg: lay on the mari, bite across the destination mark.
  * `color` is the player's thread for every kai until they pick another.
+ * Throws UnsupportedPatternError if no recipe exists for this division.
  */
 export function compileKiku(
   division: Division,
@@ -854,12 +917,13 @@ export function compileKiku(
   wanted: number | "fit" = 3,
   onlySet: 0 | 1 | "all" = "all",
 ): KagariOp[] {
+  requireMotifSupport(division, "kiku");
   const n = petalCount(division);
   const spec = kikuSpec(division, spacing, wanted);
   const skip = spec.sets;
-  const recipe = spec.recipe;
-  const cornerMm = recipe?.cornerMm ?? 2;
-  const crossing = recipe?.crossing ?? "over-all";
+  const recipe = spec.recipe!;
+  const cornerMm = recipe.cornerMm;
+  const crossing = recipe.crossing;
   // Beginner kiku is uwagake-chidori from the pole. Sakasa is a different
   // stitch (fill a shape from the outside in), not a toggle on this flower.
   const rings = Array.from({ length: spec.rounds }, (_, i) => i);
@@ -1075,103 +1139,6 @@ function kiku(
   return stitchesFromOps(compileKiku(division, dir, spacing, which, color, wanted, onlySet));
 }
 
-function hoshi(division: Division, dir: KagariDir = "out", which: number | "all" = "all"): Stitch[] {
-  const n = petalCount(division);
-  const skip = starSkip(division);
-  const rings =
-    division === "simple" ? [0.38, 0.58, 0.78] : division === "c8" ? [0.28, 0.44] : [0.26, 0.4];
-  const ordered = dir === "in" ? [...rings].reverse() : rings;
-  const stitches: Stitch[] = [];
-  for (const { pole } of kagariPolesToSew(division, which)) {
-    for (const theta of ordered) {
-      const ring = rings.indexOf(theta);
-      const color = ring % 2 === 0 ? 0 : 1;
-      const pts = Array.from({ length: n }, (_, i) =>
-        around(pole, theta, (2 * Math.PI * i) / n),
-      );
-      for (let i = 0; i < n; i++) {
-        stitches.push({
-          kind: "arc",
-          a: pts[i],
-          b: pts[(i + skip) % n],
-          color,
-        });
-      }
-    }
-  }
-  return stitches;
-}
-
-function hishi(division: Division, dir: KagariDir = "out", which: number | "all" = "all"): Stitch[] {
-  const n = division === "c8" ? 4 : petalCount(division);
-  const rings =
-    division === "simple"
-      ? [0.22, 0.38, 0.54, 0.7]
-      : division === "c8"
-        ? [0.18, 0.3, 0.42, 0.54]
-        : [0.16, 0.28, 0.4];
-  const ordered = dir === "in" ? [...rings].reverse() : rings;
-  const stitches: Stitch[] = [];
-  for (const { pole } of kagariPolesToSew(division, which)) {
-    for (const theta of ordered) {
-      const ring = rings.indexOf(theta);
-      const color = ring % 2 === 0 ? 0 : 2;
-      const pts = Array.from({ length: n }, (_, i) =>
-        around(pole, theta, (2 * Math.PI * i) / n),
-      );
-      for (let i = 0; i < n; i++) {
-        stitches.push({
-          kind: "arc",
-          a: pts[i],
-          b: pts[(i + 1) % n],
-          color,
-        });
-      }
-    }
-  }
-  return stitches;
-}
-
-function obi(division: Division, dir: KagariDir = "out"): Stitch[] {
-  const stitches: Stitch[] = [];
-  if (division === "simple") {
-    const heights = [0, 0.32, -0.32, 0.58, -0.58];
-    heights.forEach((h, i) => {
-      stitches.push({
-        kind: "loop",
-        points: smallCircle([0, 1, 0], h),
-        color: i % 2 === 0 ? 0 : 2,
-      });
-    });
-  } else if (division === "c8") {
-    const axes: Vec3[] = [
-      [0, 1, 0],
-      [1, 0, 0],
-      [0, 0, 1],
-    ];
-    axes.forEach((axis, ai) => {
-      for (const h of [0.2, -0.2]) {
-        stitches.push({
-          kind: "loop",
-          points: smallCircle(axis, h),
-          color: ai === 0 ? 0 : 2,
-        });
-      }
-    });
-  } else {
-    const heights = [0, 0.28, -0.28, 0.52, -0.52];
-    heights.forEach((h, i) => {
-      stitches.push({
-        kind: "loop",
-        points: smallCircle([0, 1, 0], h),
-        color: i % 2 === 0 ? 0 : 1,
-      });
-    });
-  }
-  if (dir === "in") stitches.reverse();
-  return stitches;
-}
-
 export function generateMotif(
   division: Division,
   motif: MotifId,
@@ -1182,10 +1149,8 @@ export function generateMotif(
   wanted: number | "fit" = 3,
   onlySet: 0 | 1 | "all" = "all",
 ): Stitch[] {
+  requireMotifSupport(division, motif);
   if (motif === "kiku") return kiku(division, dir, spacing, which, color, wanted, onlySet);
-  if (motif === "hoshi") return hoshi(division, dir, which);
-  if (motif === "hishi") return hishi(division, dir, which);
-  if (motif === "obi") return obi(division, dir);
   return [];
 }
 
@@ -1253,6 +1218,8 @@ export function kagariPhaseHint(
   kagariSet: 0 | 1 = 0,
   canGrow = true,
 ): string {
+  const support = motifSupport(division, motif);
+  if (!support.supported) return support.reason;
   if (motif === "none" || total === 0) return "";
   if (!playing && laid >= total) {
     if (motif === "kiku" && kagariSet === 0) {
@@ -1265,9 +1232,6 @@ export function kagariPhaseHint(
     }
     return "Кагари: ряд лежит. Другой полюс — переверните шар.";
   }
-  if (motif === "hoshi") return "Хоси: звезда по кругу, ряд за рядом";
-  if (motif === "hishi") return "Хиси: многоугольник у полюса, ряд за рядом";
-  if (motif === "obi") return "Оби: пояс за поясом";
   if (motif !== "kiku") return "";
   const n = petalCount(division);
   const spec = kikuSpec(division);
@@ -1279,7 +1243,7 @@ export function kagariPhaseHint(
   return `Кику · ${where} · ${petals} · круг ${kai} · от полюса`;
 }
 
-/** Classic first temari: Simple 8, kiku on both poles, maki obi.
+/** Title illustration: Simple 8 kiku plus decorative belts, not an obi recipe.
  * Wrap beni, kiku kin, obi linen — navy-on-beni was two darks.
  */
 export function generateTitleMari(): Stitch[] {
@@ -1398,4 +1362,3 @@ export function kikuArcsFromPins(
   }
   return arcs;
 }
-

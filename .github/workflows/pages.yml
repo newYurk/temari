@@ -21,11 +21,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
       - name: Verify published documentation matches its source
         run: node scripts/sync-design.mjs --check
+      - name: Build the current source
+        run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: docs
+          path: dist
       - id: deployment
         uses: actions/deploy-pages@v4

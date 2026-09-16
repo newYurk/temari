@@ -1,16 +1,17 @@
 import { defineConfig } from "vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
   base: "./",
   plugins: [tailwindcss(), viteReact()],
-  resolve: { tsconfigPaths: true },
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   build: {
-    outDir: "dist-pages",
+    outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
-      input: "pages.html",
+      input: { main: "index.html", lab: "lab.html" },
     },
   },
 });
