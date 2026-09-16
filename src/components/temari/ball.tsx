@@ -290,6 +290,8 @@ export function Ball() {
   const setWrapProgress = useTemari((s) => s.setWrapProgress);
   const setWrapStarted = useTemari((s) => s.setWrapStarted);
   const setFacingPole = useTemari((s) => s.setFacingPole);
+  const viewPole = useTemari((s) => s.viewPole);
+  const setPoseDirty = useTemari((s) => s.setPoseDirty);
 
   const material = useMemo(() => createTemariMaterial(), []);
   const guideGeo = useMemo(() => createGuideGeometry(division), [division]);
@@ -305,8 +307,6 @@ export function Ball() {
   const kagariPlan = useTemari((s) => s.kagariPlan);
   const kagariLaid = useTemari((s) => s.kagariLaid);
   const kagariKept = useTemari((s) => s.kagariKept);
-  const kagariFocus = useTemari((s) => s.kagariFocus);
-  const facePole = useRef(false);
   const [stitchesOn, setStitchesOn] = useState(mode !== "title");
   useEffect(() => {
     if (mode !== "title") {
@@ -384,13 +384,15 @@ export function Ball() {
 
   useLayoutEffect(() => {
     const g = group.current;
-    if (!g) return;
+    if (!g || viewNonce === 0) return;
+    const pole = poles[viewPole] ?? poles[0];
+    if (!pole) return;
     omega.current.set(0, 0, 0);
-    // Face the working pole. Identity leaves +Y off the camera (+Z), so a
-    // hemisphere gate never snaps kiku to the diagram's NP view.
-    if (!kagariFocus) return;
-    facePole.current = true;
-  }, [camera, kagariFocus, viewNonce]);
+    _axis.set(pole[0], pole[1], pole[2]).normalize();
+    _feed.set(0, 1, 0);
+    _q.setFromUnitVectors(_axis, _feed);
+    g.quaternion.copy(_q);
+  }, [poles, viewNonce, viewPole]);
 
   useEffect(() => {
     wrap.reset();
@@ -493,7 +495,10 @@ export function Ball() {
       const dx = e.clientX - prev.x;
       const dy = e.clientY - prev.y;
       ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (Math.hypot(dx, dy) > 7) pointer.dragged = true;
+      if (Math.hypot(dx, dy) > 7) {
+        pointer.dragged = true;
+        setPoseDirty();
+      }
       const now = performance.now();
       const dt = Math.max(0.008, (now - lastPtr.current.t) / 1000);
       lastPtr.current = { x: e.clientX, y: e.clientY, t: now, id: e.pointerId };
@@ -568,7 +573,7 @@ export function Ball() {
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
     };
-  }, [camera, gl, setWrapStarted, size.height, wrap]);
+  }, [camera, gl, setPoseDirty, setWrapStarted, size.height, wrap]);
 
   useEffect(() => {
     const probe = {
@@ -669,7 +674,6 @@ export function Ball() {
           kagariLaid: laid,
           kagariPlaying: false,
           kagariFocus: stitchFocus(newest, st.division, st.motif),
-          viewNonce: st.viewNonce + 1,
         });
       },
     };
@@ -694,17 +698,6 @@ export function Ball() {
         }
       }
       setFacingPole(best);
-    }
-    if (g && facePole.current) {
-      const focus = useTemari.getState().kagariFocus;
-      if (focus) {
-        _axis.set(focus[0], focus[1], focus[2]);
-        _feed.copy(camera.position).normalize();
-        _q.setFromUnitVectors(_axis, _feed);
-        g.quaternion.copy(_q);
-        omega.current.set(0, 0, 0);
-      }
-      facePole.current = false;
     }
     const spd = omega.current.length();
     if (g && !spinning.current && spd > 0.0007) {

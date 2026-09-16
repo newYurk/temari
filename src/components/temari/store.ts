@@ -4,6 +4,7 @@ import {
   fillsMatch,
   padFills,
   snapToNode,
+  polePositions,
   type Division,
 } from "./division";
 import {
@@ -176,6 +177,8 @@ type TemariState = {
   wrapUndoNonce: number;
   wrapResetNonce: number;
   viewNonce: number;
+  viewPole: number;
+  poseDirty: boolean;
   wrapProgress: number;
   threadWidth: number;
   wrapStarted: boolean;
@@ -219,6 +222,7 @@ type TemariState = {
   setPuzzle: (index: number) => void;
   nextPuzzle: () => void;
   resetView: () => void;
+  setPoseDirty: () => void;
   setWrapCount: (n: number) => void;
   setWrapProgress: (n: number) => void;
   setWrapStarted: () => void;
@@ -319,6 +323,8 @@ export const useTemari = create<TemariState>((set, get) => ({
   wrapUndoNonce: 0,
   wrapResetNonce: 0,
   viewNonce: 0,
+  viewPole: 0,
+  poseDirty: true,
   wrapProgress: 0,
   threadWidth: 0.42,
   wrapStarted: false,
@@ -927,7 +933,21 @@ export const useTemari = create<TemariState>((set, get) => ({
     get().setPuzzle(next);
   },
 
-  resetView: () => set({ viewNonce: get().viewNonce + 1 }),
+  resetView: () => {
+    const poles = polePositions(get().division);
+    const n = Math.max(1, poles.length);
+    const next = get().poseDirty ? 0 : (get().viewPole + 1) % n;
+    set({
+      viewPole: next,
+      facingPole: next,
+      viewNonce: get().viewNonce + 1,
+      poseDirty: false,
+    });
+  },
+  setPoseDirty: () => {
+    if (get().poseDirty) return;
+    set({ poseDirty: true });
+  },
   setWrapCount: (n) => set({ wrapCount: n }),
   setWrapProgress: (n) => set({ wrapProgress: Math.max(0, Math.min(1, n)) }),
   setWrapStarted: () => {
