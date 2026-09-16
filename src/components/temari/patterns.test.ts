@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { fillKikuSewn, kikuSpec, stitchesForSlot, hitKikuSlot, kikuThetas, around, nextKagariPole, compileKiku, stitchesFromOps, kikuFlank, kikuMarkPins } from "./patterns.ts";
+import { fillKikuSewn, kikuSpec, stitchesForSlot, hitKikuSlot, kikuThetas, around, nextKagariPole, compileKiku, stitchesFromOps, kikuFlank, kikuMarkPins, kikuWorkingPins } from "./patterns.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 
 function merPhi(p: [number, number, number]) {
@@ -242,6 +242,36 @@ describe("kiku on Simple 8", () => {
       const step = Math.PI / 4;
       const k = Math.round(phi / step);
       assert.ok(Math.abs(phi - k * step) < 0.04, "pin sits on a meridian");
+    }
+  });
+
+  it("working pins for north kiku: pole + 8 first-outer, no south, no equator", () => {
+    const spec = kikuSpec("simple");
+    const pins = kikuWorkingPins("simple", 0);
+    assert.equal(pins.length, 9);
+    assert.equal(pins.filter((pin) => pin.p[1] < 0).length, 0, "far pole stays out");
+    assert.equal(pins.filter((pin) => Math.abs(pin.p[1]) < 0.2).length, 0, "no equator");
+    const pole = pins.find((pin) => pin.id === "pole-0");
+    assert.ok(pole && pole.p[1] > 0.99);
+    const marks = pins.filter((pin) => pin.id.startsWith("kiku-0-"));
+    assert.equal(marks.length, 8);
+    for (const pin of marks) {
+      const theta = Math.acos(Math.min(1, Math.max(-1, pin.p[1])));
+      assert.ok(Math.abs(theta - spec.outer) < 1e-6);
+    }
+  });
+
+  it("first bottom stitch sits at the GT14 pin", () => {
+    const spec = kikuSpec("simple");
+    const ops = compileKiku("simple", "out", "even", 0, 0, 1, 0);
+    const outer = ops.filter((op) => op.mark.t === "outer");
+    assert.equal(outer.length, 4);
+    for (const op of outer) {
+      const theta = Math.acos(Math.min(1, Math.max(-1, op.mark.at[1])));
+      assert.ok(
+        Math.abs(theta - spec.outer) < 1e-5,
+        `outer ${theta} vs pin ${spec.outer}`,
+      );
     }
   });
 

@@ -566,6 +566,22 @@ export function kikuMarkPins(
   return pins;
 }
 
+/**
+ * Pins that stand while this pole is sewn: the pole mark (measure 5 mm)
+ * plus the eight first-outer GT14 marks. Not the far pole, not the equator —
+ * those belong to jiwari, and they are not holding this flower.
+ */
+export function kikuWorkingPins(
+  division: Division,
+  which: number | "all" = 0,
+): { id: string; p: Vec3 }[] {
+  const sewn = kagariPolesToSew(division, which);
+  return [
+    ...sewn.map(({ index, pole }) => ({ id: `pole-${index}`, p: pole })),
+    ...kikuMarkPins(division, which),
+  ];
+}
+
 function hermiteSphere(p0: Vec3, m0: Vec3, p1: Vec3, m1: Vec3, t: number): Vec3 {
   const t2 = t * t;
   const t3 = t2 * t;

@@ -26,7 +26,7 @@ import {
   stitchPoleIndex,
   nextKagariPole,
   kikuSpec,
-  kikuMarkPins,
+  kikuWorkingPins,
   sameFocus,
   slotKey,
   type KagariDir,
@@ -283,16 +283,7 @@ function withKikuMarks(
       state.jiwariLaid,
     );
   }
-  const poles = jiwariVisiblePins(state.division, "done", state.jiwariLaid).filter(
-    (pin) => Math.abs(pin.p[1]) > 0.92,
-  );
-  const extra = kikuMarkPins(state.division, state.facingPole);
-  const out = [...poles];
-  for (const pin of extra) {
-    if (out.some((q) => q.p[0] * pin.p[0] + q.p[1] * pin.p[1] + q.p[2] * pin.p[2] > 0.999)) continue;
-    out.push(pin);
-  }
-  return out;
+  return kikuWorkingPins(state.division, state.facingPole);
 }
 
 function idleKagari(): Pick<
