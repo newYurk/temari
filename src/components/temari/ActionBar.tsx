@@ -182,7 +182,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
             kagariSet,
             motif === "kiku" &&
               kagariSet === 1 &&
-              kikuLayers < kikuSpec(division, kagariSpacing, "fit").fit,
+              kikuLayers < kikuSpec(division, kagariSpacing, "fit").capacity,
           )
         : jiwariOn
           ? jiwariPhaseHint(jiwariPhase, jiwariLaid)

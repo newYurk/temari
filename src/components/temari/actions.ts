@@ -67,7 +67,7 @@ export function getCraftState(): TemariCraftState {
     kagariIdleComplete:
       !s.kagariPlaying && s.kagariPlan.length > 0 && s.kagariLaid >= s.kagariPlan.length,
     kikuLayers: s.kikuLayers,
-    kikuFit: kikuSpec(s.division, s.kagariSpacing, "fit").fit,
+    kikuFit: kikuSpec(s.division, s.kagariSpacing, "fit").capacity,
     kikuMarksReady: s.motif !== "kiku" || kikuPinsComplete(s.pins, s.division, s.facingPole),
     selectedColor: s.selectedColor,
     paletteId: s.paletteId,
@@ -223,7 +223,7 @@ export const CRAFT_ACTIONS: CraftAction[] = [
         : s.motif === "kiku" && s.kagariIdleComplete && s.kagariSet === 0
         ? "Сначала вторые 4 — снова «Кику»."
         : s.motif === "kiku" && s.kagariIdleComplete && s.kikuLayers >= s.kikuFit
-          ? "До оби. Дальше — переверните шар."
+          ? "Экватор этого полюса. Дальше — переверните шар."
           : canFillMotif(s)
             ? null
             : "Сначала разметка или замкнутый контур"),

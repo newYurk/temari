@@ -330,10 +330,21 @@ describe("kiku on Simple 8", () => {
     const spec = kikuSpec("simple", "even", "fit");
     assert.ok(spec.fit >= 5 && spec.fit <= 10, `fit=${spec.fit}`);
     const last = kikuThetas(spec, spec.fit - 1);
-    assert.ok(last.tOuter <= spec.ceiling + 1e-9, "never past the obi mark");
+    assert.ok(last.tOuter <= spec.obi + 1e-9, "classic stop is the obi strip");
     assert.ok(last.tOuter > spec.outer + spec.stretch * 3, "later rounds pack past the first pin");
     const first = kikuThetas(spec, 0);
     assert.ok(last.tOuter - last.tInner > first.tOuter - first.tInner, "points stretch; flanks stay parallel");
+  });
+
+  it("capacity walks to this pole's equator; Fill is not locked at the obi", () => {
+    const spec = kikuSpec("simple", "even", "fit");
+    assert.ok(spec.capacity > spec.fit, `capacity ${spec.capacity} should pass the obi (${spec.fit})`);
+    const last = kikuThetas(spec, spec.capacity - 1);
+    assert.ok(last.tOuter <= spec.ceiling + 1e-9, "does not cross the equator");
+    assert.ok(last.tOuter > spec.obi, "the extra rounds are the band that was reserved for obi");
+    const full = compileKiku("simple", "out", "even", 0, 0, spec.capacity);
+    const classic = compileKiku("simple", "out", "even", 0, 0, "fit");
+    assert.ok(full.length > classic.length);
   });
 
   it("hitKikuSlot asks kikuThetas, not an inward band", () => {

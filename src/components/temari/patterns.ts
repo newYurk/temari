@@ -415,22 +415,28 @@ export function kikuSpec(
     : division === "c8"
       ? Math.PI / 4
       : 0.52;
-  // Room for a thin maki obi. GT14 works toward the equator, not past it.
-  const ceiling = Math.min(Math.PI / 2 - unitFromMm(8), Math.PI * 0.49);
+  const equator = Math.PI / 2;
+  const obi = Math.min(equator - unitFromMm(8), Math.PI * 0.49);
+  // This pole's kiku may walk to the equator. Crossing it is the other flower.
+  const ceiling = equator - pitch * 0.35;
   const vDepth = Math.max(pitch, outer - inner);
-  const packed = 1 + Math.floor(Math.max(0, ceiling - outer) / Math.max(stretch, 1e-9));
-  const fit = Math.max(1, packed);
+  const toObi = 1 + Math.floor(Math.max(0, obi - outer) / Math.max(stretch, 1e-9));
+  const toRim = 1 + Math.floor(Math.max(0, ceiling - outer) / Math.max(stretch, 1e-9));
+  const fit = Math.max(1, toObi);
+  const capacity = Math.max(fit, toRim);
   const rounds =
-    wanted === "fit" ? fit : Math.max(1, Math.min(fit, Math.round(wanted)));
+    wanted === "fit" ? fit : Math.max(1, Math.min(capacity, Math.round(wanted)));
   return {
     inner,
     outer,
+    obi,
     ceiling,
     pitch,
     stretch,
     vDepth,
     rounds,
     fit,
+    capacity,
     sets: recipe?.sets ?? kikuSkip(petalCount(division)),
     recipe,
   };
@@ -455,7 +461,7 @@ export function kikuThetas(
   },
   ring: number,
 ) {
-  const ceiling = spec.ceiling ?? Math.min(Math.PI / 2 - unitFromMm(8), Math.PI * 0.49);
+  const ceiling = spec.ceiling ?? Math.PI / 2 - spec.pitch * 0.35;
   const tInner = spec.inner + ring * spec.pitch;
   // First bottom stitch sits just poleward of the GT14 pin; later kai add
   // Ozaki stretch from that stitch. Thread does not wrap the shaft.

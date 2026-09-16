@@ -1167,7 +1167,7 @@ export const useTemari = create<TemariState>((set, get) => ({
         }
         const spec = kikuSpec(state.division, state.kagariSpacing, "fit");
         if (state.kagariSet === 0) return;
-        if (state.kikuLayers >= spec.fit) return;
+        if (state.kikuLayers >= spec.capacity) return;
         const nextL = state.kikuLayers + 1;
         const extraOf = (onlySet: 0 | 1) => {
           const before = motifStitchPlan(
