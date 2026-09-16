@@ -687,7 +687,7 @@ function kikuPetal(
   const left = kikuFlank(pole, spec, ring, phi0, phi1);
   const right = kikuFlank(pole, spec, ring, phi2, phi1);
   const cornerMm = KIKU_8_POINT.cornerMm;
-  const sitInner = ring;
+  const sitInner = ring > 0 ? 1 : 0;
   const set = (sector % 2 === 0 ? 0 : 1) as 0 | 1;
   return [
     {
@@ -833,12 +833,10 @@ export function compileKiku(
 export function stitchesFromOps(ops: KagariOp[]): Stitch[] {
   const stitches: Stitch[] = ops.map((op, i) => {
     const prev = i > 0 ? ops[i - 1] : undefined;
-    const sitTo = op.mark.t === "inner" ? op.over.length : 0;
+    const sitTo = op.mark.t === "inner" && op.over.length > 0 ? 1 : 0;
     const sitFrom =
-      prev && prev.pole === op.pole && prev.set === op.set
-        ? prev.mark.t === "inner"
-          ? prev.over.length
-          : 0
+      prev && prev.pole === op.pole && prev.set === op.set && prev.mark.t === "inner" && prev.over.length > 0
+        ? 1
         : 0;
     return {
       kind: "arc" as const,

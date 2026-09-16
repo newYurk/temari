@@ -270,6 +270,17 @@ describe("kagari recipe atom", () => {
     assert.ok(a.every((s) => s.kind !== "arc" || !s.sitMid), "A stays on the mari");
   });
 
+  it("uwagake height at the inner is one pearl, not the whole stack", () => {
+    const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, 3, "all"));
+    const later = stitches.filter((s) => s.kind === "arc" && (s.kai ?? 0) >= 2);
+    assert.ok(later.length > 0);
+    for (const s of later) {
+      if (s.kind !== "arc") continue;
+      assert.ok((s.sitA ?? 0) <= 1, "inner stack is the previous thread, not every kai");
+      assert.ok((s.sitB ?? 0) <= 1, "inner stack is the previous thread, not every kai");
+    }
+  });
+
   it("closestApproachT finds the meeting of two polylines", () => {
     const a: [number, number, number][] = [
       [0, 1, 0],

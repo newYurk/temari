@@ -8,6 +8,8 @@ import { useTemari, type Mode } from "./store";
 const FOV = 32;
 const BALL_R = 1.05;
 const FIT_MARGIN = 1.16;
+/** Just off the pearl — the pole weave can fill the view. */
+const SURFACE_CLOSE = 1.16;
 
 function framingDistance(width: number, height: number, mode: Mode) {
   const halfH = Math.tan(THREE.MathUtils.degToRad(FOV) / 2);
@@ -41,7 +43,7 @@ function CameraRig() {
 
   useLayoutEffect(() => {
     camera.fov = FOV;
-    camera.near = 0.1;
+    camera.near = 0.05;
     camera.far = Math.max(40, dist * 4);
     camera.clearViewOffset();
     camera.updateProjectionMatrix();
@@ -69,14 +71,14 @@ function CameraRig() {
       enableZoom={!autoRotate}
       enableDamping
       dampingFactor={0.08}
-      minDistance={dist * 0.42}
+      minDistance={SURFACE_CLOSE}
       maxDistance={dist * 2.35}
       minPolarAngle={0}
       maxPolarAngle={Math.PI}
       autoRotate={autoRotate && !reduce}
       autoRotateSpeed={0.42}
       rotateSpeed={0.72}
-      zoomSpeed={1.05}
+      zoomSpeed={1.4}
     />
   );
 }
@@ -97,7 +99,7 @@ export function TemariScene() {
     <SceneGuard>
     <Canvas
       className="absolute inset-0 z-[8] touch-none"
-      camera={{ position: [0, 0.2, 3.6], fov: FOV, near: 0.1, far: 60 }}
+      camera={{ position: [0, 0.2, 3.6], fov: FOV, near: 0.05, far: 60 }}
       dpr={[1, 1.5]}
       gl={{
         antialias: true,

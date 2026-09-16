@@ -225,6 +225,26 @@ function nearVec(a: THREE.Vector3, b: THREE.Vector3) {
 }
 
 /**
+ * Visible pearl turn at the mark. The recipe inner bite widens with the
+ * stacked count (needle around the bundle) — drawing that U as the cord
+ * is a 4 mm loop at the pole. Across the jiwari the stitch is one pearl.
+ */
+function clampBiteTurn(
+  enter: THREE.Vector3,
+  exit: THREE.Vector3,
+  mark: THREE.Vector3,
+  maxWidth: number,
+) {
+  const w = enter.distanceTo(exit);
+  if (w <= maxWidth || w < 1e-9) return { enter, exit };
+  const s = maxWidth / w;
+  return {
+    enter: enter.clone().lerp(mark, 1 - s),
+    exit: exit.clone().lerp(mark, 1 - s),
+  };
+}
+
+/**
  * TemariKai: start comes up from the wrap; end goes back in.
  * Walks away from the laid stitch, dropping under the cover (r=1).
  * A parked round emerges at the start and sits on the mari at the end —
@@ -292,12 +312,14 @@ function stackedArcChain(
       pts.pop();
       if (bite) {
         const r = next0.length();
-        const enter = new THREE.Vector3(bite.enter[0], bite.enter[1], bite.enter[2])
+        const pearl = unitFromMm(kindMm(kind));
+        const rawEnter = new THREE.Vector3(bite.enter[0], bite.enter[1], bite.enter[2])
           .normalize()
           .multiplyScalar(r);
-        const exit = new THREE.Vector3(bite.exit[0], bite.exit[1], bite.exit[2])
+        const rawExit = new THREE.Vector3(bite.exit[0], bite.exit[1], bite.exit[2])
           .normalize()
           .multiplyScalar(r);
+        const { enter, exit } = clampBiteTurn(rawEnter, rawExit, mark, pearl * 1.15);
         const from = pts[pts.length - 1]!;
         for (let s = 1; s <= 2; s++) {
           slerp(from, enter, s / 2, _a);
