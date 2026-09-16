@@ -2,6 +2,8 @@
 
 Нить на сфере.
 
+[Состояние проекта и план кику](STATE.md) — текущая точка входа для разработки.
+
 **Играть:** https://newyurk.github.io/temari/
 
 **Схема нити:** https://newyurk.github.io/temari/design.html  
