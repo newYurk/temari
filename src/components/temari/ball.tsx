@@ -428,12 +428,12 @@ export function Ball() {
     if (!shaft || !head) return;
     pins.forEach((pin, i) => {
       const n = _local.set(pin.p[0], pin.p[1], pin.p[2]).normalize();
-      dummy.position.copy(n).multiplyScalar(1.006);
+      dummy.position.copy(n).multiplyScalar(1.055);
       dummy.quaternion.setFromUnitVectors(Y_UP, n);
       dummy.scale.setScalar(i === activePin ? 1.28 : 1);
       dummy.updateMatrix();
       shaft.setMatrixAt(i, dummy.matrix);
-      dummy.position.copy(n).multiplyScalar(1.038);
+      dummy.position.copy(n).multiplyScalar(1.128);
       dummy.scale.setScalar(i === activePin ? 1.28 : 1);
       dummy.updateMatrix();
       head.setMatrixAt(i, dummy.matrix);
@@ -575,6 +575,22 @@ export function Ball() {
       omega: () => omega.current.length(),
       wraps: () => wrap.strandCount,
       pins: () => useTemari.getState().pins.length,
+      pinDump: () =>
+        useTemari.getState().pins.map((pin) => ({ id: pin.id, p: pin.p })),
+      face: (x: number, y: number, z: number) => {
+        const g = group.current;
+        if (!g) return;
+        _axis.set(x, y, z).normalize();
+        _feed.copy(camera.position).normalize();
+        _q.setFromUnitVectors(_axis, _feed);
+        g.quaternion.copy(_q);
+        omega.current.set(0, 0, 0);
+      },
+      dolly: (dist: number) => {
+        const d = Math.max(1.16, dist);
+        camera.position.normalize().multiplyScalar(d);
+        camera.updateProjectionMatrix();
+      },
       qy: () => group.current?.quaternion.y ?? 0,
       progress: () => useTemari.getState().wrapProgress,
       nodes: () => gridNodes(useTemari.getState().division).length,
@@ -924,9 +940,10 @@ export function Ball() {
         frustumCulled={false}
         visible={jiwariOn && pins.length > 0}
         count={pins.length}
+        renderOrder={20}
       >
-        <cylinderGeometry args={[0.007, 0.007, 0.068, 8]} />
-        <meshStandardMaterial color={palette.thread} roughness={0.4} metalness={0.22} />
+        <cylinderGeometry args={[0.0065, 0.0065, 0.16, 8]} />
+        <meshStandardMaterial color="#3a3834" roughness={0.32} metalness={0.55} />
       </instancedMesh>
       <instancedMesh
         ref={heads}
@@ -934,9 +951,10 @@ export function Ball() {
         frustumCulled={false}
         visible={jiwariOn && pins.length > 0}
         count={pins.length}
+        renderOrder={21}
       >
-        <sphereGeometry args={[0.02, 12, 10]} />
-        <meshStandardMaterial color={stitchHex} roughness={0.36} metalness={0.12} />
+        <sphereGeometry args={[0.028, 16, 12]} />
+        <meshStandardMaterial color="#f4efe6" roughness={0.16} metalness={0.12} />
       </instancedMesh>
     </group>
   );

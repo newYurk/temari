@@ -6,7 +6,7 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
-import { stackBump, scoopAway, scoopRadius } from "./kagari";
+import { stackBump, scoopAway, scoopRadius, markTurnPast as markTurnPastVec, sphereBezier as sphereBezierVec } from "./kagari";
 
 const ARC_SEGS = 32;
 
@@ -225,23 +225,74 @@ function nearVec(a: THREE.Vector3, b: THREE.Vector3) {
 }
 
 /**
- * Visible pearl turn at the mark. The recipe inner bite widens with the
- * stacked count (needle around the bundle) — drawing that U as the cord
- * is a 4 mm loop at the pole. Across the jiwari the stitch is one pearl.
+ * Tip of the V, past the mark, on the mari. The open side of the V is
+ * `from`+`to`; the turn sits on the opposite side so the pearl goes *around*
+ * the jiwari instead of reversing through the vertex.
  */
-function clampBiteTurn(
-  enter: THREE.Vector3,
-  exit: THREE.Vector3,
+function markTurnPast(
+  from: THREE.Vector3,
   mark: THREE.Vector3,
-  maxWidth: number,
+  to: THREE.Vector3,
+  dist: number,
+): THREE.Vector3 {
+  const p = markTurnPastVec(
+    [from.x, from.y, from.z],
+    [mark.x, mark.y, mark.z],
+    [to.x, to.y, to.z],
+    dist,
+  );
+  return new THREE.Vector3(p[0], p[1], p[2]);
+}
+
+/** Quadratic Bézier on the sphere. Does not cusp at the control point. */
+function sphereBezier(
+  a: THREE.Vector3,
+  b: THREE.Vector3,
+  c: THREE.Vector3,
+  n: number,
+): THREE.Vector3[] {
+  return sphereBezierVec(
+    [a.x, a.y, a.z],
+    [b.x, b.y, b.z],
+    [c.x, c.y, c.z],
+    n,
+  ).map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+}
+
+/**
+ * Replace the cusp at `mark` with a pearl U around it.
+ * Visiting the mark as a vertex makes a diamond bead: tube rings pile up
+ * and the tangent at the tip is across the jiwari (the old enter→exit bar).
+ */
+function joinAroundMark(
+  pts: THREE.Vector3[],
+  piece: THREE.Vector3[],
+  mark: THREE.Vector3,
+  pearl: number,
 ) {
-  const w = enter.distanceTo(exit);
-  if (w <= maxWidth || w < 1e-9) return { enter, exit };
-  const s = maxWidth / w;
-  return {
-    enter: enter.clone().lerp(mark, 1 - s),
-    exit: exit.clone().lerp(mark, 1 - s),
-  };
+  const keep = pearl * 2;
+  const keep2 = keep * keep;
+  while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
+    pts.pop();
+  }
+  let i = 0;
+  while (i < piece.length - 2 && piece[i]!.distanceToSquared(mark) < keep2) i++;
+  const from = pts[pts.length - 1];
+  const to = piece[i];
+  if (!from || !to) {
+    for (let k = i; k < piece.length; k++) pts.push(piece[k]!);
+    return;
+  }
+  if (from.distanceToSquared(to) < pearl * pearl * 0.05) {
+    for (let k = i; k < piece.length; k++) {
+      if (k === 0 && nearVec(from, piece[k]!)) continue;
+      pts.push(piece[k]!);
+    }
+    return;
+  }
+  const past = markTurnPast(from, mark, to, pearl);
+  for (const p of sphereBezier(from, past, to, 12)) pts.push(p);
+  for (let k = i + 1; k < piece.length; k++) pts.push(piece[k]!);
 }
 
 /**
@@ -308,46 +359,10 @@ function stackedArcChain(
     const mark = pts[pts.length - 1]!;
     const next0 = piece[0]!;
     if (nearVec(mark, next0) && pts.length > 1 && piece.length > 1) {
-      const bite = chain[i - 1]!.bite;
+      // Pearl U around the mark. A cusp through the vertex, or enter→exit
+      // as a cord, is a diamond bead on the ray (the user's packed-V shots).
       pts.pop();
-      if (bite) {
-        const r = next0.length();
-        const pearl = unitFromMm(kindMm(kind));
-        const rawEnter = new THREE.Vector3(bite.enter[0], bite.enter[1], bite.enter[2])
-          .normalize()
-          .multiplyScalar(r);
-        const rawExit = new THREE.Vector3(bite.exit[0], bite.exit[1], bite.exit[2])
-          .normalize()
-          .multiplyScalar(r);
-        const { enter, exit } = clampBiteTurn(rawEnter, rawExit, mark, pearl * 1.15);
-        const from = pts[pts.length - 1]!;
-        for (let s = 1; s <= 2; s++) {
-          slerp(from, enter, s / 2, _a);
-          pts.push(_a.clone());
-        }
-        for (let s = 1; s <= 2; s++) {
-          slerp(enter, exit, s / 2, _a);
-          pts.push(_a.clone());
-        }
-        const to = piece[1]!;
-        for (let s = 1; s < 3; s++) {
-          slerp(exit, to, s / 3, _a);
-          pts.push(_a.clone());
-        }
-        for (let k = 2; k < piece.length; k++) pts.push(piece[k]!);
-      } else {
-        const from = pts[pts.length - 1]!;
-        const to = piece[1]!;
-        for (let s = 1; s <= 3; s++) {
-          slerp(from, mark, s / 3, _a);
-          pts.push(_a.clone());
-        }
-        for (let s = 1; s < 3; s++) {
-          slerp(mark, to, s / 3, _a);
-          pts.push(_a.clone());
-        }
-        for (let k = 2; k < piece.length; k++) pts.push(piece[k]!);
-      }
+      joinAroundMark(pts, piece, mark, unitFromMm(kindMm(kind)));
     } else {
       const start = nearVec(mark, next0) ? 1 : 0;
       for (let k = start; k < piece.length; k++) pts.push(piece[k]!);

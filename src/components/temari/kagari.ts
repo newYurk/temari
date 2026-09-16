@@ -259,6 +259,62 @@ export function stackBump(t: number, sitA: number, sitB: number, sitMid: number,
   return h;
 }
 
+function slerp3(a: Vec3, b: Vec3, t: number): Vec3 {
+  const na = normalize(a);
+  const nb = normalize(b);
+  const d = Math.min(1, Math.max(-1, dot(na, nb)));
+  const theta = Math.acos(d);
+  const ra = hypot3(a);
+  const rb = hypot3(b);
+  const r = ra + (rb - ra) * t;
+  if (theta < 1e-5) return [na[0] * r, na[1] * r, na[2] * r];
+  const s = Math.sin(theta);
+  const w0 = Math.sin((1 - t) * theta) / s;
+  const w1 = Math.sin(t * theta) / s;
+  return [
+    (na[0] * w0 + nb[0] * w1) * r,
+    (na[1] * w0 + nb[1] * w1) * r,
+    (na[2] * w0 + nb[2] * w1) * r,
+  ];
+}
+
+/**
+ * Tip of the V, past the mark. The open side is from+to; the turn sits on
+ * the opposite side so the pearl goes around the jiwari, not through it.
+ */
+export function markTurnPast(from: Vec3, mark: Vec3, to: Vec3, dist: number): Vec3 {
+  const fu = normalize(from);
+  const mu = normalize(mark);
+  const tu = normalize(to);
+  let open: Vec3 = [
+    fu[0] + tu[0] - 2 * mu[0],
+    fu[1] + tu[1] - 2 * mu[1],
+    fu[2] + tu[2] - 2 * mu[2],
+  ];
+  if (hypot3(open) < 1e-6) open = cross(mu, [tu[0] - fu[0], tu[1] - fu[1], tu[2] - fu[2]]);
+  if (hypot3(open) < 1e-6) return [mark[0], mark[1], mark[2]];
+  open = normalize(open);
+  const r = hypot3(mark) || 1;
+  const n = normalize([
+    mu[0] - open[0] * dist,
+    mu[1] - open[1] * dist,
+    mu[2] - open[2] * dist,
+  ]);
+  return [n[0] * r, n[1] * r, n[2] * r];
+}
+
+/** Quadratic Bézier on the sphere. Does not cusp at the control point. */
+export function sphereBezier(a: Vec3, b: Vec3, c: Vec3, n: number): Vec3[] {
+  const out: Vec3[] = [];
+  for (let i = 1; i <= n; i++) {
+    const u = i / n;
+    const p01 = slerp3(a, b, u);
+    const p12 = slerp3(b, c, u);
+    out.push(slerp3(p01, p12, u));
+  }
+  return out;
+}
+
 /**
  * Uwagake at the pole: the working thread goes *over* the already-sewn bundle
  * on this meridian, closer to the pole than the new inner bite, then scoops.
