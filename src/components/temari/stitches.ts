@@ -12,12 +12,6 @@ const ARC_SEGS = 32;
 /** Almost one pearl so the over cord clears; a hair less so it nestles, not a tent. */
 const STACK_LIFT = 0.92;
 
-function poleBlend(p: THREE.Vector3) {
-  const ny = Math.abs(p.y) / (p.length() || 1);
-  if (ny < 0.86) return 0;
-  return Math.min(1, (ny - 0.86) / 0.13);
-}
-
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
 const _side = new THREE.Vector3();
@@ -193,11 +187,9 @@ function arcPath(
   ];
   const pts: THREE.Vector3[] = [];
   const lift = (t: number, dir: THREE.Vector3) => {
-    let extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts)) * diameter * STACK_LIFT;
-    // Inner uwagake is one pearl on the mari. A 3-high stack here is the
-    // title-page macaroni on the silhouette.
-    const u = dir.clone().normalize();
-    extra *= 1 - 0.92 * poleBlend(u);
+    // Preserve the path's declared lift at every orientation. This legacy
+    // stack estimate is not a contact solver; latitude cannot correct it.
+    const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts)) * diameter * STACK_LIFT;
     return dir.clone().multiplyScalar(1 + half + extra);
   };
   if (via.length === 0) {
@@ -670,13 +662,6 @@ function tubeOnSphere(
     }
   }
   if (!closed) path.push(pts[pts.length - 1]!.clone());
-  for (const p of path) {
-    const t = poleBlend(p);
-    if (t <= 0) continue;
-    const L = p.length() || 1;
-    const maxR = 1 + radius * (1.1 - 0.75 * t);
-    if (L > maxR) p.multiplyScalar(maxR / L);
-  }
   const nPath = path.length;
   if (nPath < 2) return new THREE.BufferGeometry();
   const along = [0];
@@ -719,17 +704,15 @@ function tubeOnSphere(
     _side.normalize();
     _mid.crossVectors(_t, _side).normalize();
     const r = radius * scaleAt(along[i] ?? 0);
-    const cap = poleBlend(p);
-    // Flatten height on the silhouette; keep width so the cap is pearls, not pasta.
-    const rOut = r * (0.88 - 0.12 * cap);
-    const rAlong = r * (0.88 - 0.5 * cap);
+    // One circular physical section along the supplied path. The renderer
+    // must not flatten it or push its centreline into the mari near a pole.
     for (let j = 0; j <= radialSegs; j++) {
       const ang = (j / radialSegs) * Math.PI * 2;
       const c = Math.cos(ang);
       const s = Math.sin(ang);
-      const nx = _side.x * c * rOut + _mid.x * s * rAlong;
-      const ny = _side.y * c * rOut + _mid.y * s * rAlong;
-      const nz = _side.z * c * rOut + _mid.z * s * rAlong;
+      const nx = (_side.x * c + _mid.x * s) * r;
+      const ny = (_side.y * c + _mid.y * s) * r;
+      const nz = (_side.z * c + _mid.z * s) * r;
       pos.push(p.x + nx, p.y + ny, p.z + nz);
       const nl = Math.hypot(nx, ny, nz) || 1;
       nrm.push(nx / nl, ny / nl, nz / nl);
@@ -743,7 +726,9 @@ function tubeOnSphere(
     for (let j = 0; j < radialSegs; j++) {
       const a = i0 * ring + j;
       const b = i1 * ring + j;
-      idx.push(a, b, a + 1, b, b + 1, a + 1);
+      // side × (tangent × side) points along the path. Wind the wall
+      // outward so FrontSide draws the near surface, not the inside wall.
+      idx.push(a, a + 1, b, b, a + 1, b + 1);
     }
   }
   if (!taperEnds && !closed) {
