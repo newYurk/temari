@@ -25,6 +25,8 @@ export type Stitch =
       sitMid?: number;
       /** Parameter along this leg of the A/B closest approach. */
       sitMidT?: number;
+      /** Later kai sitting on earlier opposite-set threads at real crossings. */
+      sitAts?: { t: number; n: number }[];
       bite?: { enter: Vec3; exit: Vec3 };
       via?: Vec3[];
       /** Working thread: one cord per pole+set, parked between kai. */
@@ -413,22 +415,28 @@ export function kikuSpec(
     : division === "c8"
       ? Math.PI / 4
       : 0.52;
-  // Room for a thin maki obi. GT14 works toward the equator, not past it.
-  const ceiling = Math.min(Math.PI / 2 - unitFromMm(8), Math.PI * 0.49);
+  const equator = Math.PI / 2;
+  const obi = Math.min(equator - unitFromMm(8), Math.PI * 0.49);
+  // This pole's kiku may walk to the equator. Crossing it is the other flower.
+  const ceiling = equator - pitch * 0.35;
   const vDepth = Math.max(pitch, outer - inner);
-  const packed = 1 + Math.floor(Math.max(0, ceiling - outer) / Math.max(stretch, 1e-9));
-  const fit = Math.max(1, packed);
+  const toObi = 1 + Math.floor(Math.max(0, obi - outer) / Math.max(stretch, 1e-9));
+  const toRim = 1 + Math.floor(Math.max(0, ceiling - outer) / Math.max(stretch, 1e-9));
+  const fit = Math.max(1, toObi);
+  const capacity = Math.max(fit, toRim);
   const rounds =
-    wanted === "fit" ? fit : Math.max(1, Math.min(fit, Math.round(wanted)));
+    wanted === "fit" ? fit : Math.max(1, Math.min(capacity, Math.round(wanted)));
   return {
     inner,
     outer,
+    obi,
     ceiling,
     pitch,
     stretch,
     vDepth,
     rounds,
     fit,
+    capacity,
     sets: recipe?.sets ?? kikuSkip(petalCount(division)),
     recipe,
   };
@@ -453,9 +461,11 @@ export function kikuThetas(
   },
   ring: number,
 ) {
-  const ceiling = spec.ceiling ?? Math.min(Math.PI / 2 - unitFromMm(8), Math.PI * 0.49);
+  const ceiling = spec.ceiling ?? Math.PI / 2 - spec.pitch * 0.35;
   const tInner = spec.inner + ring * spec.pitch;
-  const tOuter = Math.min(ceiling, spec.outer + ring * spec.stretch);
+  // First bottom stitch sits just poleward of the GT14 pin; later kai add
+  // Ozaki stretch from that stitch. Thread does not wrap the shaft.
+  const tOuter = Math.min(ceiling, spec.outer - spec.pitch * 0.7 + ring * spec.stretch);
   return { tInner, tOuter };
 }
 
@@ -582,6 +592,58 @@ export function kikuWorkingPins(
   ];
 }
 
+/** Nearest GT14 working mark. Null if the tap is off the meridians / pole. */
+export function snapToKikuMark(
+  local: Vec3,
+  division: Division,
+  which: number | "all" = 0,
+  minDot = 0.88,
+): { id: string; p: Vec3 } | null {
+  const marks = kikuWorkingPins(division, which);
+  const len = hypot3(local) || 1;
+  const x = local[0] / len;
+  const y = local[1] / len;
+  const z = local[2] / len;
+  let best: { id: string; p: Vec3 } | null = null;
+  let score = minDot;
+  for (const m of marks) {
+    const d = m.p[0] * x + m.p[1] * y + m.p[2] * z;
+    if (d > score) {
+      score = d;
+      best = m;
+    }
+  }
+  return best;
+}
+
+export function kikuMarksReady(
+  pins: readonly { p: Vec3 }[],
+  division: Division,
+  which: number | "all" = 0,
+): boolean {
+  const marks = kikuWorkingPins(division, which);
+  if (marks.length === 0) return false;
+  return marks.every((m) => pins.some((p) => dot(p.p, m.p) > 0.995));
+}
+
+export function kikuPinHint(placed: number, need: number): string {
+  if (need <= 0) return "";
+  if (placed <= 0) return "Воткните булавку: полюс или ⅓ на меридиане";
+  if (placed >= need) return "Метки стоят. Можно шить.";
+  const left = need - placed;
+  const n10 = left % 10;
+  const n100 = left % 100;
+  const word =
+    n10 === 1 && n100 !== 11
+      ? "булавка"
+      : n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)
+        ? "булавки"
+        : "булавок";
+  return left === 8 ? "Ещё 8 — на ⅓ по меридианам" : `Ещё ${left} ${word} на ⅓`;
+}
+
+export const KIKU_PIN_MISS = "Булавка ставится только на меридиане на ⅓";
+
 function hermiteSphere(p0: Vec3, m0: Vec3, p1: Vec3, m1: Vec3, t: number): Vec3 {
   const t2 = t * t;
   const t3 = t2 * t;
@@ -610,11 +672,22 @@ function scale3(v: Vec3, s: number): Vec3 {
   return [v[0] * s, v[1] * s, v[2] * s];
 }
 
-/** Smooth mark → body join: same tangent as the parallel lay, so the miss is an S, not a knuckle. */
+function dirOnSphere(from: Vec3, to: Vec3): Vec3 {
+  const d = dot(from, to);
+  return normalize([
+    to[0] - from[0] * d,
+    to[1] - from[1] * d,
+    to[2] - from[2] * d,
+  ]);
+}
+
+/** Mark → body join. Taut: geodesic-ish into the offset, matching the lay at the body. */
 function hermiteJoin(from: Vec3, to: Vec3, mFrom: Vec3, mTo: Vec3, count: number): Vec3[] {
   const chord = Math.max(angleBetween(from, to), 1e-6);
-  const a = scale3(normalize(mFrom), chord);
-  const b = scale3(normalize(mTo), chord);
+  // Full-chord tangents S-wave the packed kai (close-up garden hose).
+  const scale = chord * 0.4;
+  const a = scale3(normalize(mFrom), scale);
+  const b = scale3(normalize(mTo), scale);
   const out: Vec3[] = [];
   for (let i = 0; i <= count; i++) {
     out.push(hermiteSphere(from, a, to, b, i / count));
@@ -663,8 +736,8 @@ export function kikuFlank(
   const i1 = Math.max(i0 + 2, n - 1 - i0);
   const p0 = off[i0]!;
   const p1 = off[i1]!;
-  const head = hermiteJoin(a, p0, tangentAt(off, 0), tangentAt(off, i0), 10);
-  const tail = hermiteJoin(p1, b, tangentAt(off, i1), tangentAt(off, n - 1), 10);
+  const head = hermiteJoin(a, p0, dirOnSphere(a, p0), tangentAt(off, i0), 8);
+  const tail = hermiteJoin(p1, b, tangentAt(off, i1), dirOnSphere(p1, b), 8);
   const pts: Vec3[] = [
     a,
     ...head.slice(1, -1),
@@ -947,37 +1020,46 @@ function stitchSamples(s: Extract<Stitch, { kind: "arc" }>, n = 20): Vec3[] {
 }
 
 /**
- * B sits on A at the actual kousa, near the inner marks.
- * Mid-flank (t=0.5) stays on the mari — that was the every-other-petal hill.
+ * Opposite-set threads sit on each other at the real kousa.
+ * Same kai: B on A. Later kai: the new thread on every earlier opposite
+ * set it actually meets. Parallel same-set flanks stay on the mari.
  */
 export function annotateSetCrossings(stitches: Stitch[]): Stitch[] {
   const arcs = stitches.filter((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc");
-  const byKai = new Map<string, Extract<Stitch, { kind: "arc" }>[]>();
-  for (const s of arcs) {
-    if (s.set !== 0 || s.pole == null || s.kai == null) continue;
-    const k = `${s.pole}:${s.kai}`;
-    const list = byKai.get(k);
-    if (list) list.push(s);
-    else byKai.set(k, [s]);
-  }
   const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
-  const reach = pearl * 3;
+  const reach = pearl * 1.35;
   return stitches.map((s) => {
-    if (s.kind !== "arc" || s.set !== 1 || s.pole == null || s.kai == null) return s;
-    const as = byKai.get(`${s.pole}:${s.kai}`) ?? [];
-    if (as.length === 0) return s;
+    if (s.kind !== "arc" || s.pole == null || s.kai == null || s.set == null) return s;
     const self = stitchSamples(s);
-    let bestT = 0.5;
-    let bestD = Infinity;
-    for (const a of as) {
-      const c = closestApproachT(self, stitchSamples(a));
-      if (c.dist < bestD) {
-        bestD = c.dist;
-        bestT = c.tA;
+    const ats: { t: number; n: number }[] = [];
+    for (const other of arcs) {
+      if (other === s) continue;
+      if (other.pole !== s.pole || other.set == null || other.kai == null) continue;
+      if (other.set === s.set) continue;
+      const earlier = other.kai < s.kai || (other.kai === s.kai && other.set < s.set);
+      if (!earlier) continue;
+      const c = closestApproachT(self, stitchSamples(other));
+      if (c.dist > reach) continue;
+      const sameKai = other.kai === s.kai;
+      // Cross-kai tips already have sitA / sitB. Same-kai kousa is near
+      // the inner marks and must stay.
+      if (!sameKai && (c.tA < 0.08 || c.tA > 0.92)) continue;
+      ats.push({ t: c.tA, n: 1 });
+    }
+    if (ats.length === 0) return s;
+    ats.sort((a, b) => a.t - b.t);
+    const merged: { t: number; n: number }[] = [];
+    for (const a of ats) {
+      const last = merged[merged.length - 1];
+      if (last && Math.abs(a.t - last.t) < 0.03) {
+        last.n = Math.min(2, last.n + a.n);
+        last.t = (last.t + a.t) / 2;
+      } else {
+        merged.push({ t: a.t, n: a.n });
       }
     }
-    if (bestD > reach) return s;
-    return { ...s, sitMid: 1, sitMidT: bestT };
+    const main = merged.reduce((best, a) => (a.n > best.n ? a : best), merged[0]!);
+    return { ...s, sitMid: main.n, sitMidT: main.t, sitAts: merged };
   });
 }
 
@@ -1197,15 +1279,17 @@ export function kagariPhaseHint(
   return `Кику · ${where} · ${petals} · круг ${kai} · от полюса`;
 }
 
-/** Classic first temari: Simple 8, kiku on both poles, maki obi. */
+/** Classic first temari: Simple 8, kiku on both poles, maki obi.
+ * Wrap beni, kiku kin, obi linen — navy-on-beni was two darks.
+ */
 export function generateTitleMari(): Stitch[] {
-  const stitches = kiku("simple", "out", "even", "all", 0, "fit");
+  const stitches = kiku("simple", "out", "even", "all", 1, "fit");
   const belts: [number, number][] = [
-    [0, 1],
+    [0, 2],
     [0.11, 2],
     [-0.11, 2],
-    [0.22, 1],
-    [-0.22, 1],
+    [0.22, 2],
+    [-0.22, 2],
   ];
   for (const [h, c] of belts) {
     stitches.push({ kind: "loop", points: smallCircle([0, 1, 0], h), color: c });

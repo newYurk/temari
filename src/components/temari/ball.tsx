@@ -9,6 +9,10 @@ import {
   generateMotif,
   generateTitleMari,
   hitKikuSlot,
+  kikuMarksReady,
+  kikuSpec,
+  kikuWorkingPins,
+  snapToKikuMark,
   stitchFocus,
   stitchesForSlot,
   stitchesFromSewn,
@@ -25,7 +29,8 @@ import { C8_EXTRA, jiwariMarkColor, jiwariStitches, jiwariVisibleStitches, vRule
 
 const pointer = { x: 0, y: 0, down: false, dragged: false };
 const ptrs = new Map<number, { x: number; y: number }>();
-const tilt = { mx: 0, my: 0 };
+const pinch = { mx: 0, my: 0, span: 0, held: false };
+const _origin = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _up = new THREE.Vector3();
 const _axis = new THREE.Vector3();
@@ -75,6 +80,9 @@ function ThreadLayer({
               opacity={opacity}
               depthWrite={opacity >= 1}
               side={THREE.FrontSide}
+              polygonOffset
+              polygonOffsetFactor={-1}
+              polygonOffsetUnits={-1}
             />
           </mesh>
         ) : null,
@@ -290,6 +298,10 @@ export function Ball() {
   const setWrapProgress = useTemari((s) => s.setWrapProgress);
   const setWrapStarted = useTemari((s) => s.setWrapStarted);
   const setFacingPole = useTemari((s) => s.setFacingPole);
+  const viewPole = useTemari((s) => s.viewPole);
+  const facingPole = useTemari((s) => s.facingPole);
+  const motif = useTemari((s) => s.motif);
+  const setPoseDirty = useTemari((s) => s.setPoseDirty);
 
   const material = useMemo(() => createTemariMaterial(), []);
   const guideGeo = useMemo(() => createGuideGeometry(division), [division]);
@@ -299,14 +311,18 @@ export function Ball() {
   const target = mode === "kata" && puzzle ? puzzle.target : [];
   const wrap = getWrapBuffer();
   const nodes = useMemo(() => gridNodes(division), [division]);
+  const markNodes = useMemo(() => {
+    if (mode !== "studio" || craft !== "pin" || motif !== "kiku") return nodes;
+    return kikuWorkingPins(division, facingPole).map((pin) => pin.p);
+  }, [craft, division, facingPole, mode, motif, nodes]);
+  const marksReady = motif !== "kiku" || kikuMarksReady(pins, division, facingPole);
+  const outerTheta = kikuSpec(division).outer;
 
   const preset: MotifId =
     mode === "title" ? "kiku" : "none";
   const kagariPlan = useTemari((s) => s.kagariPlan);
   const kagariLaid = useTemari((s) => s.kagariLaid);
   const kagariKept = useTemari((s) => s.kagariKept);
-  const kagariFocus = useTemari((s) => s.kagariFocus);
-  const facePole = useRef(false);
   const [stitchesOn, setStitchesOn] = useState(mode !== "title");
   useEffect(() => {
     if (mode !== "title") {
@@ -384,13 +400,16 @@ export function Ball() {
 
   useLayoutEffect(() => {
     const g = group.current;
-    if (!g) return;
+    if (!g || viewNonce === 0) return;
+    const pole = poles[viewPole] ?? poles[0];
+    if (!pole) return;
     omega.current.set(0, 0, 0);
-    // Face the working pole. Identity leaves +Y off the camera (+Z), so a
-    // hemisphere gate never snaps kiku to the diagram's NP view.
-    if (!kagariFocus) return;
-    facePole.current = true;
-  }, [camera, kagariFocus, viewNonce]);
+    _axis.set(pole[0], pole[1], pole[2]).normalize();
+    _feed.set(0, 1, 0);
+    _q.setFromUnitVectors(_axis, _feed);
+    g.quaternion.copy(_q);
+    g.position.set(0, 0, 0);
+  }, [poles, viewNonce, viewPole]);
 
   useEffect(() => {
     wrap.reset();
@@ -428,12 +447,12 @@ export function Ball() {
     if (!shaft || !head) return;
     pins.forEach((pin, i) => {
       const n = _local.set(pin.p[0], pin.p[1], pin.p[2]).normalize();
-      dummy.position.copy(n).multiplyScalar(1.055);
+      dummy.position.copy(n).multiplyScalar(1.014);
       dummy.quaternion.setFromUnitVectors(Y_UP, n);
       dummy.scale.setScalar(i === activePin ? 1.28 : 1);
       dummy.updateMatrix();
       shaft.setMatrixAt(i, dummy.matrix);
-      dummy.position.copy(n).multiplyScalar(1.128);
+      dummy.position.copy(n).multiplyScalar(1.04);
       dummy.scale.setScalar(i === activePin ? 1.28 : 1);
       dummy.updateMatrix();
       head.setMatrixAt(i, dummy.matrix);
@@ -447,15 +466,15 @@ export function Ball() {
   useLayoutEffect(() => {
     const mesh = nodesMesh.current;
     if (!mesh) return;
-    nodes.forEach((p, i) => {
+    markNodes.forEach((p, i) => {
       dummy.position.set(p[0] * 1.006, p[1] * 1.006, p[2] * 1.006);
       dummy.scale.setScalar(1);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
     });
-    mesh.count = nodes.length;
+    mesh.count = markNodes.length;
     mesh.instanceMatrix.needsUpdate = true;
-  }, [dummy, nodes]);
+  }, [dummy, markNodes]);
 
   useEffect(() => {
     const el = gl.domElement;
@@ -470,15 +489,22 @@ export function Ball() {
       pointer.down = true;
       pointer.dragged = false;
       if (ptrs.size === 1) omega.current.set(0, 0, 0);
-      if (ptrs.size === 2) {
+      if (ptrs.size >= 2) {
         let mx = 0;
         let my = 0;
         ptrs.forEach((p) => {
           mx += p.x;
           my += p.y;
         });
-        tilt.mx = mx / 2;
-        tilt.my = my / 2;
+        const n = ptrs.size;
+        const pts = [...ptrs.values()];
+        const a = pts[0]!;
+        const b = pts[1]!;
+        pinch.mx = mx / n;
+        pinch.my = my / n;
+        pinch.span = Math.hypot(a.x - b.x, a.y - b.y);
+        pinch.held = true;
+        pointer.dragged = true;
       }
       try {
         el.setPointerCapture(e.pointerId);
@@ -493,15 +519,46 @@ export function Ball() {
       const dx = e.clientX - prev.x;
       const dy = e.clientY - prev.y;
       ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (Math.hypot(dx, dy) > 7) pointer.dragged = true;
+      if (Math.hypot(dx, dy) > 7) {
+        pointer.dragged = true;
+        setPoseDirty();
+      }
       const now = performance.now();
       const dt = Math.max(0.008, (now - lastPtr.current.t) / 1000);
       lastPtr.current = { x: e.clientX, y: e.clientY, t: now, id: e.pointerId };
+      const g = group.current;
+      if (!g) return;
+
+      if (ptrs.size >= 2) {
+        const pts = [...ptrs.values()];
+        const a = pts[0]!;
+        const b = pts[1]!;
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        const span = Math.hypot(a.x - b.x, a.y - b.y);
+        const dmx = mx - pinch.mx;
+        const dmy = my - pinch.my;
+        const cam = camera as THREE.PerspectiveCamera;
+        const reach = Math.max(camera.position.length(), 1.16);
+        const worldPerPx =
+          (2 * reach * Math.tan(THREE.MathUtils.degToRad(cam.fov || 32) * 0.5)) /
+          Math.max(size.height, 1);
+        _right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+        _up.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+        g.position.addScaledVector(_right, dmx * worldPerPx);
+        g.position.addScaledVector(_up, -dmy * worldPerPx);
+        if (g.position.length() > 1.08) g.position.setLength(1.08);
+        pinch.mx = mx;
+        pinch.my = my;
+        pinch.span = span;
+        pinch.held = true;
+        return;
+      }
+
       const k = 2.7 / Math.max(size.height, 1);
       const rx = dx * k;
       const ry = dy * k;
-      const g = group.current;
-      if (!g || (rx === 0 && ry === 0)) return;
+      if (rx === 0 && ry === 0) return;
       const st = useTemari.getState();
       const winding = false;
       _right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
@@ -543,6 +600,7 @@ export function Ball() {
     };
     const onUp = (e: PointerEvent) => {
       ptrs.delete(e.pointerId);
+      if (ptrs.size < 2) pinch.held = false;
       if (ptrs.size === 0) {
         spinning.current = false;
         pointer.down = false;
@@ -553,7 +611,7 @@ export function Ball() {
         }
       }
       try {
-        el.releasePointerCapture(e.pointerId);
+        if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
       } catch {
         /* already */
       }
@@ -568,7 +626,7 @@ export function Ball() {
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
     };
-  }, [camera, gl, setWrapStarted, size.height, wrap]);
+  }, [camera, gl, setPoseDirty, setWrapStarted, size.height, wrap]);
 
   useEffect(() => {
     const probe = {
@@ -592,13 +650,46 @@ export function Ball() {
         camera.updateProjectionMatrix();
       },
       qy: () => group.current?.quaternion.y ?? 0,
+      pan: () => group.current?.position.length() ?? 0,
       progress: () => useTemari.getState().wrapProgress,
       nodes: () => gridNodes(useTemari.getState().division).length,
       layerDone: () => useTemari.getState().layerDone,
       finish: () => useTemari.getState().finishLayer(),
+      enterStudio: () => useTemari.getState().enterStudio(),
+      showExample: () => useTemari.getState().showExample(),
+      setFacingPole: (i: number) => useTemari.getState().setFacingPole(i),
       pinAt: (x: number, y: number, z: number) => useTemari.getState().placePin([x, y, z]),
+      craft: () => useTemari.getState().craft,
+      pinKiku: () => {
+        const s = useTemari.getState();
+        const pins = kikuWorkingPins(s.division, s.facingPole);
+        useTemari.setState({
+          motif: "kiku",
+          craft: "stitch",
+          pins,
+          pinArcs: [],
+          activePin: null,
+          pinNote: null,
+        });
+      },
       startAt: (x: number, y: number, z: number) => useTemari.getState().setStartPin([x, y, z]),
       fillKiku: () => useTemari.getState().fillKiku(),
+      packKiku: () => {
+        const s = useTemari.getState();
+        const plan = generateMotif("simple", "kiku", "out", "even", 0, s.selectedColor, 6, "all");
+        useTemari.setState({
+          division: "simple",
+          facingPole: 0,
+          motif: "kiku",
+          craft: "stitch",
+          kagariPlan: plan,
+          kagariLaid: plan.length,
+          kagariPlaying: false,
+          kikuLayers: 6,
+          kagariSet: 1,
+          kagariFocus: null,
+        });
+      },
       setCraft: (c: "wind" | "pin" | "stitch") => useTemari.getState().setCraft(c),
       setColor: (i: number) => useTemari.getState().setColor(i),
       spin: (x: number, y: number, z: number) => omega.current.set(x, y, z),
@@ -669,7 +760,6 @@ export function Ball() {
           kagariLaid: laid,
           kagariPlaying: false,
           kagariFocus: stitchFocus(newest, st.division, st.motif),
-          viewNonce: st.viewNonce + 1,
         });
       },
     };
@@ -693,18 +783,9 @@ export function Ball() {
           best = i;
         }
       }
-      setFacingPole(best);
-    }
-    if (g && facePole.current) {
-      const focus = useTemari.getState().kagariFocus;
-      if (focus) {
-        _axis.set(focus[0], focus[1], focus[2]);
-        _feed.copy(camera.position).normalize();
-        _q.setFromUnitVectors(_axis, _feed);
-        g.quaternion.copy(_q);
-        omega.current.set(0, 0, 0);
-      }
-      facePole.current = false;
+      const st = useTemari.getState();
+      const pinning = st.motif === "kiku" && st.craft === "pin" && st.pins.length > 0;
+      if (!pinning) setFacingPole(best);
     }
     const spd = omega.current.length();
     if (g && !spinning.current && spd > 0.0007) {
@@ -721,6 +802,10 @@ export function Ball() {
       omega.current.copy(_axis).multiplyScalar(spd * Math.exp(-DAMP * d));
     } else if (!spinning.current && spd <= 0.0007) {
       omega.current.set(0, 0, 0);
+    }
+    if (g && !pinch.held && g.position.lengthSq() > 1e-8) {
+      g.position.lerp(_origin, 1 - Math.exp(-10 * d));
+      if (g.position.lengthSq() < 1e-7) g.position.set(0, 0, 0);
     }
 
     const state = useTemari.getState();
@@ -793,11 +878,18 @@ export function Ball() {
             const hit = pinHit(p, pins);
             setHoverSlot(null);
             if (hit < 0 && hover !== -1) setHover(-1);
-            const snapped = snapToNode(p, division);
             const ghost = snapGhost.current;
+            const snapped =
+              motif === "kiku"
+                ? snapToKikuMark(p, division, facingPole)
+                : { id: "", p: snapToNode(p, division) };
             if (ghost) {
-              ghost.visible = true;
-              ghost.position.set(snapped[0] * 1.04, snapped[1] * 1.04, snapped[2] * 1.04);
+              if (!snapped) {
+                ghost.visible = false;
+              } else {
+                ghost.visible = true;
+                ghost.position.set(snapped.p[0] * 1.04, snapped.p[1] * 1.04, snapped.p[2] * 1.04);
+              }
             }
           }
         }}
@@ -880,6 +972,18 @@ export function Ball() {
         <ThreadLayer stitches={ghostStitches} colors={THREAD_COLORS} opacity={0.42} order={11} />
       ) : null}
 
+      {mode === "studio" && craft === "pin" && motif === "kiku" && !marksReady ? (
+        <mesh
+          position={[0, (facingPole === 1 ? -1 : 1) * Math.cos(outerTheta), 0]}
+          rotation={[Math.PI / 2, 0, 0]}
+          renderOrder={13}
+          raycast={() => {}}
+        >
+          <torusGeometry args={[Math.sin(outerTheta), 0.0026, 6, 64]} />
+          <meshStandardMaterial color="#c4a574" roughness={0.62} metalness={0.18} />
+        </mesh>
+      ) : null}
+
       <mesh ref={needle} visible={false}>
         <sphereGeometry args={[0.018, 12, 10]} />
         <meshStandardMaterial color={stitchHex} roughness={0.38} metalness={0.14} />
@@ -913,7 +1017,7 @@ export function Ball() {
         args={[undefined, undefined, 80]}
         frustumCulled={false}
         visible={mode === "studio" && craft === "pin" && layerDone && jiwariOn}
-        count={nodes.length}
+        count={markNodes.length}
       >
         <sphereGeometry args={[0.012, 10, 8]} />
         <meshStandardMaterial color={palette.thread} roughness={0.5} metalness={0.08} transparent opacity={0.55} />
@@ -942,7 +1046,7 @@ export function Ball() {
         count={pins.length}
         renderOrder={20}
       >
-        <cylinderGeometry args={[0.0065, 0.0065, 0.16, 8]} />
+        <cylinderGeometry args={[0.0032, 0.0032, 0.048, 10]} />
         <meshStandardMaterial color="#3a3834" roughness={0.32} metalness={0.55} />
       </instancedMesh>
       <instancedMesh
@@ -953,7 +1057,7 @@ export function Ball() {
         count={pins.length}
         renderOrder={21}
       >
-        <sphereGeometry args={[0.028, 16, 12]} />
+        <sphereGeometry args={[0.014, 24, 16]} />
         <meshStandardMaterial color="#f4efe6" roughness={0.16} metalness={0.12} />
       </instancedMesh>
     </group>

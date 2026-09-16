@@ -10,7 +10,7 @@ type Vec3 = [number, number, number];
 export type Crossing = "over-all" | "over-1" | "under";
 export type RecipeStitch = "uwagake-chidori" | "chidori" | "sakasa";
 
-/** Library entry: what the player picks. Names live here, not in the renderer. */
+/** Geometry for one pattern implementation. Names live in library.ts, not here. */
 export type PatternRecipe = {
   id: string;
   requires: "simple" | "c8" | "c10";
@@ -153,7 +153,7 @@ function rotateAxis(v: Vec3, axis: Vec3, ang: number): Vec3 {
  * Unit-sphere walk from `at` continuing away from `from`.
  * Does not include `at`. Last point is ~KAGARI_SCOOP_MM along the mari.
  */
-export function scoopAway(at: Vec3, from: Vec3, n = 8): Vec3[] {
+export function scoopAway(at: Vec3, from: Vec3, n = 8, mm = KAGARI_SCOOP_MM): Vec3[] {
   const a = normalize(at);
   const b = normalize(from);
   let axis = cross(b, a);
@@ -162,7 +162,7 @@ export function scoopAway(at: Vec3, from: Vec3, n = 8): Vec3[] {
   }
   if (hypot3(axis) < 1e-8) return [];
   axis = normalize(axis);
-  const along = unitFromMm(KAGARI_SCOOP_MM);
+  const along = unitFromMm(mm);
   const out: Vec3[] = [];
   for (let i = 1; i <= n; i++) {
     out.push(normalize(rotateAxis(a, axis, along * (i / n))));
@@ -243,7 +243,7 @@ export function closestApproachT(
  * `midT` is the actual A/B kousa along this leg. Without it, sitMid is ignored:
  * a bump at t=0.5 was the every-other-petal hill.
  */
-export function stackBump(t: number, sitA: number, sitB: number, sitMid: number, midT?: number) {
+export function stackBump(t: number, sitA: number, sitB: number, sitMid: number, midT?: number, mids?: readonly { t: number; n: number }[]) {
   const bump = (x: number, center: number, width: number) => {
     const w = Math.max(1e-6, width);
     const d = Math.abs(x - center) / w;
@@ -253,8 +253,12 @@ export function stackBump(t: number, sitA: number, sitB: number, sitMid: number,
   };
   const endW = 0.14 + 0.05 * Math.max(sitA, sitB);
   let h = sitA * bump(t, 0, endW) + sitB * bump(t, 1, endW);
-  if (sitMid > 0 && midT != null) {
-    h += sitMid * bump(t, midT, 0.07);
+  // ~1.6 mm on a 35 mm flank: local at the kousa, not a hill down the petal.
+  const midW = 0.045;
+  if (mids && mids.length) {
+    for (const m of mids) h += m.n * bump(t, m.t, midW);
+  } else if (sitMid > 0 && midT != null) {
+    h += sitMid * bump(t, midT, midW);
   }
   return h;
 }
@@ -303,6 +307,41 @@ export function markTurnPast(from: Vec3, mark: Vec3, to: Vec3, dist: number): Ve
   return [n[0] * r, n[1] * r, n[2] * r];
 }
 
+/**
+ * The cap inside the first inner stitch is empty. An inner U may not
+ * dive toward the pole — that's the macaroni on the silhouette.
+ */
+export function clampNotPastPole(p: Vec3, mark: Vec3): Vec3 {
+  const pole: Vec3 = mark[1] >= 0 ? [0, 1, 0] : [0, -1, 0];
+  const pu = normalize(p);
+  const mu = normalize(mark);
+  if (dot(pu, pole) <= dot(mu, pole) + 1e-6) return p;
+  const along = dot(pu, pole);
+  let radial: Vec3 = [
+    pu[0] - pole[0] * along,
+    pu[1] - pole[1] * along,
+    pu[2] - pole[2] * along,
+  ];
+  if (hypot3(radial) < 1e-8) {
+    const mAlong = dot(mu, pole);
+    radial = [
+      mu[0] - pole[0] * mAlong,
+      mu[1] - pole[1] * mAlong,
+      mu[2] - pole[2] * mAlong,
+    ];
+  }
+  if (hypot3(radial) < 1e-8) return mark;
+  radial = normalize(radial);
+  const ct = dot(mu, pole);
+  const st = Math.sqrt(Math.max(0, 1 - ct * ct));
+  const r = hypot3(p) || 1;
+  return [
+    (pole[0] * ct + radial[0] * st) * r,
+    (pole[1] * ct + radial[1] * st) * r,
+    (pole[2] * ct + radial[2] * st) * r,
+  ];
+}
+
 /** Quadratic Bézier on the sphere. Does not cusp at the control point. */
 export function sphereBezier(a: Vec3, b: Vec3, c: Vec3, n: number): Vec3[] {
   const out: Vec3[] = [];
@@ -312,6 +351,93 @@ export function sphereBezier(a: Vec3, b: Vec3, c: Vec3, n: number): Vec3[] {
     const p12 = slerp3(b, c, u);
     out.push(slerp3(p01, p12, u));
   }
+  return out;
+}
+
+/** Inner uwagake: stay on the mark's parallel. A great-circle U dives into the cap. */
+export function smallCircleJoin(from: Vec3, to: Vec3, pole: Vec3, n: number): Vec3[] {
+  const p = normalize(pole);
+  const fu = normalize(from);
+  const tu = normalize(to);
+  const clamp = (x: number) => Math.min(1, Math.max(-1, x));
+  const theta = 0.5 * (Math.acos(clamp(dot(fu, p))) + Math.acos(clamp(dot(tu, p))));
+  const ref: Vec3 = Math.abs(p[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const e1 = normalize(cross(p, ref));
+  const e2 = normalize(cross(p, e1));
+  const az = (q: Vec3) => {
+    const along = dot(q, p);
+    const radial: Vec3 = [q[0] - p[0] * along, q[1] - p[1] * along, q[2] - p[2] * along];
+    return Math.atan2(dot(radial, e2), dot(radial, e1));
+  };
+  let d = az(tu) - az(fu);
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  const r = 0.5 * ((hypot3(from) || 1) + (hypot3(to) || 1));
+  const st = Math.sin(theta);
+  const ct = Math.cos(theta);
+  const a0 = az(fu);
+  const out: Vec3[] = [];
+  for (let i = 1; i <= n; i++) {
+    const phi = a0 + d * (i / n);
+    const c = Math.cos(phi);
+    const s = Math.sin(phi);
+    out.push([
+      (p[0] * ct + (e1[0] * c + e2[0] * s) * st) * r,
+      (p[1] * ct + (e1[1] * c + e2[1] * s) * st) * r,
+      (p[2] * ct + (e1[2] * c + e2[2] * s) * st) * r,
+    ]);
+  }
+  return out;
+}
+
+/**
+ * Inner uwagake: a pearl bite *across* the jiwari.
+ * A small-circle around the pole is a 90° noodle on the cap — macaroni from above.
+ * The visible bead is one pearl, not a loop.
+ */
+export function innerBiteJoin(from: Vec3, mark: Vec3, to: Vec3, pearl: number, n = 4): Vec3[] {
+  const m = normalize(mark);
+  const pole: Vec3 = m[1] >= 0 ? [0, 1, 0] : [0, -1, 0];
+  let across = cross(m, pole);
+  if (hypot3(across) < 1e-8) across = [1, 0, 0];
+  across = normalize(across);
+  const r = 0.5 * ((hypot3(from) || 1) + (hypot3(to) || 1));
+  const half = pearl * 0.45;
+  const mk = (s: number): Vec3 => {
+    const q = normalize([m[0] + across[0] * s, m[1] + across[1] * s, m[2] + across[2] * s]);
+    return [q[0] * r, q[1] * r, q[2] * r];
+  };
+  let enter = mk(-half);
+  let exit = mk(half);
+  const d = (a: Vec3, b: Vec3) => {
+    const dx = a[0] - b[0];
+    const dy = a[1] - b[1];
+    const dz = a[2] - b[2];
+    return dx * dx + dy * dy + dz * dz;
+  };
+  if (d(from, exit) + d(to, enter) < d(from, enter) + d(to, exit)) {
+    const tmp = enter;
+    enter = exit;
+    exit = tmp;
+  }
+  const out: Vec3[] = [];
+  const cap = Math.abs(m[1]);
+  const push = (a: Vec3, b: Vec3, steps: number) => {
+    for (let i = 1; i <= steps; i++) {
+      const p = slerp3(a, b, i / steps);
+      const L = hypot3(p) || 1;
+      if (Math.abs(p[1]) / L > cap) {
+        const rho = Math.sqrt(Math.max(0, 1 - cap * cap));
+        const pr = Math.hypot(p[0], p[2]) || 1e-9;
+        out.push([(p[0] / pr) * rho * L, Math.sign(p[1]) * cap * L, (p[2] / pr) * rho * L]);
+      } else {
+        out.push(p);
+      }
+    }
+  };
+  push(from, enter, n);
+  push(enter, exit, Math.max(2, n));
+  push(exit, to, n);
   return out;
 }
 

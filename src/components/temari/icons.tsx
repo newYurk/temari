@@ -187,6 +187,29 @@ export function IconDirIn(props: IconProps) {
   );
 }
 
+export function IconPoles({
+  next = "north",
+  ...props
+}: IconProps & { next?: "north" | "south" }) {
+  const north = next === "north";
+  return (
+    <Glyph {...props}>
+      <circle cx="12" cy="12.2" r="5.6" stroke="currentColor" strokeWidth={sw} />
+      <circle cx="12" cy="8.6" r="1.15" fill="currentColor" />
+      <path
+        d="M12 1.6 15.4 5.4H8.6Z"
+        fill="currentColor"
+        opacity={north ? 1 : 0.28}
+      />
+      <path
+        d="M12 22.4 8.6 18.6h6.8Z"
+        fill="currentColor"
+        opacity={north ? 0.28 : 1}
+      />
+    </Glyph>
+  );
+}
+
 export function IconNeedle(props: IconProps) {
   return (
     <Glyph {...props}>

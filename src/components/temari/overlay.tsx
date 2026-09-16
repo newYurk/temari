@@ -1,13 +1,13 @@
-import { LocateFixed } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { THREAD_COLORS } from "./palettes";
 import { PUZZLES } from "./puzzles";
-import { fillsMatch } from "./division";
+import { fillsMatch, polePositions } from "./division";
 import { useTemari } from "./store";
 import { unlock } from "./feel";
 import { ActionBar } from "./ActionBar";
+import { IconPoles } from "./icons";
 
 function useChromeVar(
   name: "--temari-chrome-top" | "--temari-chrome-bottom",
@@ -53,17 +53,29 @@ export function Overlay() {
 
 function RecenterButton({ className }: { className?: string }) {
   const resetView = useTemari((s) => s.resetView);
+  const viewPole = useTemari((s) => s.viewPole);
+  const poseDirty = useTemari((s) => s.poseDirty);
+  const division = useTemari((s) => s.division);
+  const n = polePositions(division).length;
+  const nextNorth = poseDirty || viewPole !== 0 || n !== 2;
+  const label =
+    n === 2
+      ? nextNorth
+        ? "Показать север"
+        : "Показать юг"
+      : "Показать следующий полюс";
   return (
     <button
       type="button"
-      aria-label="Вернуть шар в исходный вид"
+      aria-label={label}
+      title={label}
       onClick={resetView}
       className={cn(
-        "pointer-events-auto flex size-9 items-center justify-center rounded-full bg-linen/80 text-ink ring-1 ring-line",
+        "pointer-events-auto flex size-10 items-center justify-center rounded-full bg-linen/80 text-ink ring-1 ring-line",
         className,
       )}
     >
-      <LocateFixed className="size-4" />
+      <IconPoles next={nextNorth ? "north" : "south"} className="size-5" />
     </button>
   );
 }

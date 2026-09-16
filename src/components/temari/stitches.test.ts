@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { stackBump, markTurnPast, sphereBezier } from "./kagari.ts";
+import { stackBump, markTurnPast, sphereBezier, innerBiteJoin } from "./kagari.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 
 describe("thread stack is local, not a lifted petal", () => {
@@ -74,5 +74,40 @@ describe("kiku mark turn is a U around the vertex, not a diamond", () => {
       const b = sub(pts[i + 1]!, pts[i]!);
       assert.ok(dot(a, b) > 0, `tangent reversal at ${i} would draw a diamond`);
     }
+  });
+
+  it("inner U does not enter the polar cap", () => {
+    const mark = v(0.04, 0.99, 0.12);
+    const from = v(0.14, 0.97, 0.18);
+    const to = v(-0.1, 0.97, 0.2);
+    const pole: [number, number, number] = [0, 1, 0];
+    const pts = innerBiteJoin(from, mark, to, pearl, 4);
+    const markDot = dot(
+      [mark[0] / Math.hypot(...mark), mark[1] / Math.hypot(...mark), mark[2] / Math.hypot(...mark)],
+      pole,
+    );
+    for (const p of pts) {
+      const n = Math.hypot(...p) || 1;
+      const d = dot([p[0] / n, p[1] / n, p[2] / n], pole);
+      assert.ok(d <= markDot + 0.02, "macaroni: inner turn went closer to the pole than the stitch");
+    }
+  });
+
+  it("inner bite is a dash across the meridian, not a quarter-ring around the pole", () => {
+    const mark = v(0.04, 0.99, 0.12);
+    const from = v(0.055, 0.987, 0.14);
+    const to = v(0.025, 0.987, 0.155);
+    const pts = innerBiteJoin(from, mark, to, pearl, 4);
+    const az = (p: [number, number, number]) => Math.atan2(p[0], p[2]);
+    const angles = pts.map((p) => az(p));
+    let span = 0;
+    for (const a of angles) {
+      for (const b of angles) {
+        let d = Math.abs(a - b);
+        if (d > Math.PI) d = Math.PI * 2 - d;
+        if (d > span) span = d;
+      }
+    }
+    assert.ok(span < 0.35, `macaroni from above: inner join spanned ${(span * 180) / Math.PI}° around the pole`);
   });
 });

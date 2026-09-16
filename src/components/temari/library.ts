@@ -1,13 +1,15 @@
 /**
- * Workshop catalogs from Suess glossary + Divisions & Markings,
- * cross-checked with TemariKai. Data only — the dock never dumps this list.
+ * Pattern catalog. The dock shows one name per family; this file is data.
  *
- * Names: store four, show one.
- *   id        machine key, English kebab (uwagake-chidori)
- *   names.ja  上掛け千鳥かがり — canonical, matches the books
- *   names.reading  Hepburn, TemariKai/Suess
- *   names.en  book heading for lookup, never a craft button
- *   names.ru  current UI
+ *   family     the pattern (kiku, hoshi, …) — what the player picks
+ *   id         one implementation of that pattern on a division
+ *   requires   which jiwari that implementation sews
+ *   recipe     geometry / stitch order (compileKiku reads this)
+ *   names      ja / reading / en / ru — never a book number
+ *   note       sources, if any (TemariKai, Ozaki, Suess GT14 as a match)
+ *
+ * A book heading is a footnote, not an id. New division = new row + compiler,
+ * not a GT-number and not a slider.
  */
 
 import { MARI_SIZES, STITCH_THREAD_MM, WRAP_THREAD_MM } from "./measure.ts";
@@ -64,11 +66,15 @@ export type StitchEntry = {
   appears: AppearsIn;
 };
 
+/** One supported way to sew a pattern. Not a book recipe. */
 export type MotifEntry = {
+  /** Implementation key (`kiku-8-point`). Never a Suess / GT id. */
   id: string;
+  /** Pattern the player names. Several rows may share a family. */
   family: MotifFamily;
   names: CatalogName;
   stitch: string;
+  /** Division this implementation actually sews. */
   requires: "simple" | "c8" | "c10" | "any";
   skip?: 1 | 2;
   direction?: "outward" | "inward";
@@ -76,6 +82,7 @@ export type MotifEntry = {
   centers?: "facing-pole" | "both-poles";
   status: CatalogStatus;
   appears: AppearsIn;
+  /** Craft note + bibliography if a source matches this sew, not the law. */
   note: string;
   recipe?: PatternRecipe;
 };
@@ -211,7 +218,7 @@ export const MOTIF_CATALOG: MotifEntry[] = [
   {
     id: "kiku-8-point",
     family: "kiku",
-    names: n("菊", "kiku", "chrysanthemum, 8-point", "кику 8"),
+    names: n("菊かがり", "kiku kagari", "Chrysanthemum", "Кику"),
     stitch: "uwagake-chidori",
     requires: "simple",
     skip: 2,
@@ -220,7 +227,7 @@ export const MOTIF_CATALOG: MotifEntry[] = [
     centers: "facing-pole",
     status: "now",
     appears: "dock",
-    note: "Классика Simple 8. Два набора по 4 луча.",
+    note: "Полюсная кику на Simple 8, compileKiku. TemariKai / Ozaki beginner. Suess GT14 — совпадающий вариант, не имя в игре.",
     recipe: KIKU_8_POINT,
   },
   {

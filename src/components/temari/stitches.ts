@@ -6,9 +6,17 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
-import { stackBump, scoopAway, scoopRadius, markTurnPast as markTurnPastVec, sphereBezier as sphereBezierVec } from "./kagari";
+import { stackBump, scoopAway, scoopRadius, markTurnPast as markTurnPastVec, sphereBezier as sphereBezierVec, innerBiteJoin as innerBiteJoinVec } from "./kagari";
 
 const ARC_SEGS = 32;
+/** Almost one pearl so the over cord clears; a hair less so it nestles, not a tent. */
+const STACK_LIFT = 0.92;
+
+function poleBlend(p: THREE.Vector3) {
+  const ny = Math.abs(p.y) / (p.length() || 1);
+  if (ny < 0.86) return 0;
+  return Math.min(1, (ny - 0.86) / 0.13);
+}
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -175,6 +183,7 @@ function arcPath(
   const sitB = stitch.sitB ?? 0;
   const sitMid = stitch.sitMid ?? 0;
   const sitMidT = stitch.sitMidT;
+  const sitAts = stitch.sitAts;
   const uniform = stitch.lift ?? 0;
   const via = stitch.via ?? [];
   const anchors: THREE.Vector3[] = [
@@ -184,7 +193,11 @@ function arcPath(
   ];
   const pts: THREE.Vector3[] = [];
   const lift = (t: number, dir: THREE.Vector3) => {
-    const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT)) * diameter * 0.7;
+    let extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts)) * diameter * STACK_LIFT;
+    // Inner uwagake is one pearl on the mari. A 3-high stack here is the
+    // title-page macaroni on the silhouette.
+    const u = dir.clone().normalize();
+    extra *= 1 - 0.92 * poleBlend(u);
     return dir.clone().multiplyScalar(1 + half + extra);
   };
   if (via.length === 0) {
@@ -261,8 +274,9 @@ function sphereBezier(
 
 /**
  * Replace the cusp at `mark` with a pearl U around it.
- * Visiting the mark as a vertex makes a diamond bead: tube rings pile up
- * and the tangent at the tip is across the jiwari (the old enter→exit bar).
+ * Outer V: the U sits past the pin (tip side). Inner uwagake: the U sits
+ * on the open side and must not enter the polar cap — a poleward loop is
+ * macaroni on the silhouette.
  */
 function joinAroundMark(
   pts: THREE.Vector3[],
@@ -270,28 +284,51 @@ function joinAroundMark(
   mark: THREE.Vector3,
   pearl: number,
 ) {
-  const keep = pearl * 2;
+  const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
+  const keep = pearl * (inner ? 0.5 : 0.7);
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
   }
   let i = 0;
   while (i < piece.length - 2 && piece[i]!.distanceToSquared(mark) < keep2) i++;
-  const from = pts[pts.length - 1];
-  const to = piece[i];
-  if (!from || !to) {
+  const fromRaw = pts[pts.length - 1];
+  const toRaw = piece[i];
+  if (!fromRaw || !toRaw) {
     for (let k = i; k < piece.length; k++) pts.push(piece[k]!);
     return;
   }
-  if (from.distanceToSquared(to) < pearl * pearl * 0.05) {
+  if (fromRaw.distanceToSquared(toRaw) < pearl * pearl * 0.05) {
     for (let k = i; k < piece.length; k++) {
-      if (k === 0 && nearVec(from, piece[k]!)) continue;
+      if (k === 0 && nearVec(fromRaw, piece[k]!)) continue;
       pts.push(piece[k]!);
     }
     return;
   }
-  const past = markTurnPast(from, mark, to, pearl);
-  for (const p of sphereBezier(from, past, to, 12)) pts.push(p);
+  const atKeep = (p: THREE.Vector3) => {
+    const d = p.distanceTo(mark);
+    if (d <= keep || d < 1e-9) return p.clone();
+    slerp(mark, p, keep / d, _a);
+    return _a.clone();
+  };
+  pts.pop();
+  const from = atKeep(fromRaw);
+  const to = atKeep(toRaw);
+  pts.push(from);
+  if (inner) {
+    for (const p of innerBiteJoinVec(
+      [from.x, from.y, from.z],
+      [mark.x, mark.y, mark.z],
+      [to.x, to.y, to.z],
+      pearl,
+      3,
+    )) {
+      pts.push(new THREE.Vector3(p[0], p[1], p[2]));
+    }
+  } else {
+    const past = markTurnPast(from, mark, to, pearl * 0.32);
+    for (const p of sphereBezier(from, past, to, 20)) pts.push(p);
+  }
   for (let k = i + 1; k < piece.length; k++) pts.push(piece[k]!);
 }
 
@@ -308,7 +345,15 @@ function scoopOnPath(
 ): THREE.Vector3[] {
   const half = unitFromMm(kindMm(kind)) * 0.5;
   const surfaceR = at.length();
-  const units = scoopAway([at.x, at.y, at.z], [from.x, from.y, from.z]);
+  const inner = Math.abs(at.y) / (at.length() || 1) > 0.75;
+  if (inner) return [];
+  const guide = from;
+  const units = scoopAway(
+    [at.x, at.y, at.z],
+    [guide.x, guide.y, guide.z],
+    8,
+    undefined,
+  );
   const n = units.length;
   if (n === 0) return [];
   return units.map((p, i) => {
@@ -348,31 +393,52 @@ function stackedArcChain(
   kind: ThreadKind,
 ) {
   if (chain.length === 1) return stackedArcCord(chain[0]!, kind);
-  const pts: THREE.Vector3[] = [];
-  for (let i = 0; i < chain.length; i++) {
-    const piece = arcPath(chain[i]!, kind);
-    if (piece.length < 2) continue;
+  const pearl = unitFromMm(kindMm(kind));
+  const parts: THREE.BufferGeometry[] = [];
+  const flush = (pts: THREE.Vector3[], parks: boolean) => {
+    if (pts.length < 2) return;
+    const path = parks ? buryWorkingStart(pts, kind) : buryWorkingEnds(pts, kind);
+    parts.push(tubeOnSphere(path, stitchRadius(kind), false, false));
+  };
+  let pts: THREE.Vector3[] = [];
+  let kai0 = chain[0]?.kai;
+  let headA = chain[0]?.a;
+  const joinPiece = (piece: THREE.Vector3[]) => {
     if (pts.length === 0) {
       pts.push(...piece);
-      continue;
+      return;
     }
     const mark = pts[pts.length - 1]!;
     const next0 = piece[0]!;
     if (nearVec(mark, next0) && pts.length > 1 && piece.length > 1) {
-      // Pearl U around the mark. A cusp through the vertex, or enter→exit
-      // as a cord, is a diamond bead on the ray (the user's packed-V shots).
       pts.pop();
-      joinAroundMark(pts, piece, mark, unitFromMm(kindMm(kind)));
+      joinAroundMark(pts, piece, mark, pearl);
     } else {
       const start = nearVec(mark, next0) ? 1 : 0;
       for (let k = start; k < piece.length; k++) pts.push(piece[k]!);
     }
+  };
+  for (let i = 0; i < chain.length; i++) {
+    const s = chain[i]!;
+    if (s.kai !== kai0 && pts.length) {
+      const prev = chain[i - 1]!;
+      flush(pts, !!(headA && sameMark(headA, prev.b)));
+      pts = [];
+      kai0 = s.kai;
+      headA = s.a;
+    }
+    const piece = arcPath(s, kind);
+    if (piece.length < 2) continue;
+    joinPiece(piece);
   }
-  if (pts.length < 2) return new THREE.BufferGeometry();
-  // Closed drawing ≠ the thread joined itself. Park on the mari; don't weld.
-  const parks = chain.length > 2 && sameMark(chain[0]!.a, chain[chain.length - 1]!.b);
-  const path = parks ? buryWorkingStart(pts, kind) : buryWorkingEnds(pts, kind);
-  return tubeOnSphere(path, stitchRadius(kind), false, false);
+  if (pts.length >= 2) {
+    const last = chain[chain.length - 1]!;
+    flush(pts, !!(headA && sameMark(headA, last.b)));
+  }
+  const ok = parts.filter((g) => (g.getAttribute("position")?.count ?? 0) > 0);
+  if (ok.length === 0) return new THREE.BufferGeometry();
+  if (ok.length === 1) return ok[0]!;
+  return mergeGeometries(ok, false) ?? ok[0]!;
 }
 
 function stackedArcRibbon(
@@ -389,14 +455,15 @@ function stackedArcRibbon(
   const sitB = stitch.sitB ?? 0;
   const sitMid = stitch.sitMid ?? 0;
   const sitMidT = stitch.sitMidT;
+  const sitAts = stitch.sitAts;
   const uniform = stitch.lift ?? 0;
   const via = stitch.via ?? [];
   const pts: THREE.Vector3[] = [];
   if (via.length === 0) {
     for (let i = 0; i <= ARC_SEGS; i++) {
       const t = i / ARC_SEGS;
-      const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT));
-      const extra = uniform + stacked * diameter * 0.7;
+      const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts));
+      const extra = uniform + stacked * diameter * STACK_LIFT;
       slerpUnit(_pa, _pb, t, _a);
       pts.push(_a.clone().multiplyScalar(1 + half + extra));
     }
@@ -414,8 +481,8 @@ function stackedArcRibbon(
       const start = s === 0 ? 0 : 1;
       for (let i = start; i <= 1; i++) {
         const t = (s + i) / steps;
-        const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT));
-        const extra = uniform + stacked * diameter * 0.7;
+        const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts));
+        const extra = uniform + stacked * diameter * STACK_LIFT;
         slerpUnit(a, b, i, _a);
         pts.push(_a.clone().multiplyScalar(1 + half + extra));
       }
@@ -449,9 +516,9 @@ function makeYarnTexture(fadeEdges: boolean) {
   if (!ctx) return tex;
   ctx.fillStyle = "#e8e0d6";
   ctx.fillRect(0, 0, 64, 16);
-  ctx.strokeStyle = "rgba(40,34,28,0.12)";
+  ctx.strokeStyle = "rgba(40,34,28,0.06)";
   ctx.lineWidth = 1;
-  for (const y of [5, 11]) {
+  for (const y of [2, 4, 6, 8, 10, 12, 14]) {
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(64, y);
@@ -603,6 +670,13 @@ function tubeOnSphere(
     }
   }
   if (!closed) path.push(pts[pts.length - 1]!.clone());
+  for (const p of path) {
+    const t = poleBlend(p);
+    if (t <= 0) continue;
+    const L = p.length() || 1;
+    const maxR = 1 + radius * (1.1 - 0.75 * t);
+    if (L > maxR) p.multiplyScalar(maxR / L);
+  }
   const nPath = path.length;
   if (nPath < 2) return new THREE.BufferGeometry();
   const along = [0];
@@ -620,7 +694,7 @@ function tubeOnSphere(
     };
     return Math.min(hermite(s / taperLen), hermite((total - s) / taperLen));
   };
-  const radialSegs = 10;
+  const radialSegs = 20;
   const ring = radialSegs + 1;
   const pos: number[] = [];
   const nrm: number[] = [];
@@ -645,15 +719,20 @@ function tubeOnSphere(
     _side.normalize();
     _mid.crossVectors(_t, _side).normalize();
     const r = radius * scaleAt(along[i] ?? 0);
+    const cap = poleBlend(p);
+    // Flatten height on the silhouette; keep width so the cap is pearls, not pasta.
+    const rOut = r * (0.88 - 0.12 * cap);
+    const rAlong = r * (0.88 - 0.5 * cap);
     for (let j = 0; j <= radialSegs; j++) {
       const ang = (j / radialSegs) * Math.PI * 2;
       const c = Math.cos(ang);
       const s = Math.sin(ang);
-      const nx = _side.x * c + _mid.x * s;
-      const ny = _side.y * c + _mid.y * s;
-      const nz = _side.z * c + _mid.z * s;
-      pos.push(p.x + nx * r, p.y + ny * r, p.z + nz * r);
-      nrm.push(nx, ny, nz);
+      const nx = _side.x * c * rOut + _mid.x * s * rAlong;
+      const ny = _side.y * c * rOut + _mid.y * s * rAlong;
+      const nz = _side.z * c * rOut + _mid.z * s * rAlong;
+      pos.push(p.x + nx, p.y + ny, p.z + nz);
+      const nl = Math.hypot(nx, ny, nz) || 1;
+      nrm.push(nx / nl, ny / nl, nz / nl);
       uv.push(i / Math.max(1, nPath - 1), j / radialSegs);
     }
   }

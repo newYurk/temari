@@ -16,16 +16,20 @@ describe("workshop library", () => {
     const dock = dockMotifs();
     assert.equal(dock.length, 1);
     assert.equal(dock[0]?.id, "kiku-8-point");
+    assert.notEqual(dock[0]?.id, "GT14");
+    assert.equal(dock[0]?.family, "kiku");
+    assert.equal(dock[0]?.requires, "simple");
     assert.equal(dock[0]?.recipe?.id, KIKU_8_POINT.id);
-    assert.equal(catalogLabel(dock[0].names, "ui"), "кику 8");
+    assert.equal(catalogLabel(dock[0].names, "ui"), "Кику");
+    assert.match(dock[0]?.note ?? "", /GT14/);
   });
 
   it("stores ja + reading + en + ru, and picks by surface", () => {
     const kiku = MOTIF_CATALOG[0];
-    assert.equal(kiku?.names.ja, "菊");
-    assert.equal(kiku?.names.reading, "kiku");
-    assert.equal(catalogLabel(kiku.names, "book"), "菊（kiku）");
-    assert.equal(catalogLabel(kiku.names, "status"), "kiku · 菊");
+    assert.equal(kiku?.names.ja, "菊かがり");
+    assert.equal(kiku?.names.reading, "kiku kagari");
+    assert.equal(catalogLabel(kiku.names, "book"), "菊かがり（kiku kagari）");
+    assert.equal(catalogLabel(kiku.names, "status"), "kiku kagari · 菊かがり");
     const stitch = STITCH_CATALOG[0];
     assert.equal(stitch?.names.ja, "上掛け千鳥かがり");
     assert.match(stitch.names.reading, /uwagake/);

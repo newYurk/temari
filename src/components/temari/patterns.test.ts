@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { fillKikuSewn, kikuSpec, stitchesForSlot, hitKikuSlot, kikuThetas, around, nextKagariPole, compileKiku, stitchesFromOps, kikuFlank, kikuMarkPins, kikuWorkingPins } from "./patterns.ts";
+import { fillKikuSewn, kikuSpec, stitchesForSlot, hitKikuSlot, kikuThetas, around, nextKagariPole, compileKiku, stitchesFromOps, kikuFlank, kikuMarkPins, kikuWorkingPins, kikuMarksReady, snapToKikuMark, kikuPinHint, generateTitleMari } from "./patterns.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 
 function merPhi(p: [number, number, number]) {
@@ -67,7 +67,8 @@ describe("kiku on Simple 8", () => {
     assert.ok(Math.abs(spec.inner - unitFromMm(5)) < 1e-6);
     assert.ok(Math.abs(spec.outer - Math.PI / 3) < 1e-9);
     const first = kikuThetas(spec, 0);
-    assert.ok(Math.abs(first.tOuter - spec.outer) < 1e-9, "round 0 goes to the pin");
+    assert.ok(first.tOuter < spec.outer, "round 0 sits just below the pin");
+    assert.ok(spec.outer - first.tOuter < spec.pitch * 1.05, "just below, not a short star");
     assert.ok(first.tOuter - first.tInner > 0.7, "first V is a long petal, not a tick");
     assert.ok(spec.inner + spec.rounds * spec.pitch <= spec.ceiling + spec.pitch);
     assert.ok(Math.abs(spec.pitch - unitFromMm(STITCH_THREAD_MM.pearl5)) < 1e-6);
@@ -261,17 +262,48 @@ describe("kiku on Simple 8", () => {
     }
   });
 
-  it("first bottom stitch sits at the GT14 pin", () => {
+  it("snapToKikuMark binds a meridian tap to the ⅓ mark, not the equator", () => {
+    const spec = kikuSpec("simple");
+    const marks = kikuWorkingPins("simple", 0);
+    const outer = marks.find((pin) => pin.id === "kiku-0-0");
+    assert.ok(outer);
+    if (!outer) return;
+    const near: [number, number, number] = [
+      outer.p[0] * 0.96,
+      outer.p[1] * 0.96 + 0.04,
+      outer.p[2] * 0.96,
+    ];
+    const hit = snapToKikuMark(near, "simple", 0);
+    assert.ok(hit);
+    if (!hit) return;
+    assert.equal(hit.id, "kiku-0-0");
+    const theta = Math.acos(Math.min(1, Math.max(-1, hit.p[1])));
+    assert.ok(Math.abs(theta - spec.outer) < 1e-6);
+    const equator: [number, number, number] = [0, 0, 1];
+    assert.equal(snapToKikuMark(equator, "simple", 0), null, "exact equator is not a kiku mark");
+    const farSouth: [number, number, number] = [0, -1, 0];
+    assert.equal(snapToKikuMark(farSouth, "simple", 0), null);
+  });
+
+  it("kikuMarksReady is all 9 working marks, not a free polygon", () => {
+    const marks = kikuWorkingPins("simple", 0);
+    assert.equal(marks.length, 9);
+    assert.equal(kikuMarksReady([], "simple", 0), false);
+    assert.equal(kikuMarksReady(marks.slice(0, 8), "simple", 0), false);
+    assert.equal(kikuMarksReady(marks, "simple", 0), true);
+    assert.match(kikuPinHint(0, 9), /полюс/);
+    assert.match(kikuPinHint(9, 9), /Можно шить/);
+  });
+
+  it("first bottom stitch sits just below the GT14 pin", () => {
     const spec = kikuSpec("simple");
     const ops = compileKiku("simple", "out", "even", 0, 0, 1, 0);
     const outer = ops.filter((op) => op.mark.t === "outer");
     assert.equal(outer.length, 4);
     for (const op of outer) {
       const theta = Math.acos(Math.min(1, Math.max(-1, op.mark.at[1])));
-      assert.ok(
-        Math.abs(theta - spec.outer) < 1e-5,
-        `outer ${theta} vs pin ${spec.outer}`,
-      );
+      assert.ok(theta < spec.outer, `outer ${theta} is poleward of pin ${spec.outer}`);
+      assert.ok(spec.outer - theta < spec.pitch * 1.05, "just below, not a new latitude");
     }
   });
 
@@ -298,10 +330,21 @@ describe("kiku on Simple 8", () => {
     const spec = kikuSpec("simple", "even", "fit");
     assert.ok(spec.fit >= 5 && spec.fit <= 10, `fit=${spec.fit}`);
     const last = kikuThetas(spec, spec.fit - 1);
-    assert.ok(last.tOuter <= spec.ceiling + 1e-9, "never past the obi mark");
+    assert.ok(last.tOuter <= spec.obi + 1e-9, "classic stop is the obi strip");
     assert.ok(last.tOuter > spec.outer + spec.stretch * 3, "later rounds pack past the first pin");
     const first = kikuThetas(spec, 0);
     assert.ok(last.tOuter - last.tInner > first.tOuter - first.tInner, "points stretch; flanks stay parallel");
+  });
+
+  it("capacity walks to this pole's equator; Fill is not locked at the obi", () => {
+    const spec = kikuSpec("simple", "even", "fit");
+    assert.ok(spec.capacity > spec.fit, `capacity ${spec.capacity} should pass the obi (${spec.fit})`);
+    const last = kikuThetas(spec, spec.capacity - 1);
+    assert.ok(last.tOuter <= spec.ceiling + 1e-9, "does not cross the equator");
+    assert.ok(last.tOuter > spec.obi, "the extra rounds are the band that was reserved for obi");
+    const full = compileKiku("simple", "out", "even", 0, 0, spec.capacity);
+    const classic = compileKiku("simple", "out", "even", 0, 0, "fit");
+    assert.ok(full.length > classic.length);
   });
 
   it("hitKikuSlot asks kikuThetas, not an inward band", () => {
@@ -352,6 +395,28 @@ describe("kiku on Simple 8", () => {
     }
   });
 
+  it("packed flanks stay taut — colatitude does not S-wave back toward the pole", () => {
+    const pole: [number, number, number] = [0, 1, 0];
+    const spec = kikuSpec("simple", "even", "fit");
+    const step = Math.PI / 4;
+    for (const ring of [1, 3, spec.fit - 1]) {
+      const left = kikuFlank(pole, spec, ring, 0, step);
+      const pts = [left.a, ...left.via, left.b];
+      let maxDrop = 0;
+      let prev = polar(pole, pts[0]!).theta;
+      for (let i = 1; i < pts.length; i++) {
+        const th = polar(pole, pts[i]!).theta;
+        const drop = prev - th;
+        if (drop > maxDrop) maxDrop = drop;
+        prev = th;
+      }
+      assert.ok(
+        maxDrop < spec.pitch * 0.35,
+        `ring ${ring} theta drop ${maxDrop} — packed close-ups were a garden-hose S`,
+      );
+    }
+  });
+
   it("one set of one kai is four petals to the pin, not a short star", () => {
     const ops = compileKiku("simple", "out", "even", 0, 0, 1, 0);
     assert.equal(ops.length, 8);
@@ -363,5 +428,15 @@ describe("kiku on Simple 8", () => {
     const spec = kikuSpec("simple", "even", 1);
     assert.ok(Math.abs(th - spec.outer) < 0.02, "first corners sit on the pin, ⅓ from the equator");
     assert.ok(th > spec.inner + 0.5, "first V is long");
+  });
+
+  it("title kiku is kin on beni, not navy-on-burgundy", () => {
+    const stitches = generateTitleMari();
+    const kikuArcs = stitches.filter((s) => s.kind === "arc");
+    assert.ok(kikuArcs.length > 20);
+    assert.ok(
+      kikuArcs.every((s) => s.kind === "arc" && s.color === 1),
+      "kiku is gold pearl, not wrap or navy",
+    );
   });
 });
