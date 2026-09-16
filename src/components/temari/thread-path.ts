@@ -40,6 +40,24 @@ export type MarkingSupport = {
   radiusMm: number;
   curve: ThreadCurve;
 };
+/** Finite material interval of a previously laid span or a fixed marking support. */
+export type ThreadTarget = { id: string; t0: number; t1: number };
+export type ThreadWindow = { spanId: string; t0: number; t1: number };
+export type ThreadCrossing = {
+  id: string;
+  opId: string;
+  /** Consecutive windows allow a crossing through a smooth curve join. */
+  working: ThreadWindow[];
+  target: ThreadTarget;
+  pass: "over" | "under";
+};
+export type ThreadCapture = {
+  id: string;
+  opId: string;
+  targets: ThreadTarget[];
+  overCrossingIds: string[];
+  underCrossingIds: string[];
+};
 export type C8ThreadCoupon = {
   kind: "engineering-thread-path";
   bodyRadiusMm: number;
@@ -51,6 +69,9 @@ export type C8ThreadCoupon = {
   marks: C8CouponMark[];
   fixture: Record<string, number>;
   assumptions: readonly string[];
+  /** Optional on the older single-round engineering baseline. */
+  crossings?: ThreadCrossing[];
+  captures?: ThreadCapture[];
 };
 
 export type PathDiagnostic = {

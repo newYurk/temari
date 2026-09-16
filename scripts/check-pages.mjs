@@ -16,7 +16,7 @@ try {
   const overflow = () =>
     page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
   await page.goto(`${base}lab.html`);
-  await page.locator('#sphere[data-step="8"]').waitFor();
+  await page.locator('#sphere[data-step="16"]').waitFor();
   assert.equal(await page.locator("#sphere text").count(), 8);
   await page.screenshot({ path: `${out}/lab-desktop.png`, fullPage: true });
   for (let center = 0; center < 6; center++) {

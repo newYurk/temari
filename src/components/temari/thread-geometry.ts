@@ -1,3 +1,4 @@
+import { validateThreadCrossings } from "./thread-crossings";
 import type { C8ThreadCoupon, PathDiagnostic, PathValidation, PointMm, ThreadCurve, ThreadSpan } from "./thread-path";
 
 const add = (a: PointMm, b: PointMm): PointMm => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -308,7 +309,7 @@ export function validateThreadCoupon(coupon: C8ThreadCoupon, toleranceMm = .005)
       if (!span || owned.has(id) || span.opId !== op.id || span.step !== op.step) graphError("Every operation span must exist, match its owner/step and be owned exactly once.", [id]);
       owned.add(id);
     }
-    if (op.captureIds?.some((id) => !coupon.supports.some((s) => s.id === id))) graphError("A capture refers to a missing marking support.", op.spanIds);
+    if (op.captureIds?.some((id) => !coupon.supports.some((s) => s.id === id) && !coupon.spans.some((s) => s.id === id && (coupon.operations.find((owner) => owner.id === s.opId)?.order ?? Infinity) < op.order))) graphError("A capture refers to a missing or not-yet-laid target.", op.spanIds);
   }
   if (!coupon.threadId || coupon.spans.some((span) => span.threadId !== coupon.threadId)) graphError("A single-thread coupon requires one nonempty working thread ID shared by every span.");
   if (coupon.spans.some((span) => !owned.has(span.id))) graphError("A working span has no operation owner.");
@@ -392,5 +393,6 @@ export function validateThreadCoupon(coupon: C8ThreadCoupon, toleranceMm = .005)
       else if (result.lower <= numeric) addDiagnostic(self ? "self-contact-unresolved" : "support-contact-unresolved", "unresolved", result.ids, "Clearance interval contains zero after refinement; touching is not certified clearance.", result.lower);
     }
   } catch (e) { addDiagnostic("distance-unresolved", "unresolved", [], String(e)); }
+  diagnostics.push(...validateThreadCrossings(coupon, toleranceMm));
   return finish();
 }

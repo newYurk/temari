@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { polePositions } from "./components/temari/division";
 import { jiwariNormals } from "./components/temari/jiwari";
 import { C8_ENGINEERING_FIXTURE } from "./components/temari/c8-engineering-coupon";
-import { createC8ThreadCoupon } from "./components/temari/c8-thread-coupon";
+import { createC8UwagakeCoupon } from "./components/temari/c8-uwagake-coupon";
 import { evaluateCurve, validateThreadCoupon } from "./components/temari/thread-geometry";
 import { uniqueMarkingCircles, type MarkingVector } from "./components/temari/local-marking";
 import type { C8ThreadCoupon, ThreadCurve, ThreadSpan } from "./components/temari/thread-path";
@@ -62,6 +62,15 @@ const diagnosticLabels: Record<string,string> = {
   "support-penetration":"Обнаружено пересечение с разметочной опорой или между опорами.",
   "self-contact-unresolved":"Зазор между участками одной нити требует уточнения.",
   "support-contact-unresolved":"Касание разметочной опоры пока не разрешено расчётом.",
+  "crossing-contract":"Для прохода над нитью или под ней задан некорректный участок.",
+  "crossing-future-target":"Подхват ссылается на ещё не уложенный участок.",
+  "crossing-missing":"Нить не пересекает заданный участок пучка в проекции на основу.",
+  "crossing-unresolved":"Порядок прохода над нитью и под ней требует уточнения.",
+  "crossing-wrong-side":"Нить проходит с неверной стороны прежнего участка.",
+  "crossing-penetration":"Нити пересекаются объёмами в месте прохода.",
+  "capture-contract":"Некорректно задан состав захватываемого пучка.",
+  "capture-incomplete":"Для части пучка отсутствует проход сверху или снизу.",
+  "capture-order":"Возврат под пучком происходит раньше подхода сверху.",
 };
 
 class YarnCurve extends THREE.Curve<THREE.Vector3> {
@@ -91,7 +100,7 @@ function rebuild() {
   const firstCircle=circles.find(c=>Math.abs(dot(c.normal,center))<1e-10)!;
   first=unit(cross(firstCircle.normal,center));
   frameY=cross(center,first);
-  coupon=createC8ThreadCoupon({center,circles,firstRay:{circleId:firstCircle.id,tangent:first},
+  coupon=createC8UwagakeCoupon({center,circles,firstRay:{circleId:firstCircle.id,tangent:first},
     handedness:input("reverse").checked?-1:1,...C8_ENGINEERING_FIXTURE,
     circumferenceMm:Number(input("circumference").value)});
   const result=validateThreadCoupon(coupon,toleranceMm);
@@ -101,7 +110,7 @@ function rebuild() {
   text("validation",result.status==="passed" ? "Геометрические проверки пройдены" :
     result.status==="failed" ? "Путь не прошёл проверку" : "Точности проверки пока недостаточно");
   text("validation-detail",result.status==="passed" ?
-    "Проверены стыки, положение относительно основы и зазоры между нитями. Это проверка заданной геометрии, без расчёта натяжения." :
+    "Проверены непрерывность, положение относительно основы, зазоры и порядок прохода над прежними нитями и под ними. Натяжение не рассчитывается." :
     [...new Set(result.diagnostics.map(d=>diagnosticLabels[d.code]??"Численная проверка требует уточнения."))].join(" "));
   const number=(v:number)=>Number.isFinite(v)?v.toFixed(2):"—";
   text("length-total",`${number(result.lengthMm.total)} мм`);
@@ -114,6 +123,7 @@ function rebuild() {
   text("self-gap",`${number(result.minSelfGapMm)} мм`);
   text("curvature",number(result.maxCurvatureTimesRadius));
   text("tolerance",`${toleranceMm} мм`);
+  text("crossing-count",String(coupon.crossings?.length??0));
   disposeModel();
   const R=coupon.bodyRadiusMm;
   body=new THREE.Mesh(new THREE.SphereGeometry(R,96,64),new THREE.MeshStandardMaterial({
@@ -132,8 +142,9 @@ function rebuild() {
   }
   for(const support of coupon.supports) model.add(tube(support.curve,support.radiusMm,0x84623f));
   threadMeshes=coupon.spans.map(span=>{
-    const color=diagnosticSpans.has(span.id)?0xbd601b:span.zone==="surface"?0x963e44:0x31688f;
+    const color=diagnosticSpans.has(span.id)?0xbd601b:span.zone==="surface"?(span.step<=8?0xa87432:0x963e44):0x31688f;
     const mesh=tube(span.curve,coupon.threadRadiusMm,color);
+    mesh.userData.baseColor=color;
     model.add(mesh); return {span,mesh};
   });
   stage.dataset.threadId=coupon.threadId;
@@ -142,6 +153,9 @@ function rebuild() {
 function render() {
   rebuild();
   const R=coupon.bodyRadiusMm,step=Number(input("step").value);
+  const totalSteps=Math.max(...coupon.spans.map(span=>span.step));
+  const capture=coupon.captures?.find(c=>coupon.operations.find(op=>op.id===c.opId)?.step===step);
+  const targets=new Set(capture?.targets.map(t=>t.id));
   const inside=input("inside").checked;
   const turn=Number(input("turn").value)*Math.PI/180,tilt=Number(input("tilt").value)*Math.PI/180;
   const view=vector(frameY).multiplyScalar(Math.sin(tilt))
@@ -162,9 +176,15 @@ function render() {
   body.material.opacity=inside?.12:1;
   body.material.depthWrite=!inside;
   guides.visible=!inside;
-  threadMeshes.forEach(({span,mesh})=>{mesh.visible=step>0&&span.step<=step;});
+  threadMeshes.forEach(({span,mesh})=>{
+    mesh.visible=step>0&&span.step<=step;
+    const material=mesh.material as THREE.MeshStandardMaterial;
+    material.color.setHex(input("targets").checked&&targets.has(span.id)?0xc49420:mesh.userData.baseColor);
+  });
   stage.dataset.visibleSpans=String(threadMeshes.filter(m=>m.mesh.visible).length);
   stage.dataset.inside=String(inside);
+  stage.dataset.captureId=capture?.id??"";
+  stage.dataset.captureTargets=String(capture?.targets.length??0);
   const size=stage.clientWidth;
   renderer.setSize(size,size,false);
   renderer.render(scene,camera);
@@ -183,19 +203,30 @@ function render() {
   });
   svg.setAttribute("data-center",centerSelect.value);svg.setAttribute("data-step",String(step));
   text("circumference-value",`${Number(input("circumference").value)/10} см`);
-  text("step-value",`${step} / 8`);text("zoom-value",`${zoom}×`);
+  text("step-value",`${step} / ${totalSteps}`);text("zoom-value",`${zoom}×`);
+  input("step").max=String(totalSteps);
   text("progress",step===0?"Только направляющие и восемь разметочных опор":
-    `Пролёты и подхваты: ${Array.from({length:step+1},(_,i)=>(i%8)+1).join(" → ")}`);
+    `Круг ${Math.ceil(step/8)} · стежок ${((step-1)%8)+1} из 8 · ${(step-1)%8+1} → ${step%8+1}`);
   text("step-note",step===0?"Нажмите «Следующий стежок», чтобы начать нить.":step===8?
-    "Круг завершён. Конец уходит внутрь отдельно от начала; они не склеены.":
-    `Показан подхват у метки ${(step%8)+1}. Включите «Путь внутри» и приблизьте его.`);
-  (document.getElementById("next") as HTMLButtonElement).disabled=step===8;
+    "Первый круг переходит во второй: нить захватывает уже уложенное начало.":step===totalSteps?
+    "Два круга завершены одной нитью. Конец уходит внутрь отдельно от начала.":
+    `Подхват у метки ${(step%8)+1}. Прозрачная основа позволяет увидеть путь снизу.`);
+  const previousTargets=capture?.targets.filter(t=>coupon.spans.some(s=>s.id===t.id)).length??0;
+  text("capture-note",previousTargets>0?
+    `Ранее уложенных участков в захвате: ${previousTargets}. Рабочая нить проходит над ними, затем возвращается под ними и разметкой.`:
+    "Здесь небольшой подхват разметки. Расширенный захват прежнего ряда виден у внутренних меток.");
+  (document.getElementById("next") as HTMLButtonElement).disabled=step===totalSteps;
 }
 let pending=false;
 function scheduleRender() { if(!pending) {pending=true;requestAnimationFrame(()=>{pending=false;render();});} }
 document.querySelectorAll("input,select").forEach(el=>el.addEventListener("input",scheduleRender));
-document.getElementById("next")!.addEventListener("click",()=>{input("step").value=String(Math.min(8,Number(input("step").value)+1));render();});
+document.getElementById("next")!.addEventListener("click",()=>{input("step").value=String(Math.min(Number(input("step").max),Number(input("step").value)+1));render();});
 document.getElementById("restart")!.addEventListener("click",()=>{input("step").value="0";render();});
+document.getElementById("first-round")!.addEventListener("click",()=>{input("step").value="8";render();});
+document.getElementById("second-catch")!.addEventListener("click",()=>{
+  input("step").value="10";input("zoom").value="5";input("turn").value="25";
+  input("tilt").value="20";input("inside").checked=true;render();
+});
 document.getElementById("front")!.addEventListener("click",()=>{input("turn").value="0";input("tilt").value="0";input("zoom").value="1";render();});
 document.getElementById("side")!.addEventListener("click",()=>{input("turn").value="65";input("tilt").value="15";render();});
 document.getElementById("closeup")!.addEventListener("click",()=>{

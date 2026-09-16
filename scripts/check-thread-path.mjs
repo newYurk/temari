@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { chromium } from "playwright";
 
 const base = (process.argv[2] ?? "http://127.0.0.1:4173/").replace(/\/?$/, "/");
-const out = "screenshots/thread-path-2026-09-16";
+const out = "screenshots/uwagake-row2-2026-09-16";
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const errors = [];
@@ -15,10 +15,11 @@ try {
   const waitStep = step => page.locator(`#sphere[data-step="${step}"]`).waitFor();
   const passed = async () => assert.equal(await page.locator("#validation").getAttribute("data-status"), "passed");
   const frame = name => page.screenshot({ path: `${out}/${name}.png`, fullPage: true });
-  await waitStep(8);
+  await waitStep(16);
   await passed();
-  assert.equal(await stage.getAttribute("data-span-count"), "29");
-  assert.equal(await stage.getAttribute("data-visible-spans"), "29");
+  const spanCount = Number(await stage.getAttribute("data-span-count"));
+  assert.ok(spanCount > 29, "two rounds contain a continuous additional path");
+  assert.equal(await stage.getAttribute("data-visible-spans"), String(spanCount));
   const initialFrame = await stage.screenshot();
   const length = await page.locator("#length-total").innerText();
   await frame("complete");
@@ -26,12 +27,23 @@ try {
   await waitStep(0);
   assert.equal(await stage.getAttribute("data-visible-spans"), "0");
   await frame("before-thread");
-  for (let step = 1; step <= 8; step++) {
+  let previousVisible = 0;
+  for (let step = 1; step <= 16; step++) {
     await page.locator("#next").click();
     await waitStep(step);
-    assert.equal(await stage.getAttribute("data-visible-spans"), String(step === 8 ? 29 : 2 + step * 3));
+    const visible = Number(await stage.getAttribute("data-visible-spans"));
+    assert.ok(visible > previousVisible && visible <= spanCount, "each step adds its actual path prefix");
+    previousVisible = visible;
     assert.equal(await page.locator("#length-total").innerText(), length, "playback retains the same full path");
     if (step === 1) await frame("first-stitch");
+    if (step === 8) {
+      assert.ok(await stage.getAttribute("data-capture-id"), "first round closes with a capture before continuing");
+      await frame("first-round-transition");
+    }
+    if (step === 10) {
+      assert.ok(Number(await stage.getAttribute("data-capture-targets")) >= 3, "second upper bite captures the previous branches and marking");
+      await frame("second-round-catch");
+    }
   }
   assert.deepEqual(await stage.screenshot(), initialFrame, "sequential playback and direct final view agree");
   assert.equal(await page.locator("#next").isDisabled(), true);
@@ -44,6 +56,19 @@ try {
   await page.locator("#inside").uncheck();
   await page.waitForFunction(() => document.querySelector("#thread-view").dataset.inside === "false");
   await frame("catch-opaque-close");
+  await page.locator("#second-catch").click();
+  await waitStep(10);
+  assert.equal(await stage.getAttribute("data-inside"), "true");
+  const highlighted = await stage.screenshot();
+  await page.locator("#targets").uncheck();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.notDeepEqual(await stage.screenshot(), highlighted, "captured branches can be located visually");
+  assert.equal(await page.locator("#length-total").innerText(), length);
+  await page.locator("#targets").check();
+  await frame("second-capture-inside-close");
+  await page.locator("#step").fill("16");
+  await waitStep(16);
+  await page.locator("#inside").uncheck();
   await page.locator("#front").click();
   await page.locator(".view-settings summary").click();
   for (let center = 0; center < 6; center++) {
