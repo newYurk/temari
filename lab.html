@@ -9,7 +9,7 @@
   </head>
   <body>
     <main>
-      <nav><a href="./">← Темари</a><a href="./design.html#status">Состояние модели</a></nav>
+      <nav><a href="./">← Темари</a><a href="#contact-benchmark">Контакт нити ↓</a><a href="./design.html#status">Состояние модели</a></nav>
       <header>
         <p class="eyebrow">Мастерская · исследование C8</p>
         <h1>Новый ряд.<br />Вокруг прежней нити.</h1>
@@ -92,8 +92,62 @@
             Это не аналитический сертификат трубы.</p>
         </details>
       </section>
+      <section id="contact-benchmark" class="contact-benchmark" aria-labelledby="contact-title">
+        <p class="eyebrow">Следующий шаг · укладка к опорам</p>
+        <h2 id="contact-title">От зазора к касанию</h2>
+        <p class="contact-intro">Здесь рассчитывается отдельный плоский пример: идеально гибкая нить
+          огибает неподвижный пучок. Точки входа и выхода одинаковы, лишняя длина вытягивается через выход.
+          Видно, где свободный пролёт сменяется касанием.</p>
+        <div class="contact-controls">
+          <label>Что охватывает нить
+            <select id="contact-supports">
+              <option value="one">Одна нить</option>
+              <option value="two" selected>Две нити</option>
+              <option value="three">Две нити и тонкая опора</option>
+            </select>
+          </label>
+          <label>Диаметр рабочей нити <output id="contact-diameter-value"></output>
+            <input id="contact-diameter" type="range" min="0.2" max="0.6" step="0.05" value="0.4" />
+          </label>
+          <label>Зазор для сравнения <output id="contact-clearance-value"></output>
+            <input id="contact-clearance" type="range" min="0.1" max="0.5" step="0.05" value="0.35" />
+          </label>
+        </div>
+        <div class="contact-comparison">
+          <figure>
+            <figcaption><h3>Путь с зазором</h3><span id="contact-reference-length"></span></figcaption>
+            <svg id="contact-reference" viewBox="-2.4 -1.55 4.7 3.1" role="img" aria-label="Сравнительный маршрут нити с зазором до пучка"></svg>
+            <p>Заданное свободное место вокруг опор.</p>
+          </figure>
+          <figure>
+            <figcaption><h3>Укладка к опорам</h3><span id="contact-tight-length"></span></figcaption>
+            <svg id="contact-tight" viewBox="-2.4 -1.55 4.7 3.1" role="img" aria-label="Вычисленный предельный маршрут с касанием неподвижных нитей"></svg>
+            <p class="contact-key">Синим показаны дуги касания.</p>
+          </figure>
+        </div>
+        <p id="contact-status" role="status"></p>
+        <dl class="contact-metrics">
+          <div><dt>Можно вытянуть через выход</dt><dd id="contact-slack"></dd></div>
+          <div><dt>Опор с дугой касания</dt><dd id="contact-active"></dd></div>
+          <div><dt>Радиус нити × кривизна</dt><dd id="contact-curvature"></dd></div>
+        </dl>
+        <p class="assumption">Оба рисунка имеют одинаковый масштаб и диаметр нити. Толстые опоры —
+          0,4 мм, тонкая — 0,16 мм; это параметры контрольного примера. Не каждая нить внутри пучка
+          обязательно несёт дугу контакта.</p>
+        <details><summary>Почему это пока отдельный пример</summary>
+          <p>В этом пределе нет изгибной жёсткости, трения, веса и сжатия. Натяжение поддерживает
+            контакт, а его величина не меняет форму. Сравниваются два рассчитанных пути;
+            движение между ними здесь не моделируется.</p>
+          <p>Диски обозначают поперечные сечения параллельных нитей. Ветви кику на шаре расходятся;
+            этот рисунок не является вычисленным срезом подхвата C8 выше. Для переноса нужны
+            пространственные контакты, опоры основы и свойства настоящей пряжи.</p>
+          <p>Мастер сначала укладывает нить, затем фиксирует её стежком и подбирает умеренное натяжение.
+            <a href="https://www.temarikai.com/HowToPages/ToolKit/kagari.html">TemariKai о натяжении</a> ·
+            <a href="./design.html#contact-model">Модель и её границы</a></p>
+        </details>
+      </section>
       <section class="scope">
-        <h2>Границы этого образца</h2>
+        <h2>Границы пространственного образца C8</h2>
         <p>Здесь одна непрерывная центральная линия с круглым сечением. Вход, выход и подхват —
           отдельные участки той же нити. Показ внутри меняет прозрачность основы, а приближение — камеру;
           рассчитанные пути и толщина остаются прежними. Восемь коротких разметочных опор заданы как

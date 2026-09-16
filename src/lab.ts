@@ -7,6 +7,7 @@ import { evaluateCurve, validateThreadCoupon } from "./components/temari/thread-
 import { uniqueMarkingCircles, type MarkingVector } from "./components/temari/local-marking";
 import type { C8ThreadCoupon, ThreadCurve, ThreadSpan } from "./components/temari/thread-path";
 import "./lab.css";
+import "./contact-benchmark";
 
 const dot = (a: MarkingVector, b: MarkingVector) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
 const cross = (a: MarkingVector, b: MarkingVector): MarkingVector =>
@@ -219,7 +220,7 @@ function render() {
 }
 let pending=false;
 function scheduleRender() { if(!pending) {pending=true;requestAnimationFrame(()=>{pending=false;render();});} }
-document.querySelectorAll("input,select").forEach(el=>el.addEventListener("input",scheduleRender));
+document.querySelectorAll(".workbench input,.workbench select").forEach(el=>el.addEventListener("input",scheduleRender));
 document.getElementById("next")!.addEventListener("click",()=>{input("step").value=String(Math.min(Number(input("step").max),Number(input("step").value)+1));render();});
 document.getElementById("restart")!.addEventListener("click",()=>{input("step").value="0";render();});
 document.getElementById("first-round")!.addEventListener("click",()=>{input("step").value="8";render();});
