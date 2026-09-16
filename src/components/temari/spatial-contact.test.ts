@@ -36,7 +36,17 @@ describe("spatial contact: bounded spline stationary reference", () => {
         assert.ok(basis.values.every(v => v >= 0));
         pointNear(sampleSpatialSpline(controls, u), [u, 2 * u - 1, -.3 * u]);
         near(basis.derivatives.reduce((sum, b, i) => sum + b * controls[i][0], 0), 1);
+        near(basis.secondDerivatives.reduce((a, b) => a + b), 0);
+        near(basis.secondDerivatives.reduce((sum, b, i) => sum + b * controls[i][0], 0), 0);
       }
+    }
+  });
+
+  it("matches second basis derivatives with central differences of the first derivatives", () => {
+    // Parameters avoid knots, where the third derivative jumps.
+    for (const count of [6, 11]) for (const u of [.013, .29, .52, .77, .987]) {
+      const h = 1e-6, left = spatialSplineBasis(count, u - h).derivatives, right = spatialSplineBasis(count, u + h).derivatives;
+      spatialSplineBasis(count, u).secondDerivatives.forEach((value, i) => near(value, (right[i] - left[i]) / (2 * h), 2e-4));
     }
   });
 
@@ -84,14 +94,21 @@ describe("spatial contact: bounded spline stationary reference", () => {
     }
   });
 
-  it("removes a free bow without moving the fixed ports or end handles", () => {
-    const result = solveSpatialContact(straight);
+  it("removes a free bow with fixed ports and oriented tangents but free positive handle lengths", () => {
+    const result = solveSpatialContact(straight), c = result.controlPointsMm;
     assert.equal(result.status, "converged", JSON.stringify(result.diagnostics));
     near(result.lengthMm, 4, 1e-9);
-    for (const i of [0, 1, 4, 5]) assert.deepEqual(result.controlPointsMm[i], straight.controlPointsMm[i]);
+    for (const i of [0, 5]) assert.deepEqual(c[i], straight.controlPointsMm[i]);
+    // Only the direction of each port handle is prescribed.
+    pointNear([c[1][0] - c[0][0], c[1][1], c[1][2]].map(v => v / Math.hypot(c[1][0] - c[0][0], c[1][1], c[1][2])) as unknown as PointMm, [1, 0, 0]);
+    pointNear([c[4][0] - c[5][0], c[4][1], c[4][2]].map(v => v / Math.hypot(c[4][0] - c[5][0], c[4][1], c[4][2])) as unknown as PointMm, [-1, 0, 0]);
     assert.ok(result.metrics.kktStationarity < SPATIAL_CONTACT_DEFAULTS.stationarityTolerance);
     assert.equal(result.reactions.length, 0);
-    for (let i = 0; i <= 50; i++) near(sampleSpatialSpline(result.controlPointsMm, i / 50)[1], 0, 1e-6);
+    for (let i = 0; i <= 50; i++) near(sampleSpatialSpline(c, i / 50)[1], 0, 1e-6);
+    // The energy objective removes the length functional's reparametrisation freedom.
+    near(result.metrics.minRelativeSpeedBound, 1, 1e-6);
+    near(result.metrics.parametrizationDefect, 0, 1e-9);
+    assert.ok(result.metrics.curvatureTimesRadiusUpper < 1e-6); // residual bow within stationarity tolerance
     assert.ok(Number.isFinite(result.metrics.lengthChangeMm));
   });
 
@@ -103,28 +120,84 @@ describe("spatial contact: bounded spline stationary reference", () => {
     assert.ok(result.metrics.kktStationarity <= SPATIAL_CONTACT_DEFAULTS.stationarityTolerance);
     assert.ok(result.metrics.complementarityMm <= SPATIAL_CONTACT_DEFAULTS.complementarityToleranceMm);
     assert.ok(result.metrics.lengthQuadratureDifferenceMm <= SPATIAL_CONTACT_DEFAULTS.lengthToleranceMm);
-    assert.ok(result.reactions.length > 0 && result.reactions.every(r => r.multiplier >= 0 && r.supportId === "body"));
+    assert.ok(result.reactions.length > 0 && result.reactions.every(r => r.multiplier >= 0 && r.supportId === "body" && r.kind === "body"));
+    // Wrapping radius R + r = 1 gives r*kappa = 0.2, inside the default limit 0.8.
+    assert.ok(Math.abs(result.metrics.curvatureTimesRadiusUpper - .2) < .02);
+    assert.ok(result.metrics.minRelativeSpeedBound > .9);
     for (let i = 0; i <= 1000; i++) assert.ok(Math.hypot(...sampleSpatialSpline(result.controlPointsMm, i / 1000))
       >= 1 - SPATIAL_CONTACT_DEFAULTS.feasibilityToleranceMm);
   });
 
-  it("matches the planar tangent/semicircle benchmark around a finite capsule", () => {
-    const count = 10, length = 4 + Math.PI, knots = spatialSplineKnots(count), handle = length / (3 * (count - 3));
+  it("converges to the planar tangent/semicircle benchmark around a finite capsule under refinement", () => {
+    const length = 4 + Math.PI, errors: number[] = [];
     const at = (s: number): PointMm => s <= 2 ? [-2 + s, 1, 0] : s <= 2 + Math.PI
       ? [Math.cos(Math.PI / 2 - s + 2), Math.sin(Math.PI / 2 - s + 2), 0] : [-s + 2 + Math.PI, -1, 0];
-    const controlPointsMm = Array.from({ length: count }, (_, i) => at(length * (knots[i + 1] + knots[i + 2] + knots[i + 3]) / 3));
+    for (const count of [8, 14, 20, 40]) {
+      const knots = spatialSplineKnots(count), handle = length / (3 * (count - 3));
+      const controlPointsMm = Array.from({ length: count }, (_, i) => at(length * (knots[i + 1] + knots[i + 2] + knots[i + 3]) / 3));
+      controlPointsMm[1] = [-2 + handle, 1, 0]; controlPointsMm[count - 2] = [-2 + handle, -1, 0];
+      const result = solveSpatialContact({ ...straight, controlPointsMm,
+        supports: [{ id: "finite-post", kind: "segment", fromMm: [0, 0, -10], toMm: [0, 0, 10], radiusMm: .8 }] });
+      assert.equal(result.status, "converged", JSON.stringify(result.metrics));
+      assert.ok(result.metrics.maxPenetrationMm <= SPATIAL_CONTACT_DEFAULTS.feasibilityToleranceMm);
+      assert.ok(result.metrics.maxPenetrationMm >= result.metrics.samplePenetrationMm - 1e-10);
+      assert.ok(result.reactions.some(r => r.supportId === "finite-post"));
+      for (let i = 0; i <= 1000; i++) {
+        const p = sampleSpatialSpline(result.controlPointsMm, i / 1000);
+        assert.ok(Math.hypot(p[0], p[1]) >= 1 - SPATIAL_CONTACT_DEFAULTS.feasibilityToleranceMm);
+      }
+      // The coarsest mesh still keeps the wrapped topology; the shorter hairpin
+      // in front of the post is a different local minimum (see the next test).
+      errors.push(result.lengthMm - length);
+    }
+    assert.ok(Math.abs(errors[0]) < .05);
+    assert.ok(errors.every((e, i) => i === 0 || Math.abs(e) < Math.abs(errors[i - 1])), JSON.stringify(errors));
+    assert.ok(Math.abs(errors.at(-1)!) < 1e-4, JSON.stringify(errors));
+  });
+
+  it("keeps a seed's side of an obstacle: a hairpin seed finds the other local minimum", () => {
+    // With bounded curvature and fixed tangents the wrap is only a local minimum.
+    // A hairpin in front of the post is shorter; the guarded solver does not jump
+    // between them, so the prescribed topology must come from the seed and checks.
+    const rho = .25, d = .5, count = 20, total = 2 * d + Math.PI * rho + 1.5;
+    const at = (s: number): PointMm => s <= d ? [-2 + s, 1, 0]
+      : s <= d + Math.PI / 2 * rho ? [-2 + d + rho * Math.sin((s - d) / rho), 1 - rho + rho * Math.cos((s - d) / rho), 0]
+      : s <= d + Math.PI / 2 * rho + 1.5 ? [-2 + d + rho, 1 - rho - (s - d - Math.PI / 2 * rho), 0]
+      : s <= d + Math.PI * rho + 1.5 ? [-2 + d + rho * Math.cos((s - d - Math.PI / 2 * rho - 1.5) / rho), -1 + rho - rho * Math.sin((s - d - Math.PI / 2 * rho - 1.5) / rho), 0]
+      : [-2 + d - (s - d - Math.PI * rho - 1.5), -1, 0];
+    const knots = spatialSplineKnots(count), handle = total / (3 * (count - 3));
+    const controlPointsMm = Array.from({ length: count }, (_, i) => at(total * (knots[i + 1] + knots[i + 2] + knots[i + 3]) / 3));
     controlPointsMm[1] = [-2 + handle, 1, 0]; controlPointsMm[count - 2] = [-2 + handle, -1, 0];
-    const result = solveSpatialContact({ ...straight, controlPointsMm,
+    const result = solveSpatialContact({ ...straight, controlPointsMm, minBendRadiusMm: rho,
       supports: [{ id: "finite-post", kind: "segment", fromMm: [0, 0, -10], toMm: [0, 0, 10], radiusMm: .8 }] });
     assert.equal(result.status, "converged", JSON.stringify(result.metrics));
-    near(result.lengthMm, length, .004);
-    assert.ok(result.metrics.maxPenetrationMm <= SPATIAL_CONTACT_DEFAULTS.feasibilityToleranceMm);
-    assert.ok(result.metrics.maxPenetrationMm >= result.metrics.samplePenetrationMm - 1e-10);
-    assert.ok(result.reactions.some(r => r.supportId === "finite-post"));
-    for (let i = 0; i <= 1000; i++) {
-      const p = sampleSpatialSpline(result.controlPointsMm, i / 1000);
-      assert.ok(Math.hypot(p[0], p[1]) >= 1 - SPATIAL_CONTACT_DEFAULTS.feasibilityToleranceMm);
+    // Two quarter turns of radius rho joined by the straight drop 2 - 2 rho.
+    near(result.lengthMm, Math.PI * rho + 2 - 2 * rho, 2e-3);
+    assert.ok(result.lengthMm < 4 + Math.PI - 2);
+    for (let i = 0; i <= 200; i++) assert.ok(sampleSpatialSpline(result.controlPointsMm, i / 200)[0] < -1);
+  });
+
+  it("reaches the curvature-bounded Dubins semicircle and respects the certified turning bound", () => {
+    // Opposite port tangents need total turning pi; kappa <= 1/rho gives L >= pi rho.
+    const r = .2, rho = .25, d = .5, seedLength = 2 * d + Math.PI * rho, errors: number[] = [];
+    const at = (s: number): PointMm => s <= d ? [s, 0, 0] : s <= d + Math.PI * rho
+      ? [d + rho * Math.sin((s - d) / rho), rho - rho * Math.cos((s - d) / rho), 0] : [d - (s - d - Math.PI * rho), 2 * rho, 0];
+    for (const count of [12, 24, 32]) {
+      const knots = spatialSplineKnots(count), handle = seedLength / (3 * (count - 3));
+      const controlPointsMm = Array.from({ length: count }, (_, i) => at(seedLength * (knots[i + 1] + knots[i + 2] + knots[i + 3]) / 3));
+      controlPointsMm[1] = [handle, 0, 0]; controlPointsMm[count - 2] = [handle, 2 * rho, 0];
+      const result = solveSpatialContact({ controlPointsMm, threadRadiusMm: r, minBendRadiusMm: rho,
+        body: { centerMm: [0, 0, -100], radiusMm: 1 }, supports: [], options: { maxIterations: 8000, maxOuterIterations: 60 } });
+      assert.equal(result.status, "converged", JSON.stringify(result.metrics));
+      const upper = result.metrics.curvatureTimesRadiusUpper;
+      near(result.metrics.curvatureLimit, r / rho);
+      assert.ok(upper <= r / rho + SPATIAL_CONTACT_DEFAULTS.curvatureTolerance && upper >= r / rho - 1e-3);
+      // Theorem, not a sampled estimate: integral of kappa >= pi and kappa <= upper / r.
+      assert.ok(result.lengthMm >= Math.PI * r / upper - 1e-12);
+      assert.ok(result.reactions.some(x => x.kind === "curvature"));
+      errors.push(Math.abs(result.lengthMm - Math.PI * rho));
     }
+    assert.ok(errors.at(-1)! < 1e-4 && errors.at(-1)! < errors[0], JSON.stringify(errors));
   });
 
   it("does not pass a plausible-looking path when the iteration cap or residual fails", () => {
@@ -148,36 +221,64 @@ describe("spatial contact: bounded spline stationary reference", () => {
     assert.equal(capped.status, "unresolved"); assert.equal(capped.diagnostics[0].code, "constraint-limit");
   });
 
-  it("agrees with a finite-difference Lagrangian stationarity check using returned reactions", () => {
-    const input = sphereSeed(), result = solveSpatialContact(input);
-    assert.equal(result.status, "converged");
-    // Independent Simpson integration and scalar L=f-sum(lambda*g), with no
-    // production objective/gradient evaluation. Its control gradient has the
-    // same units as the solver's normalised discrete force residual.
-    const intervals = 1000;
-    const derivatives = Array.from({ length: intervals + 1 }, (_, i) =>
-      spatialSplineBasis(result.controlPointsMm.length, i / intervals).derivatives);
-    const lagrangian = (controls: PointMm[]) => {
-      let length = 0;
-      for (let j = 0; j <= intervals; j++) {
-        const velocity = [0, 0, 0];
-        for (let i = 0; i < controls.length; i++) for (let k = 0; k < 3; k++) velocity[k] += derivatives[j][i] * controls[i][k];
-        length += Math.hypot(...velocity) * (j === 0 || j === intervals ? 1 : j % 2 ? 4 : 2) / (3 * intervals);
+  it("agrees with an independent finite-difference Lagrangian, including curvature multipliers", () => {
+    const rho = .25, r = .2, seedLength = 1 + Math.PI * rho, count = 12;
+    const dubins = (s: number): PointMm => s <= .5 ? [s, 0, 0] : s <= .5 + Math.PI * rho
+      ? [.5 + rho * Math.sin((s - .5) / rho), rho - rho * Math.cos((s - .5) / rho), 0] : [.5 - (s - .5 - Math.PI * rho), 2 * rho, 0];
+    const knots = spatialSplineKnots(count), handle = seedLength / (3 * (count - 3));
+    const bent = Array.from({ length: count }, (_, i) => dubins(seedLength * (knots[i + 1] + knots[i + 2] + knots[i + 3]) / 3));
+    bent[1] = [handle, 0, 0]; bent[count - 2] = [handle, 2 * rho, 0];
+    const cases = [
+      { input: sphereSeed(), kinds: ["body"] },
+      { input: { controlPointsMm: bent, threadRadiusMm: r, minBendRadiusMm: rho, body: { centerMm: [0, 0, -100] as PointMm, radiusMm: 1 },
+        supports: [], options: { maxIterations: 8000, maxOuterIterations: 60 } } as SpatialContactInput, kinds: ["curvature"] },
+    ];
+    for (const { input, kinds } of cases) {
+      const result = solveSpatialContact(input);
+      assert.equal(result.status, "converged");
+      assert.ok(result.reactions.length > 0 && result.reactions.every(x => kinds.includes(x.kind)), JSON.stringify(result.reactions.map(x => x.kind)));
+      const n = result.controlPointsMm.length, limit = input.threadRadiusMm / (input.minBendRadiusMm ?? 1.25 * input.threadRadiusMm);
+      const L = result.metrics.referenceLengthMm, radius = input.threadRadiusMm;
+      // Independent Simpson energy and constraints in millimetres. The solver
+      // works in thread radii: geometric gaps scale by r, dimensionless rows by 1,
+      // so the equivalent millimetre Lagrangian weights dimensionless rows by r.
+      const intervals = 2000;
+      const basis = Array.from({ length: intervals + 1 }, (_, i) => spatialSplineBasis(n, i / intervals).derivatives);
+      const lagrangian = (controls: PointMm[]) => {
+        let energy = 0;
+        for (let j = 0; j <= intervals; j++) {
+          const v = [0, 1, 2].map(k => controls.reduce((sum, p, i) => sum + basis[j][i] * p[k], 0));
+          energy += (v[0] ** 2 + v[1] ** 2 + v[2] ** 2) * (j === 0 || j === intervals ? 1 : j % 2 ? 4 : 2) / (3 * intervals);
+        }
+        return energy / (2 * L) - result.reactions.reduce((sum, x) => {
+          const b = spatialSplineBasis(n, x.parameter);
+          if (x.kind === "body") return sum + x.multiplier * (Math.hypot(...[0, 1, 2].map(k =>
+            controls.reduce((s2, p, i) => s2 + b.values[i] * p[k], 0) - input.body.centerMm[k])) - input.body.radiusMm - radius);
+          const v = [0, 1, 2].map(k => controls.reduce((s2, p, i) => s2 + b.derivatives[i] * p[k], 0));
+          const a = [0, 1, 2].map(k => controls.reduce((s2, p, i) => s2 + b.secondDerivatives[i] * p[k], 0));
+          const w = [v[1] * a[2] - v[2] * a[1], v[2] * a[0] - v[0] * a[2], v[0] * a[1] - v[1] * a[0]];
+          return sum + radius * x.multiplier * (limit * Math.hypot(...v) ** 3 - radius * Math.hypot(...w)) / L ** 3;
+        }, 0);
+      };
+      const shifted = (i: number, delta: PointMm) => result.controlPointsMm.map((p, j) => j === i ? p.map((v, k) => v + delta[k]) : [...p]) as unknown as PointMm[];
+      const h = 1e-6;
+      let residual = 0;
+      for (let i = 2; i < n - 2; i++) {
+        const g = [0, 1, 2].map(k => {
+          const e = [0, 1, 2].map(j => j === k ? h : 0) as unknown as PointMm;
+          return (lagrangian(shifted(i, e)) - lagrangian(shifted(i, e.map(v => -v) as unknown as PointMm))) / (2 * h);
+        });
+        residual = Math.max(residual, Math.hypot(...g) * radius);
       }
-      return length - result.reactions.reduce((sum, r) => sum + r.multiplier
-        * (Math.hypot(...sampleSpatialSpline(controls, r.parameter)) - 1), 0);
-    };
-    let residual = 0;
-    for (let i = 2; i < result.controlPointsMm.length - 2; i++) {
-      const gradient = [];
-      for (let k = 0; k < 3; k++) {
-        const h = 1e-5, a = result.controlPointsMm.map(p => [...p]), b = result.controlPointsMm.map(p => [...p]);
-        a[i][k] += h; b[i][k] -= h;
-        gradient.push((lagrangian(a as unknown as PointMm[]) - lagrangian(b as unknown as PointMm[])) / (2 * h));
+      // Handle lengths move controls 1 and n-2 along the fixed port tangents.
+      for (const [i, j] of [[1, 0], [n - 2, n - 1]]) {
+        const t = result.controlPointsMm[i].map((v, k) => v - result.controlPointsMm[j][k]);
+        const e = t.map(v => v / Math.hypot(...t) * h) as unknown as PointMm;
+        residual = Math.max(residual, Math.abs(lagrangian(shifted(i, e)) - lagrangian(shifted(i, e.map(v => -v) as unknown as PointMm))) / (2 * h) * radius);
       }
-      residual = Math.max(residual, Math.hypot(...gradient));
+      near(residual, result.metrics.kktStationarity, 2e-5);
+      assert.ok(residual <= SPATIAL_CONTACT_DEFAULTS.stationarityTolerance);
     }
-    near(residual, result.metrics.kktStationarity, 2e-6);
   });
 
   it("is covariant under a joint 3D rotation/translation and consistent scaling of numerical lengths", () => {
@@ -199,6 +300,11 @@ describe("spatial contact: bounded spline stationary reference", () => {
     assert.equal(badPort.status, "failed"); assert.equal(badPort.diagnostics[0].code, "invalid-port");
     assert.deepEqual(badPort.controlPointsMm, straight.controlPointsMm);
     assert.equal(solveSpatialContact({ ...straight, threadRadiusMm: 0 }).status, "failed");
+    // Tube regularity needs r/minBendRadius + tolerance < 1; the solver does not relax it.
+    for (const minBendRadiusMm of [.2, .1, .2 / .99]) {
+      const bad = solveSpatialContact({ ...straight, minBendRadiusMm });
+      assert.equal(bad.status, "failed"); assert.equal(bad.diagnostics[0].code, "invalid-input");
+    }
     const antipodal: SpatialSupport = { id: "ambiguous", kind: "arc", centerMm: [0, 0, 0], fromMm: [1, 0, 0], toMm: [-1, 0, 0], radiusMm: .1 };
     assert.equal(solveSpatialContact({ ...straight, supports: [antipodal] }).diagnostics[0].code, "invalid-support");
   });

@@ -5,6 +5,8 @@ import type { C8ThreadCoupon, MarkingSupport, PointMm, ThreadCrossing, ThreadCur
 export const LOWER_KAGARI_DIMENSIONS = Object.freeze({
   circumferenceMm: 230,
   threadRadiusMm: 0.2,
+  /** Thick-rope bend limit for computed spans: r*kappa <= 0.2/0.25 = 0.8. */
+  minBendRadiusMm: 0.25,
   markingRadiusMm: 0.08,
   markingHalfLengthMm: 3,
   halfBiteMm: 0.6,
@@ -78,7 +80,8 @@ export function createLowerKagariFixture(input: LowerKagariInput = {}): LowerKag
   const handedness = input.handedness ?? 1;
   if (handedness !== 1 && handedness !== -1) throw new RangeError('lower kagari handedness must be +1 or -1');
   const q = scale(unit(cross(m, v)), handedness), surface = R + r + d.portGuardMm;
-  if (Math.max(d.depthMm, d.markingHalfLengthMm, d.flankLengthMm, d.flankHalfWidthMm) >= R / 2 || d.halfBiteMm <= r || d.depthMm <= r || d.flankHalfWidthMm <= d.halfBiteMm)
+  if (Math.max(d.depthMm, d.markingHalfLengthMm, d.flankLengthMm, d.flankHalfWidthMm) >= R / 2 || d.halfBiteMm <= r || d.depthMm <= r || d.flankHalfWidthMm <= d.halfBiteMm
+    || d.minBendRadiusMm <= r)
     throw new RangeError('lower kagari dimensions exceed the local fixture');
   const point = (across: number, along: number, radius: number) => scale(unit(add(m, add(scale(q, across / R), scale(v, along / R)))), radius);
   const entry = point(d.halfBiteMm, 0, surface), exit = point(-d.halfBiteMm, 0, surface);

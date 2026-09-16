@@ -108,14 +108,14 @@ const outgoingLength = fixture.looseOutgoing.reduce((sum, curve) => {
   for (let i = 1; i < n; i++) integral += (i % 2 ? 4 : 2) * Math.hypot(...curveDerivative(curve, i / n));
   return sum + integral / (3 * n);
 }, 0);
-text('length-before', `${outgoingLength.toFixed(3)} мм`);
+text('length-before', `${outgoingLength.toFixed(3).replace('.', ',')} мм`);
 text('checks', `Исходная схема: ${seed.status === 'passed' ? 'проверки пройдены' : 'требует уточнения'}. Четыре заданных пересечения; радиус × кривизна ${seed.maxCurvatureTimesRadius.toFixed(3)}. Входящая ветвь и скрытый проход остаются неподвижными.`);
 drawCoupon(fixture.coupon); view();
 const observer = new ResizeObserver(render); observer.observe(stage);
 const intersection = new IntersectionObserver(entries => {
   if (!entries.some(e => e.isIntersecting)) return;
   intersection.disconnect();
-  text('status', 'Проверяем наружную укладку на двух разрешениях сплайна…');
+  text('status', 'Проверяем наружную укладку на трёх разрешениях сплайна…');
   worker = new Worker(new URL('./spatial-catch.worker.ts', import.meta.url), { type: 'module' });
   worker.onmessage = event => {
     if (event.data.error) { text('status', `Расчёт не завершён: ${event.data.error}`); stage.dataset.status = 'unresolved'; }
@@ -124,13 +124,17 @@ const intersection = new IntersectionObserver(entries => {
       stage.dataset.status = computed.status;
       const status = document.getElementById('spatial-status')!;
       status.dataset.status = computed.status === 'accepted' ? 'passed' : 'unresolved';
-      text('status', computed.status === 'accepted' ? 'Численные проверки наружной укладки пройдены. Равновесие реальной пряжи этим не подтверждено.' :
-        'Вычисленная укладка не принята: сходимости оптимизатора недостаточно — проверка толщины и устойчивости к уточнению сетки выявила проблемы. Можно рассмотреть отклонённый результат.');
+      const mm = (value: number, digits = 3) => `${value.toFixed(digits).replace('.', ',')} мм`;
+      text('status', computed.status === 'accepted'
+        ? 'Наружная укладка принята: все разрешения сплайна сходятся и проходят проверки. Это модель толстой нити, а не равновесие реальной пряжи.'
+        : 'Вычисленная укладка не принята: сходимости оптимизатора недостаточно — проверки толщины, изгиба или устойчивости к уточнению сетки выявили проблемы. Можно рассмотреть отклонённый результат.');
       button('after').disabled = false;
-      button('after').textContent = computed.status === 'accepted' ? 'После расчёта' : 'Отклонённый расчёт';
-      text('length-after', `${computed.result.lengthMm.toFixed(3)} мм`);
-      text('length-delta', `${(outgoingLength - computed.result.lengthMm).toFixed(3)} мм`);
-      text('checks', `Исходная схема: ${seed.status}. Разрешения: ${computed.checks.resolutions.map(r => `${r.controlCount} точек — оптимизатор ${r.result.status}, геометрия ${r.validation.status}`).join('; ')}. Изменение длины при уточнении: ${computed.metrics.lengthDifferenceMm.toFixed(4)} мм. ${computed.diagnostics.join(' ')}`);
+      button('after').textContent = computed.status === 'accepted' ? 'После укладки' : 'Отклонённый расчёт';
+      text('length-after', mm(computed.result.lengthMm));
+      text('length-delta', mm(outgoingLength - computed.result.lengthMm));
+      const ladder = computed.checks.resolutions.map(r => `${r.controlCount} точек: решатель ${r.result.status === 'converged' ? 'сошёлся' : r.result.status}, путь ${r.validation.status === 'passed' ? 'прошёл проверки' : r.validation.status}, r·κ ≤ ${r.curvature.upper.toFixed(3).replace('.', ',')}`).join('; ');
+      const refine = computed.checks.refinements.map(r => `${r.from}→${r.to}: длина ${mm(r.lengthDifferenceMm, 5)}, форма ${mm(r.shapeDifferenceMm, 4)}`).join('; ');
+      text('checks', `Исходная схема: ${seed.status === 'passed' ? 'проверки пройдены' : seed.status}. Минимальный радиус изгиба ${mm(computed.metrics.minBendRadiusMm, 2)}; сетка не грубее ${computed.metrics.minimumSpans} пролётов. ${ladder}. Уточнение — ${refine}. ${computed.diagnostics.join(' ')}`);
     }
     worker?.terminate(); worker = undefined;
   };
