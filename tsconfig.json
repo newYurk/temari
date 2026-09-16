@@ -18,6 +18,7 @@
     "src/lib/utils.ts",
     "src/pages.tsx",
     "src/lab.ts",
+    "src/spatial-catch.worker.ts",
     "vite.pages.config.ts"
   ]
 }

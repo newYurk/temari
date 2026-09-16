@@ -214,6 +214,20 @@ dd {
   border-top: 1px solid #cfc7bb;
   scroll-margin-top: 24px;
 }
+.spatial-catch { margin-top:64px; padding-top:28px; border-top:1px solid #cfc7bb; scroll-margin-top:24px; }
+.spatial-workbench { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(280px,1fr); gap:30px; align-items:start; }
+#spatial-view { position:relative; width:100%; aspect-ratio:1; touch-action:none; cursor:grab; }
+#spatial-labels { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:hidden; }
+.legacy-warning { margin-top:64px; padding:22px; border-left:3px solid #963e44; background:#e8ddd3; }
+.legacy-warning p { max-width:780px; line-height:1.7; font-size:14px; }
+#spatial-status { font-size:13px; line-height:1.7; }
+#spatial-status[data-status="unresolved"], #spatial-status[data-status="failed"] { color:#8b3e28; }
+#spatial-view canvas { display:block; width:100%; height:100%; }
+.spatial-scope { max-width:800px; font-size:14px; line-height:1.8; color:#625c53; }
+.spatial-catch .buttons button { background:transparent; color:inherit; }
+.spatial-catch .buttons button[aria-pressed="true"] { background:#3a3630; color:#fff7ed; }
+.spatial-catch .caption { justify-content:flex-start; }
+@media(max-width:720px) { .spatial-workbench { grid-template-columns:1fr; gap:18px; } }
 .contact-benchmark > p { max-width: 780px; line-height: 1.7; color: #625c53; }
 .contact-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
 .contact-controls label { min-width: 0; }

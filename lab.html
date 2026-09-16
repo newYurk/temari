@@ -4,18 +4,73 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#ece8e1" />
-    <title>C8 · Путь рабочей нити · Темари</title>
+    <title>Подхват и перехлёст · Темари</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   </head>
   <body>
     <main>
-      <nav><a href="./">← Темари</a><a href="#contact-benchmark">Контакт нити ↓</a><a href="./design.html#status">Состояние модели</a></nav>
+      <nav><a href="./">← Темари</a><a href="#spatial-catch">Подхват на шаре ↓</a><a href="#contact-benchmark">Плоский контакт ↓</a><a href="./design.html#status">Состояние модели</a></nav>
       <header>
-        <p class="eyebrow">Мастерская · исследование C8</p>
-        <h1>Новый ряд.<br />Вокруг прежней нити.</h1>
-        <p class="intro">Во втором круге нить проходит над уже уложенными ветвями,
-          а затем возвращается под ними. Проследите этот захват снаружи и внутри основы.</p>
+        <p class="eyebrow">Мастерская · сверяем стежок с ремеслом</p>
+        <h1>Нижний подхват.<br />С маленьким перехлёстом.</h1>
+        <p class="intro">Для обычного uwagake chidori игла возвращается поперёк направления работы.
+          Выходящая ветвь ложится поверх входящей. Именно этот перехлёст был пропущен в прежнем образце.</p>
       </header>
+      <section id="spatial-catch" class="spatial-catch" aria-labelledby="spatial-title">
+        <p class="eyebrow">Обычный uwagake chidori kagari · нижняя точка кику</p>
+        <h2 id="spatial-title">Вход справа. Выход слева. Уход поверх.</h2>
+        <p class="intro">В показанном направлении золотая входящая ветвь приходит слева к точке 1.
+          Игла проходит под намоткой справа налево, к точке 2. Красная ветвь уходит вправо
+          поверх золотой. Цвета обозначают части одной нити.</p>
+        <div class="spatial-workbench">
+          <div>
+            <div id="spatial-view" aria-label="Нижний перекрещённый подхват: вход 1 справа, выход 2 слева">
+              <svg id="spatial-labels" viewBox="0 0 600 600" aria-hidden="true"></svg>
+            </div>
+            <p class="gesture-note">Потяните, чтобы повернуть. Колесо или жест двумя пальцами — приближение.</p>
+            <div class="view-tools"><button id="spatial-front" type="button">Сверху</button>
+              <button id="spatial-side" type="button">Подхват сбоку</button></div>
+          </div>
+          <div class="controls">
+            <div class="badge">Один стежок · проверочная схема</div>
+            <h3>До и после расчёта</h3>
+            <div class="buttons"><button id="spatial-before" aria-pressed="true" type="button">Исходный путь</button>
+              <button id="spatial-after" aria-pressed="false" type="button" disabled>После укладки</button></div>
+            <p class="caption"><span class="swatch outer"></span>Наружная нить
+              <span class="swatch first-round"></span>Входящая ветвь
+              <span class="swatch hidden-thread"></span>Заданный проход</p>
+            <label class="check"><input id="spatial-inside" type="checkbox" checked />Показать внутри основы</label>
+            <label class="check"><input id="spatial-contacts" type="checkbox" checked />Обозначения входа и выхода</label>
+            <p id="spatial-status" role="status">Расчёт начнётся при открытии этого примера.</p>
+            <dl>
+              <div><dt>Исходная наружная часть</dt><dd id="spatial-length-before">—</dd></div>
+              <div><dt>После расчёта</dt><dd id="spatial-length-after">—</dd></div>
+              <div><dt>Разница длины</dt><dd id="spatial-length-delta">—</dd></div>
+            </dl>
+            <p>Мари: обхват 23 см. Рабочая нить: 0,4 мм,
+              разметочная опора: 0,16 мм. Это инженерные размеры примера.</p>
+            <details><summary>Что именно проверяется</summary>
+              <p id="spatial-checks">Непрерывность и стыки, толщина, конечная разметочная нить,
+                выход поверх входящей ветви и проход под разметкой.</p>
+            </details>
+          </div>
+        </div>
+        <p class="spatial-scope">Направление иглы и перехлёст сверены с
+          <a href="https://www.temarikai.com/HowToImages/ToolKit/chidori/chidorikagari02.jpg">фотографией законченного chidori</a>,
+          <a href="https://www.temarikai.com/HowToImages/ToolKit/uwagake/uwagake05.jpg">фотографией нижнего ввода иглы</a>
+          и <a href="https://www.temarikai.com/PatternsPages/Simple/GT14.html">кику GT14 на Simple 8</a>.
+          Это обычный uwagake chidori; у других вариантов может меняться порядок обхода и прохождения нитей.</p>
+        <p class="spatial-scope">Путь под намоткой задан заранее: глубина 1 мм — допущение, а не измерение фотографии.
+          Проверяется расчёт только наружной выходящей ветви при неподвижных опорах и заданных входе и выходе.
+          Форма настоящей пряжи, трение и удержание прокола пока не рассчитаны.
+          Исправление изолировано здесь; перенос в полный S8/C8 ещё предстоит.</p>
+      </section>
+      <section class="legacy-warning" id="legacy-c8">
+        <h2>Прежний образец C8: нижний ход требует замены</h2>
+        <p>У нижних точек здесь открытый U-разворот. Фотографии показали, что для выбранного
+          uwagake chidori нужен перехлёст. Проверки геометрии ниже не подтверждают правильность техники.
+          Образец сохранён для сравнения устройства модели.</p>
+      </section>
       <div class="workbench">
         <section class="diagram" aria-label="Образец пути нити C8">
           <div id="thread-view">
@@ -36,7 +91,7 @@
           <p class="gesture-note">Потяните шар, чтобы повернуть. Цвета объясняют участки одной непрерывной нити.</p>
         </section>
         <section class="controls" aria-label="Настройки образца">
-          <div class="badge">Технический образец</div>
+            <div class="badge">Прежний эксперимент · нижний ход неверен</div>
           <h2>Два круга, одна нить</h2>
           <p>Первый круг заканчивается переходом к следующему. Во втором верхний подхват
             охватывает прежние ветви; наружные острия смещаются, оставляя место сгибу.</p>

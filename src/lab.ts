@@ -8,6 +8,7 @@ import { uniqueMarkingCircles, type MarkingVector } from "./components/temari/lo
 import type { C8ThreadCoupon, ThreadCurve, ThreadSpan } from "./components/temari/thread-path";
 import "./lab.css";
 import "./contact-benchmark";
+import "./spatial-catch";
 
 const dot = (a: MarkingVector, b: MarkingVector) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
 const cross = (a: MarkingVector, b: MarkingVector): MarkingVector =>
@@ -111,7 +112,7 @@ function rebuild() {
   text("validation",result.status==="passed" ? "Геометрические проверки пройдены" :
     result.status==="failed" ? "Путь не прошёл проверку" : "Точности проверки пока недостаточно");
   text("validation-detail",result.status==="passed" ?
-    "Проверены непрерывность, положение относительно основы, зазоры и порядок прохода над прежними нитями и под ними. Натяжение не рассчитывается." :
+    "Модель проходит собственные геометрические ограничения, но её нижний U-разворот не соответствует выбранному chidori. Нужный перехлёст показан в отдельном примере выше. Натяжение здесь не рассчитывается." :
     [...new Set(result.diagnostics.map(d=>diagnosticLabels[d.code]??"Численная проверка требует уточнения."))].join(" "));
   const number=(v:number)=>Number.isFinite(v)?v.toFixed(2):"—";
   text("length-total",`${number(result.lengthMm.total)} мм`);
