@@ -29,7 +29,8 @@ import { C8_EXTRA, jiwariMarkColor, jiwariStitches, jiwariVisibleStitches, vRule
 
 const pointer = { x: 0, y: 0, down: false, dragged: false };
 const ptrs = new Map<number, { x: number; y: number }>();
-const tilt = { mx: 0, my: 0 };
+const pinch = { mx: 0, my: 0, span: 0, held: false };
+const _origin = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _up = new THREE.Vector3();
 const _axis = new THREE.Vector3();
@@ -407,6 +408,7 @@ export function Ball() {
     _feed.set(0, 1, 0);
     _q.setFromUnitVectors(_axis, _feed);
     g.quaternion.copy(_q);
+    g.position.set(0, 0, 0);
   }, [poles, viewNonce, viewPole]);
 
   useEffect(() => {
@@ -487,15 +489,22 @@ export function Ball() {
       pointer.down = true;
       pointer.dragged = false;
       if (ptrs.size === 1) omega.current.set(0, 0, 0);
-      if (ptrs.size === 2) {
+      if (ptrs.size >= 2) {
         let mx = 0;
         let my = 0;
         ptrs.forEach((p) => {
           mx += p.x;
           my += p.y;
         });
-        tilt.mx = mx / 2;
-        tilt.my = my / 2;
+        const n = ptrs.size;
+        const pts = [...ptrs.values()];
+        const a = pts[0]!;
+        const b = pts[1]!;
+        pinch.mx = mx / n;
+        pinch.my = my / n;
+        pinch.span = Math.hypot(a.x - b.x, a.y - b.y);
+        pinch.held = true;
+        pointer.dragged = true;
       }
       try {
         el.setPointerCapture(e.pointerId);
@@ -517,11 +526,39 @@ export function Ball() {
       const now = performance.now();
       const dt = Math.max(0.008, (now - lastPtr.current.t) / 1000);
       lastPtr.current = { x: e.clientX, y: e.clientY, t: now, id: e.pointerId };
+      const g = group.current;
+      if (!g) return;
+
+      if (ptrs.size >= 2) {
+        const pts = [...ptrs.values()];
+        const a = pts[0]!;
+        const b = pts[1]!;
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        const span = Math.hypot(a.x - b.x, a.y - b.y);
+        const dmx = mx - pinch.mx;
+        const dmy = my - pinch.my;
+        const cam = camera as THREE.PerspectiveCamera;
+        const reach = Math.max(camera.position.length(), 1.16);
+        const worldPerPx =
+          (2 * reach * Math.tan(THREE.MathUtils.degToRad(cam.fov || 32) * 0.5)) /
+          Math.max(size.height, 1);
+        _right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+        _up.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+        g.position.addScaledVector(_right, dmx * worldPerPx);
+        g.position.addScaledVector(_up, -dmy * worldPerPx);
+        if (g.position.length() > 1.08) g.position.setLength(1.08);
+        pinch.mx = mx;
+        pinch.my = my;
+        pinch.span = span;
+        pinch.held = true;
+        return;
+      }
+
       const k = 2.7 / Math.max(size.height, 1);
       const rx = dx * k;
       const ry = dy * k;
-      const g = group.current;
-      if (!g || (rx === 0 && ry === 0)) return;
+      if (rx === 0 && ry === 0) return;
       const st = useTemari.getState();
       const winding = false;
       _right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
@@ -563,6 +600,7 @@ export function Ball() {
     };
     const onUp = (e: PointerEvent) => {
       ptrs.delete(e.pointerId);
+      if (ptrs.size < 2) pinch.held = false;
       if (ptrs.size === 0) {
         spinning.current = false;
         pointer.down = false;
@@ -573,7 +611,7 @@ export function Ball() {
         }
       }
       try {
-        el.releasePointerCapture(e.pointerId);
+        if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
       } catch {
         /* already */
       }
@@ -612,6 +650,7 @@ export function Ball() {
         camera.updateProjectionMatrix();
       },
       qy: () => group.current?.quaternion.y ?? 0,
+      pan: () => group.current?.position.length() ?? 0,
       progress: () => useTemari.getState().wrapProgress,
       nodes: () => gridNodes(useTemari.getState().division).length,
       layerDone: () => useTemari.getState().layerDone,
@@ -763,6 +802,10 @@ export function Ball() {
       omega.current.copy(_axis).multiplyScalar(spd * Math.exp(-DAMP * d));
     } else if (!spinning.current && spd <= 0.0007) {
       omega.current.set(0, 0, 0);
+    }
+    if (g && !pinch.held && g.position.lengthSq() > 1e-8) {
+      g.position.lerp(_origin, 1 - Math.exp(-10 * d));
+      if (g.position.lengthSq() < 1e-7) g.position.set(0, 0, 0);
     }
 
     const state = useTemari.getState();
