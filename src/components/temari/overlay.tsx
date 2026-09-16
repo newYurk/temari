@@ -97,8 +97,8 @@ function TitleLayer() {
             Темари
           </h1>
           <p className="temari-rise temari-rise-2 mt-2 max-w-sm text-sm leading-relaxed text-stone">
-            Подготовленная мари, разметка и кагари: увагакэ тидори от полюса,
-            ряд за рядом. Булавки метят опоры для вышивки.
+            Вышивайте на готовом шаре: выберите разметку, поставьте метки
+            и начните с кику — узора хризантемы.
           </p>
         </div>
         <RecenterButton />
@@ -132,13 +132,13 @@ function TitleLayer() {
             href="./design.html"
             className="inline-flex h-9 items-center px-2 text-xs tracking-wide text-stone underline-offset-4 hover:text-ink hover:underline"
           >
-            схема нити
+            как устроена вышивка
           </a>
           <a
             href="./lab.html"
             className="inline-flex h-9 items-center px-2 text-xs tracking-wide text-stone underline-offset-4 hover:text-ink hover:underline"
           >
-            образец C8
+            исследование C8
           </a>
         </div>
       </div>

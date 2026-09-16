@@ -219,6 +219,7 @@ type TemariState = {
   paint: (region: number) => void;
   sew: (slot: KikuSlot) => void;
   placePin: (local: Vec3) => void;
+  sketchToPin: (local: Vec3) => void;
   undo: () => void;
   reset: () => void;
   setHover: (region: number) => void;
@@ -265,6 +266,14 @@ function sameSlot(a: KikuSlot | null, b: KikuSlot | null) {
   if (!a && !b) return true;
   if (!a || !b) return false;
   return a.pole === b.pole && a.ring === b.ring && a.sector === b.sector;
+}
+
+/** Match pin placement and its preview; an absent grid cannot attract a mark. */
+export function pinPosition(local: Vec3, division: Division, jiwariOn: boolean): Vec3 | null {
+  const length = Math.hypot(...local);
+  if (!Number.isFinite(length) || length === 0) return null;
+  const p: Vec3 = [local[0] / length, local[1] / length, local[2] / length];
+  return jiwariOn ? snapToNode(p, division) : p;
 }
 
 function currentCap(state: { pins: Pin[]; threadWidth: number; kagariSpacing: KagariSpacing }) {
@@ -560,6 +569,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   advanceJiwari: () => {
     const state = get();
     if (!state.jiwariOn) return;
+    if (state.pinNote === "Дождитесь завершения разметки") set({ pinNote: null });
     if (state.division === "c8" && state.jiwariPhase === "combine") {
       const next = state.jiwariLaid + 1;
       feel.stitch();
@@ -634,11 +644,17 @@ export const useTemari = create<TemariState>((set, get) => ({
   clearJiwari: () => {
     if (get().mode === "kata") return;
     set({
+      motif: "none",
+      craft: "pin",
       jiwariOn: false,
       jiwariPhase: "off",
       jiwariLaid: 0,
       pins: [],
       pinArcs: [],
+      pinHistory: [],
+      sewn: [],
+      sewnHistory: [],
+      pinNote: null,
       activePin: null,
       hover: -1,
       hoverSlot: null,
@@ -662,6 +678,12 @@ export const useTemari = create<TemariState>((set, get) => ({
     const support = motifSupport(get().division, id);
     if (!support.supported) {
       set({ pinNote: support.reason });
+      return;
+    }
+    if (id === "kiku" && (!get().jiwariOn || get().jiwariPhase !== "done")) {
+      set({ pinNote: !get().jiwariOn
+        ? "Выберите S8 в разделе „Разметка“"
+        : "Дождитесь завершения разметки" });
       return;
     }
     if (get().motif === id && id !== "none") {
@@ -718,7 +740,8 @@ export const useTemari = create<TemariState>((set, get) => ({
       kikuLayers: 1,
       kagariDir: id === "kiku" ? "out" : get().kagariDir,
       craft: pinningKiku ? "pin" : get().craft,
-      pins: pinningKiku ? [] : withKikuMarks(get(), id),
+      pins: pinningKiku ? [] : get().jiwariOn && get().motif !== "none"
+        ? withKikuMarks(get(), id) : get().pins,
       pinArcs: pinningKiku ? [] : get().pinArcs,
       pinNote: null,
       activePin: null,
@@ -732,7 +755,8 @@ export const useTemari = create<TemariState>((set, get) => ({
     if (get().mode === "kata") return;
     if (!get().layerDone && craft !== "wind") return;
     if (get().layerDone && craft === "wind") return;
-    set({ craft, hoverSlot: null, activePin: null });
+    if (get().craft === craft) return;
+    set({ craft, hoverSlot: null, activePin: null, pinNote: null });
     rememberStudio(get());
   },
 
@@ -785,7 +809,9 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   sew: (slot) => {
     const state = get();
-    if (state.mode !== "studio" || state.craft !== "stitch") return;
+    if (state.mode !== "studio" || state.craft !== "stitch" || state.motif !== "kiku" ||
+        !motifSupport(state.division, state.motif).supported ||
+        !kikuMarksReady(state.pins, state.division, state.facingPole)) return;
     const key = slotKey(slot);
     const color = state.selectedColor;
     const prev = state.sewn;
@@ -811,101 +837,90 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   placePin: (local) => {
     const state = get();
-    if (state.mode !== "studio" || state.craft !== "pin") return;
-    if (state.motif === "kiku") {
-      const mark = snapToKikuMark(local, state.division, state.facingPole);
-      if (!mark) {
-        set({ pinNote: KIKU_PIN_MISS });
-        return;
-      }
-      const snap: PinSnap = {
-        pins: state.pins,
-        pinArcs: state.pinArcs,
-        activePin: state.activePin,
-      };
-      const hit = state.pins.findIndex(
-        (pin) => pin.id === mark.id || pin.p[0] * mark.p[0] + pin.p[1] * mark.p[1] + pin.p[2] * mark.p[2] > 0.995,
-      );
-      feel.pin();
-      if (hit >= 0) {
-        set({
-          pins: state.pins.filter((_, i) => i !== hit),
-          activePin: null,
-          pinNote: null,
-          craft: "pin",
-          pinHistory: [...state.pinHistory, snap].slice(-40),
-        });
-        rememberStudio(get());
-        return;
-      }
-      if (state.pins.length >= MAX_PINS) return;
-      const pins = [...state.pins, { id: mark.id, p: mark.p }];
-      const ready = kikuMarksReady(pins, state.division, state.facingPole);
-      set({
-        pins,
-        activePin: pins.length - 1,
-        pinNote: null,
-        craft: ready ? "stitch" : "pin",
-        pinHistory: [...state.pinHistory, snap].slice(-40),
-      });
-      rememberStudio(get());
+    if (state.mode !== "studio" || state.craft !== "pin" || !state.layerDone) return;
+    if (state.jiwariOn && state.jiwariPhase !== "done") {
+      set({ pinNote: "Дождитесь завершения разметки" });
       return;
     }
-    const p: Vec3 = snapToNode(local, state.division);
-    const hit = pinHit(p, state.pins, 0.995);
+    const support = motifSupport(state.division, state.motif);
+    if (!support.supported) {
+      set({ pinNote: support.reason });
+      return;
+    }
+    const point = pinPosition(local, state.division, state.jiwariOn);
+    if (!point) return;
+    const mark = state.motif === "kiku"
+      ? snapToKikuMark(local, state.division, state.facingPole)
+      : null;
+    const localUnit = pinPosition(local, state.division, false)!;
+    const directHit = pinHit(localUnit, state.pins, 0.995);
+    if (state.motif === "kiku" && !mark && directHit < 0) {
+      set({ pinNote: KIKU_PIN_MISS });
+      return;
+    }
+    const p = mark?.p ?? point;
+    // Prefer the actual clicked pin, including a manually placed mark retained
+    // after a grid change. A pin is a temporary mark, never a drawing cursor.
+    const hit = directHit >= 0 ? directHit : pinHit(p, state.pins, 0.995);
+    if (hit < 0 && state.pins.length >= MAX_PINS) {
+      set({ pinNote: "На шаре уже 48 булавок. Снимите ненужную." });
+      return;
+    }
     const snap: PinSnap = {
       pins: state.pins,
       pinArcs: state.pinArcs,
       activePin: state.activePin,
     };
-    if (hit >= 0) {
-      if (state.activePin === hit) {
-        const gone = state.pins[hit];
-        if (!gone) return;
-        feel.pin();
-        set({
-          pins: state.pins.filter((_, i) => i !== hit),
-          pinArcs: state.pinArcs.filter((arc) => {
-            const same = (a: Vec3, b: Vec3) =>
-              a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
-            return !same(arc.a, gone.p) && !same(arc.b, gone.p);
-          }),
-          activePin: null,
-          pinHistory: [...state.pinHistory, snap].slice(-40),
-        });
-        rememberStudio(get());
-        return;
-      }
-      if (state.activePin !== null && state.activePin !== hit) {
-        const from = state.pins[state.activePin];
-        const to = state.pins[hit];
-        if (from && to) {
-          feel.stitch();
-          set({
-            pinArcs: [...state.pinArcs, { a: from.p, b: to.p, color: state.selectedColor }],
-            activePin: hit,
-            pinHistory: [...state.pinHistory, snap].slice(-40),
-          });
-          rememberStudio(get());
-        }
-        return;
-      }
-      set({ activePin: hit });
-      return;
-    }
-    if (state.pins.length >= MAX_PINS) return;
-    const pin: Pin = { id: `p-${Date.now().toString(36)}-${state.pins.length}`, p };
-    const pins = [...state.pins, pin];
-    let pinArcs = state.pinArcs;
-    if (state.activePin !== null) {
-      const from = state.pins[state.activePin];
-      if (from) pinArcs = [...pinArcs, { a: from.p, b: pin.p, color: state.selectedColor }];
-    }
+    const pins = hit >= 0
+      ? state.pins.filter((_, i) => i !== hit)
+      : [...state.pins, { id: mark?.id ?? `p-${Date.now().toString(36)}-${state.pins.length}`, p }];
     feel.pin();
     set({
       pins,
-      pinArcs,
-      activePin: pins.length - 1,
+      activePin: null,
+      pinNote: null,
+      pinHistory: [...state.pinHistory, snap].slice(-40),
+    });
+    rememberStudio(get());
+  },
+
+  // A free sketch connects existing marks. It is not a compiled sewing recipe.
+  sketchToPin: (local) => {
+    const state = get();
+    if (state.mode !== "studio" || state.craft !== "stitch" ||
+        state.motif !== "none" || !state.layerDone) return;
+    if (state.jiwariOn && state.jiwariPhase !== "done") {
+      set({ pinNote: "Дождитесь завершения разметки" });
+      return;
+    }
+    const p = pinPosition(local, state.division, false);
+    if (!p) return;
+    const hit = pinHit(p, state.pins, 0.995);
+    if (hit < 0) {
+      set({ pinNote: "Выберите булавку — линии эскиза соединяют только метки." });
+      return;
+    }
+    const from = state.activePin === null ? null : state.pins[state.activePin];
+    if (!from || state.activePin === hit) {
+      set({
+        activePin: state.activePin === hit ? null : hit,
+        pinNote: state.activePin === hit
+          ? "Выберите первую булавку для линии эскиза."
+          : "Теперь выберите вторую булавку для линии эскиза.",
+      });
+      return;
+    }
+    const to = state.pins[hit]!;
+    const snap: PinSnap = {
+      pins: state.pins,
+      pinArcs: state.pinArcs,
+      activePin: state.activePin,
+    };
+    feel.stitch();
+    set({
+      pinArcs: [...state.pinArcs, { a: from.p, b: to.p, color: state.selectedColor }],
+      activePin: hit,
+      pinNote: "Линия эскиза добавлена. Выберите следующую булавку.",
       pinHistory: [...state.pinHistory, snap].slice(-40),
     });
     rememberStudio(get());
@@ -927,13 +942,14 @@ export const useTemari = create<TemariState>((set, get) => ({
       set({ wrapUndoNonce: state.wrapUndoNonce + 1, wrapProgress: 0 });
       return;
     }
-    if (state.craft === "pin") {
+    if (state.craft === "pin" || state.motif === "none") {
       const prev = state.pinHistory[state.pinHistory.length - 1];
       if (!prev) return;
       set({
         pins: prev.pins,
         pinArcs: prev.pinArcs,
         activePin: prev.activePin,
+        pinNote: null,
         pinHistory: state.pinHistory.slice(0, -1),
       });
       rememberStudio(get());

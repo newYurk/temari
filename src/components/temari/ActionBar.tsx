@@ -1,389 +1,220 @@
-import { useEffect, useMemo, useState, type ReactNode, type Ref } from "react";
-import { RotateCcw, Undo2, Pin } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
+import { CircleHelp, PencilLine, Pin, RotateCcw, Undo2, X } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { THREAD_COLORS } from "./palettes";
 import { jiwariPhaseHint } from "./jiwari";
-import { kagariPhaseHint, kikuPinHint, kikuSpec, kikuWorkingPins, stitchPoleIndex } from "./patterns";
+import { kagariPhaseHint, kikuMarksReady, kikuSpec, kikuWorkingPins, stitchPoleIndex } from "./patterns";
 import { useTemari } from "./store";
-import {
-  CRAFT_ACTIONS,
-  dispatchCommand,
-  getCraftState,
-  type CraftAction,
-  type TemariCraftState,
-} from "./actions";
-import {
-  IconC10,
-  IconC8,
-  IconDensity,
-  IconDirIn,
-  IconDirOut,
-  IconHishi,
-  IconHoshi,
-  IconKiku,
-  IconNeedle,
-  IconNone,
-  IconObi,
-  IconRow,
-  IconSimple,
-} from "./icons";
+import { CRAFT_ACTIONS, dispatchCommand, getCraftState } from "./actions";
+import { IconHishi, IconHoshi, IconKiku, IconNeedle, IconObi } from "./icons";
+import { MarkingDiagram } from "./MarkingDiagram";
 
 type Stage = "jiwari" | "kagari";
-
-const JIWARI_IDS = ["jiwari-off", "jiwari-simple", "jiwari-c8", "jiwari-c10", "pin"] as const;
-const KAGARI_IDS = ["motif-kiku", "motif-hoshi", "motif-hishi", "motif-obi", "motif-none"] as const;
-
-const ICONS: Record<string, ReactNode> = {
-  "jiwari-off": <IconNone className="size-5" />,
-  "jiwari-simple": <IconSimple className="size-5" />,
-  "jiwari-c8": <IconC8 className="size-5" />,
-  "jiwari-c10": <IconC10 className="size-5" />,
-  pin: <Pin className="size-4" />,
-  "motif-kiku": <IconKiku className="size-5" />,
-  "motif-hoshi": <IconHoshi className="size-5" />,
-  "motif-hishi": <IconHishi className="size-5" />,
-  "motif-obi": <IconObi className="size-5" />,
-  "motif-none": <IconRow className="size-5" />,
-};
-
-function actionById(id: string) {
-  return CRAFT_ACTIONS.find((action) => action.id === id);
-}
-
-function Slot({
-  action,
-  state,
-  onBlocked,
-}: {
-  action: CraftAction;
-  state: TemariCraftState;
-  onBlocked: (reason: string) => void;
-}) {
-  const available = action.canExecute(state);
-  const active = action.isActive?.(state) ?? false;
-  const reason = action.getDisabledReason(state);
-
-  return (
-    <button
-      type="button"
-      aria-label={action.label}
-      aria-disabled={!available}
-      aria-pressed={active}
-      title={available ? action.label : undefined}
-      onClick={() => {
-        if (!available) {
-          if (reason) onBlocked(reason);
-          return;
-        }
-        dispatchCommand(action.id);
-      }}
-      className={cn(
-        "flex size-11 shrink-0 items-center justify-center rounded-full transition-colors duration-150",
-        !available && "cursor-not-allowed text-stone/50",
-        available && active && "bg-ink/8 text-ink ring-1 ring-ink",
-        available && !active && "text-ink hover:bg-ink/6",
-      )}
-    >
-      {ICONS[action.id]}
-    </button>
-  );
-}
+const MARKINGS = [
+  { id: "jiwari-off", division: "none", name: "Без сетки", detail: "Свои метки", note: "Булавки можно ставить в любом месте шара." },
+  { id: "jiwari-simple", division: "simple", name: "S8 · простая", detail: "8 долей", note: "S8: восемь долей между двумя полюсами. Для первой кику." },
+  { id: "jiwari-c8", division: "c8", name: "C8", detail: "6 центров", note: "C8: шесть основных центров, по восемь лучей в каждом." },
+  { id: "jiwari-c10", division: "c10", name: "C10", detail: "12 центров", note: "C10: двенадцать основных центров, по десять лучей в каждом." },
+] as const;
+const MOTIFS = [
+  { id: "motif-kiku", name: "Кику", detail: "Хризантема", icon: <IconKiku /> },
+  { id: "motif-hoshi", name: "Хоси", detail: "Позже", icon: <IconHoshi /> },
+  { id: "motif-hishi", name: "Хиси", detail: "Позже", icon: <IconHishi /> },
+  { id: "motif-obi", name: "Оби", detail: "Позже", icon: <IconObi /> },
+  { id: "motif-none", name: "Эскиз", detail: "Свои линии", icon: <PencilLine /> },
+];
+const COLOR_NAMES = ["Красная", "Золотая", "Светлая", "Тёмная", "Синяя"];
+const actionById = (id: string) => CRAFT_ACTIONS.find((action) => action.id === id)!;
+const focusStyle = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 
 export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
-  const paletteId = useTemari((s) => s.paletteId);
-  const selectedColor = useTemari((s) => s.selectedColor);
-  const wrapHex = useTemari((s) => s.wrapHex);
-  const layerDone = useTemari((s) => s.layerDone);
-  const craft = useTemari((s) => s.craft);
-  const jiwariOn = useTemari((s) => s.jiwariOn);
-  const jiwariPhase = useTemari((s) => s.jiwariPhase);
-  const jiwariLaid = useTemari((s) => s.jiwariLaid);
-  const division = useTemari((s) => s.division);
-  const motif = useTemari((s) => s.motif);
-  const pins = useTemari((s) => s.pins);
-  const kagariDir = useTemari((s) => s.kagariDir);
-  const kagariSpacing = useTemari((s) => s.kagariSpacing);
-  const kagariPlaying = useTemari((s) => s.kagariPlaying);
-  const kagariLaid = useTemari((s) => s.kagariLaid);
-  const kagariPlan = useTemari((s) => s.kagariPlan);
-  const kagariSet = useTemari((s) => s.kagariSet);
-  const kikuLayers = useTemari((s) => s.kikuLayers);
-  const history = useTemari((s) => s.history);
-  const sewnHistory = useTemari((s) => s.sewnHistory);
-  const pinHistory = useTemari((s) => s.pinHistory);
-  const mode = useTemari((s) => s.mode);
-  const facingPole = useTemari((s) => s.facingPole);
-  const pinNote = useTemari((s) => s.pinNote);
-  const setColor = useTemari((s) => s.setColor);
-
+  const s = useTemari(useShallow((s) => ({
+    division: s.division, motif: s.motif, craft: s.craft, pins: s.pins,
+    facingPole: s.facingPole, jiwariOn: s.jiwariOn, jiwariPhase: s.jiwariPhase,
+    jiwariLaid: s.jiwariLaid, kagariPlan: s.kagariPlan, kagariLaid: s.kagariLaid,
+    kagariPlaying: s.kagariPlaying, kagariSet: s.kagariSet, kikuLayers: s.kikuLayers,
+    kagariDir: s.kagariDir, kagariSpacing: s.kagariSpacing, mode: s.mode,
+    layerDone: s.layerDone, history: s.history, sewnHistory: s.sewnHistory,
+    pinHistory: s.pinHistory, pinNote: s.pinNote, selectedColor: s.selectedColor,
+    paletteId: s.paletteId, setColor: s.setColor,
+  })));
+  const { division, motif, craft, pins, facingPole, jiwariOn, jiwariPhase, jiwariLaid,
+    kagariPlan, kagariLaid, kagariPlaying, kagariSet, kikuLayers, kagariDir, kagariSpacing } = s;
+  const state = useMemo(() => getCraftState(), [s]);
   const [tip, setTip] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>(motif === "none" ? "jiwari" : "kagari");
+  const help = useRef<HTMLDialogElement>(null);
 
-  useEffect(() => {
-    if (motif !== "none") setStage("kagari");
-  }, [motif]);
+  useEffect(() => { if (motif !== "none") setStage("kagari"); }, [motif]);
+  useEffect(() => { setTip(null); }, [division, motif, craft, pins, jiwariOn, kagariPlan, s.pinNote]);
 
-  const state = useMemo(
-    () => getCraftState(),
-    [
-      mode,
-      layerDone,
-      craft,
-      jiwariOn,
-      jiwariPhase,
-      jiwariLaid,
-      division,
-      motif,
-      pins,
-      kagariDir,
-      kagariSpacing,
-      kagariPlaying,
-      kagariLaid,
-      kagariPlan.length,
-      kagariSet,
-      kikuLayers,
-      facingPole,
-      pinNote,
-      history,
-      sewnHistory,
-      pinHistory,
-      selectedColor,
-      paletteId,
-    ],
-  );
-
-  const undo = actionById("undo");
-  const reset = actionById("reset");
-  const fill = actionById("fill");
-  const dirAction = actionById(kagariDir === "out" ? "kagari-in" : "kagari-out");
-  const nextSpace =
-    kagariSpacing === "open" ? "space-even" : kagariSpacing === "even" ? "space-tight" : "space-open";
-  const spaceAction = actionById(nextSpace);
-
-  const pinNeed = motif === "kiku" ? kikuWorkingPins(division, facingPole).length : 0;
-  const pinning = motif === "kiku" && kagariPlan.length === 0 && pinNeed > 0 && pins.length < pinNeed;
-  const marksUp = motif === "kiku" && kagariPlan.length === 0 && pinNeed > 0 && pins.length >= pinNeed;
-  const hint =
-    tip ??
-    pinNote ??
-    (pinning
-      ? kikuPinHint(pins.length, pinNeed)
-      : marksUp
-        ? kikuPinHint(pinNeed, pinNeed)
-        : stage === "kagari" && motif !== "none" && kagariPlan.length > 0
-        ? kagariPhaseHint(
-            motif,
-            division,
-            kagariDir,
-            kagariLaid,
-            kagariPlan.length,
-            kagariPlaying,
-            Math.max(0, stitchPoleIndex(kagariPlan[0]!, division, motif)),
-            kagariSet,
-            motif === "kiku" &&
-              kagariSet === 1 &&
-              kikuLayers < kikuSpec(division, kagariSpacing, "fit").capacity,
-          )
-        : jiwariOn
-          ? jiwariPhaseHint(jiwariPhase, jiwariLaid)
-          : layerDone
-            ? "Выберите разметку"
-            : "Намотка — большой круг");
-
-  const toolIds = stage === "jiwari" ? JIWARI_IDS : KAGARI_IDS;
-  const fillReady = fill ? fill.canExecute(state) : false;
-  const fillReason = fill?.getDisabledReason(state);
-
-  if (!layerDone) {
-    return (
-      <div
-        ref={chromeRef}
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-[max(0.8rem,calc(env(safe-area-inset-bottom)+0.5rem))]"
-      >
-        <p className="mx-auto max-w-sm text-center font-display text-sm text-stone">{hint}</p>
-      </div>
-    );
+  function run(id: string) {
+    const action = actionById(id);
+    if (!action.canExecute(getCraftState())) {
+      setTip(action.getDisabledReason(getCraftState()));
+      return;
+    }
+    setTip(null);
+    dispatchCommand(id);
   }
 
-  return (
-    <div
-      ref={chromeRef}
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[max(0.6rem,calc(env(safe-area-inset-bottom)+0.35rem))] md:px-8"
-    >
-      <div className="pointer-events-auto mx-auto w-full max-w-md">
-        <p
-          className="mb-1.5 min-h-4 px-3 text-center font-display text-sm text-stone"
-          aria-live="polite"
-        >
-          {hint}
-        </p>
-        <div className="rounded-3xl bg-linen/90 p-1.5 ring-1 ring-line">
-          <div className="flex justify-center gap-1 p-0.5">
-            {(
-              [
-                ["jiwari", "Разметка"],
-                ["kagari", "Вышивка"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => {
-                  setTip(null);
-                  setStage(id);
-                }}
-                className={cn(
-                  "h-8 min-w-24 rounded-full px-4 text-xs tracking-wide",
-                  stage === id ? "bg-ink text-linen" : "text-stone hover:text-ink",
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+  const selected = MARKINGS.find((item) => item.division === (jiwariOn ? division : "none"))!;
+  const requiredPins = motif === "kiku" ? kikuWorkingPins(division, facingPole) : [];
+  const placed = requiredPins.filter((m) => pins.some((p) =>
+    p.p[0] * m.p[0] + p.p[1] * m.p[1] + p.p[2] * m.p[2] > 0.995)).length;
+  const marksReady = motif === "kiku" && kikuMarksReady(pins, division, facingPole);
+  const complete = kagariPlan.length > 0 && kagariLaid >= kagariPlan.length;
+  const secondGroup = complete && kagariSet === 0;
+  const sewId = secondGroup ? "motif-kiku" : "fill";
+  const sewLabel = kagariPlaying ? "Вышиваем…" : secondGroup ? "Вторая группа" :
+    complete ? "Следующий ряд" : kagariPlan.length ? "Продолжить" : "Начать кику";
 
-          <div className="flex items-center justify-center gap-0.5 py-0.5">
-            {toolIds.map((id) => {
-              const action = actionById(id);
-              if (!action) return null;
-              return (
-                <Slot
-                  key={id}
-                  action={action}
-                  state={state}
-                  onBlocked={setTip}
-                />
-              );
-            })}
-          </div>
+  let instruction: string;
+  if (motif === "kiku" && !marksReady) {
+    instruction = `Булавки: ${placed} из ${requiredPins.length}. Нажимайте на подсвеченные места шара.`;
+  } else if (motif === "kiku" && kagariPlan.length) {
+    instruction = kagariPhaseHint(motif, division, kagariDir, kagariLaid, kagariPlan.length,
+      kagariPlaying, Math.max(0, stitchPoleIndex(kagariPlan[0]!, division, motif)), kagariSet,
+      kagariSet === 1 && kikuLayers < kikuSpec(division, kagariSpacing, "fit").capacity);
+  } else if (motif === "kiku") {
+    instruction = "Метки готовы. Нажмите «Начать кику».";
+  } else if (jiwariOn && jiwariPhase !== "done") {
+    instruction = jiwariPhaseHint(jiwariPhase, jiwariLaid);
+  } else if (craft === "stitch") {
+    instruction = "Нажмите две булавки — соединить линией эскиза.";
+  } else {
+    instruction = "Нажмите на шар — поставить булавку. На булавку — снять.";
+  }
+  const hint = tip ?? s.pinNote ?? instruction;
 
-          <div className="flex items-center gap-1.5 px-1 pb-0.5 pt-1">
-            {undo ? (
-              <button
-                type="button"
-                aria-label={undo.label}
-                aria-disabled={!undo.canExecute(state)}
-                title={undo.getDisabledReason(state) ?? undo.label}
-                onClick={() => {
-                  if (!undo.canExecute(state)) {
-                    const reason = undo.getDisabledReason(state);
-                    if (reason) setTip(reason);
-                    return;
-                  }
-                  dispatchCommand("undo");
-                }}
-                className={cn(
-                  "flex size-11 shrink-0 items-center justify-center rounded-full text-ink",
-                  !undo.canExecute(state) && "cursor-not-allowed text-stone/50",
-                )}
-              >
-                <Undo2 className="size-4" />
-              </button>
-            ) : null}
+  function tool(id: string, label: string, icon: ReactNode, primary = false) {
+    const action = actionById(id);
+    const available = action.canExecute(state) && !(primary && kagariPlaying);
+    const active = action.isActive?.(state) ?? false;
+    return <button type="button" aria-label={label} aria-pressed={primary ? undefined : active}
+      aria-disabled={!available} onClick={() => run(id)}
+      title={action.getDisabledReason(state) ?? label}
+      className={cn("flex min-h-10 min-w-0 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] sm:text-xs", focusStyle,
+        primary ? (available ? "bg-ink text-linen" : "bg-ink/10 text-ink/55") :
+        active ? "bg-ink/8 font-medium ring-1 ring-ink/30" : "hover:bg-ink/5",
+        !available && "text-ink/45")}>{icon}<span>{id === "stitch" ? "Линии" : label}</span></button>;
+  }
 
-            {stage === "kagari" && motif !== "kiku" && dirAction ? (
-              <button
-                type="button"
-                aria-label={kagariDir === "out" ? "Наружу" : "Внутрь"}
-                title={kagariDir === "out" ? "Наружу — переключить внутрь" : "Внутрь — переключить наружу"}
-                onClick={() => {
-                  if (!dirAction.canExecute(state)) {
-                    const reason = dirAction.getDisabledReason(state);
-                    if (reason) setTip(reason);
-                    return;
-                  }
-                  dispatchCommand(dirAction.id);
-                }}
-                className="hidden size-11 shrink-0 items-center justify-center rounded-full text-ink md:flex"
-              >
-                {kagariDir === "out" ? (
-                  <IconDirOut className="size-5" />
-                ) : (
-                  <IconDirIn className="size-5" />
-                )}
-              </button>
-            ) : null}
+  if (!s.layerDone) return <div ref={chromeRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-4">
+    <p className="text-center text-sm text-ink/70">Намотка — большой круг</p>
+  </div>;
 
-            {stage === "kagari" && spaceAction ? (
-              <button
-                type="button"
-                aria-label={`Плотность: ${kagariSpacing}`}
-                title="Реже / так / плотнее"
-                onClick={() => {
-                  if (!spaceAction.canExecute(state)) {
-                    const reason = spaceAction.getDisabledReason(state);
-                    if (reason) setTip(reason);
-                    return;
-                  }
-                  dispatchCommand(spaceAction.id);
-                }}
-                className="hidden size-11 shrink-0 items-center justify-center rounded-full text-ink md:flex"
-              >
-                <IconDensity className="size-5" level={kagariSpacing} />
-              </button>
-            ) : (
-              <span
-                className="size-7 shrink-0 rounded-full ring-1 ring-line"
-                style={{ backgroundColor: wrapHex }}
-                title="Цвет базы"
-              />
-            )}
-
-            <div className="flex flex-1 items-center justify-center gap-2">
-              {THREAD_COLORS.map((color, i) => (
-                <button
-                  key={color}
-                  type="button"
-                  aria-label={`Нить ${i + 1}`}
-                  onClick={() => setColor(i)}
-                  className={cn(
-                    "size-7 rounded-full",
-                    selectedColor === i
-                      ? "ring-2 ring-ink ring-offset-2 ring-offset-linen"
-                      : "ring-1 ring-line",
-                  )}
-                  style={{ backgroundColor: color }}
-                />
-              ))}
+  return <>
+    <div ref={chromeRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[max(0.6rem,calc(env(safe-area-inset-bottom)+0.35rem))]">
+      <div className="pointer-events-auto mx-auto w-full max-w-lg">
+        <p role="status" aria-live="polite" className="mb-2 min-h-9 px-2 text-center text-[13px] leading-[18px] text-ink/80">{hint}</p>
+        <div className="rounded-3xl border border-line bg-linen/95 p-2 shadow-[0_4px_24px_#0c0b0906]">
+          <div className="mb-1 flex items-center gap-1">
+            <div className="flex flex-1 gap-1" aria-label="Этап работы">
+              {([["jiwari", "Разметка"], ["kagari", "Вышивка"]] as const).map(([id, label], i) =>
+                <button key={id} type="button" aria-label={label} aria-pressed={stage === id}
+                  onClick={() => { setTip(null); setStage(id); }}
+                  className={cn("flex h-10 flex-1 items-center justify-center gap-2 rounded-full text-sm", focusStyle,
+                    stage === id ? "bg-ink text-linen" : "text-ink/65 hover:bg-ink/5")}>
+                  <span aria-hidden className="text-xs opacity-60">{i + 1}</span>{label}
+                </button>)}
             </div>
+            <button type="button" aria-label="Как читать разметку" title="Как читать разметку"
+              onClick={() => help.current?.showModal()}
+              className={cn("flex size-10 shrink-0 items-center justify-center rounded-full text-ink/65 hover:bg-ink/5", focusStyle)}>
+              <CircleHelp className="size-5" />
+            </button>
+          </div>
 
-            {reset ? (
-              <button
-                type="button"
-                aria-label={reset.label}
-                title={reset.label}
-                onClick={() => dispatchCommand("reset")}
-                className="flex size-11 shrink-0 items-center justify-center rounded-full text-stone hover:text-ink"
-              >
-                <RotateCcw className="size-4" />
-              </button>
-            ) : null}
+          {stage === "jiwari" ? <>
+            <div className="grid grid-cols-4 gap-1" aria-label="Вид разметки">
+              {MARKINGS.map((item) => {
+                const active = selected.id === item.id;
+                return <button key={item.id} type="button" aria-label={item.name} aria-describedby={`${item.id}-detail`} aria-pressed={active}
+                  onClick={() => { if (!active) run(item.id); }}
+                  className={cn("flex min-w-0 flex-col items-center rounded-xl py-1.5", focusStyle,
+                    active ? "bg-ink/7 ring-1 ring-inset ring-ink/30" : "hover:bg-ink/5")}>
+                  <MarkingDiagram division={item.division} className="mb-0.5 size-10" />
+                  <span className="whitespace-nowrap text-[11px] font-medium sm:text-xs">{item.name}</span>
+                  <span id={`${item.id}-detail`} className="text-[10px] text-ink/65 sm:text-[11px]">{item.detail}</span>
+                </button>;
+              })}
+            </div>
+            <p className="min-h-9 px-2 py-1.5 text-center text-xs leading-4 text-ink/70">{selected.note}</p>
+          </> : <>
+            <div className="grid grid-cols-5 gap-1" aria-label="Узор вышивки">
+              {MOTIFS.map((item) => {
+                const action = actionById(item.id);
+                const available = action.canExecute(state);
+                const active = action.isActive?.(state);
+                return <button key={item.id} type="button" aria-label={item.name} aria-disabled={!available}
+                  aria-pressed={active} onClick={() => run(item.id)}
+                  className={cn("flex min-w-0 flex-col items-center rounded-xl py-2", focusStyle,
+                    !available ? "text-ink/45" : active ? "bg-ink/7 ring-1 ring-inset ring-ink/30" : "hover:bg-ink/5")}>
+                  <span className="mb-1 flex size-8 items-center justify-center [&>svg]:size-6">{item.icon}</span>
+                  <span className="text-xs font-medium">{item.name}</span>
+                  <span className="mt-0.5 text-[9px] sm:text-[11px]">{item.id === "motif-kiku" && (!jiwariOn || division !== "simple") ? "Нужна S8" : item.detail}</span>
+                </button>;
+              })}
+            </div>
+            <p className="min-h-9 px-2 py-1.5 text-center text-xs leading-4 text-ink/70">
+              {motif === "kiku" ? "Кику — хризантема. Метки: полюс и треть пути от экватора к нему." :
+                division !== "simple" && jiwariOn ? `Для кику выберите S8 в «Разметке». Рецепта ${division.toUpperCase()} ещё нет.` :
+                "Начните с кику на S8. Эскиз — свободные линии между метками."}
+            </p>
+          </>}
 
-            {stage === "kagari" && fill ? (
-              <button
-                type="button"
-                aria-label={fill.label}
-                aria-disabled={!fillReady}
-                title={fillReason ?? fill.label}
-                onClick={() => {
-                  if (!fillReady) {
-                    if (fillReason) setTip(fillReason);
-                    return;
-                  }
-                  setTip(null);
-                  dispatchCommand("fill");
-                }}
-                className={cn(
-                  "flex size-11 shrink-0 items-center justify-center rounded-full",
-                  fillReady ? "bg-ink text-linen" : "cursor-not-allowed bg-ink/15 text-stone",
-                )}
-              >
-                <IconNeedle className="size-5" />
-              </button>
-            ) : null}
+          <div className="flex items-center justify-between gap-1 border-t border-line pt-1">
+            {tool("pin", "Булавки", <Pin className="size-4" />)}
+            {motif === "none" ? tool("stitch", "Линии эскиза", <PencilLine className="size-4" />) :
+              tool(sewId, sewLabel, <IconNeedle className="size-4" />, true)}
+            {tool("undo", "Отменить", <Undo2 className="size-4" />)}
+          </div>
+          <div className="mt-1 flex items-center gap-1 border-t border-line px-1 pt-1">
+            {motif === "kiku" ? <select aria-label="Плотность стежков" title="Плотность стежков" value={kagariSpacing}
+              onChange={(e) => run(`space-${e.target.value}`)}
+              className={cn("h-10 w-16 rounded-lg bg-transparent text-[11px] text-ink/75", focusStyle)}>
+              <option value="open">Реже</option><option value="even">Средне</option><option value="tight">Плотнее</option>
+            </select> : <span className="mr-1 text-[11px] text-ink/65">Цвет</span>}
+            <div className="flex flex-1 items-center gap-0.5 sm:gap-1" aria-label="Цвет нити">
+              {THREAD_COLORS.map((color, i) => <button key={color} type="button" aria-label={`${COLOR_NAMES[i]} нить`}
+                aria-pressed={s.selectedColor === i} title={`${COLOR_NAMES[i]} нить`}
+                onClick={() => s.setColor(i)} className={cn("flex h-10 min-w-0 flex-1 items-center justify-center rounded-lg", focusStyle)}>
+                <span className={cn("size-6 rounded-full ring-1 ring-line", s.selectedColor === i && "ring-2 ring-ink ring-offset-2 ring-offset-linen")}
+                  style={{ backgroundColor: color }} />
+              </button>)}
+            </div>
+            <button type="button" aria-label="Сброс слоя" title="Начать слой заново" onClick={() => run("reset")}
+              className={cn("ml-1 flex min-h-10 shrink-0 items-center gap-1 rounded-lg px-1 text-[11px] text-ink/65 hover:bg-ink/5", focusStyle)}>
+              <RotateCcw className="size-3.5" />Сброс
+            </button>
           </div>
         </div>
       </div>
     </div>
-  );
+
+    <dialog ref={help} aria-labelledby="marking-help-title"
+      className="fixed inset-0 m-auto max-h-[85dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-3xl border border-line bg-linen p-5 text-ink shadow-xl backdrop:bg-ink/30">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 id="marking-help-title" className="font-display text-2xl">Как читать разметку</h2>
+        <button type="button" aria-label="Закрыть подсказку" onClick={() => help.current?.close()}
+          className={cn("flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-ink/5", focusStyle)}><X className="size-5" /></button>
+      </div>
+      <p className="mb-4 text-sm leading-relaxed">Разметка, или дзивари, — нити, которые делят поверхность шара и помогают расположить узор.</p>
+      <div className="space-y-3">
+        {MARKINGS.slice(1).map((item) => <div key={item.id} className="flex items-center gap-3">
+          <MarkingDiagram division={item.division} className="size-20 shrink-0" />
+          <div><p className="text-sm font-medium">{item.name}</p><p className="mt-1 text-xs leading-relaxed text-ink/75">{item.note}</p></div>
+        </div>)}
+      </div>
+      <p className="mt-3 text-xs leading-relaxed text-ink/75">Точки на схемах — основные центры пересечения линий, в том числе на обратной стороне шара. Число лучей не равно числу лепестков.</p>
+      <div className="my-4 flex gap-3 rounded-xl bg-ink/5 p-3">
+        <Pin className="mt-0.5 size-5 shrink-0" />
+        <p className="text-sm leading-relaxed"><b>Булавки — временные метки.</b> Помогают отметить расстояния и места будущих стежков. Выберите «Булавки», нажмите на шар, чтобы поставить, и на головку, чтобы снять. Нить от этого не появляется.</p>
+      </div>
+      <p className="text-xs leading-relaxed text-ink/75">Чтобы повернуть шар, потяните его. «Линии эскиза» соединяют две булавки; это рисунок на сфере, без подхватов и натяжения нити.</p>
+      <a href="./design.html#jiwari" className="mt-4 inline-block py-2 text-sm underline underline-offset-4">Подробнее о разметке и вышивке →</a>
+    </dialog>
+  </>;
 }

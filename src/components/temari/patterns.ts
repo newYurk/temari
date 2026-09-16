@@ -690,7 +690,7 @@ export function kikuMarksReady(
 
 export function kikuPinHint(placed: number, need: number): string {
   if (need <= 0) return "";
-  if (placed <= 0) return "Воткните булавку: полюс или ⅓ на меридиане";
+  if (placed <= 0) return "Нажмите на метку: полюс или треть пути от экватора к полюсу";
   if (placed >= need) return "Метки стоят. Можно шить.";
   const left = need - placed;
   const n10 = left % 10;
@@ -701,10 +701,10 @@ export function kikuPinHint(placed: number, need: number): string {
       : n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)
         ? "булавки"
         : "булавок";
-  return left === 8 ? "Ещё 8 — на ⅓ по меридианам" : `Ещё ${left} ${word} на ⅓`;
+  return `Ещё ${left} ${word}: нажимайте на подсвеченные места`;
 }
 
-export const KIKU_PIN_MISS = "Булавка ставится только на меридиане на ⅓";
+export const KIKU_PIN_MISS = "Нажмите на подсвеченную метку: полюс или треть пути от экватора к полюсу";
 
 function hermiteSphere(p0: Vec3, m0: Vec3, p1: Vec3, m1: Vec3, t: number): Vec3 {
   const t2 = t * t;
@@ -1223,11 +1223,11 @@ export function kagariPhaseHint(
   if (motif === "none" || total === 0) return "";
   if (!playing && laid >= total) {
     if (motif === "kiku" && kagariSet === 0) {
-      return "Снова «Кику» — следующие 4.";
+      return "Нажмите «Вторая группа» — следующие четыре лепестка.";
     }
     if (motif === "kiku") {
       return canGrow
-        ? "Залить — следующий ряд обеих четвёрок."
+        ? "Нажмите «Следующий ряд» — продолжить обе группы."
         : "Кагари: ряд лежит. Другой полюс — переверните шар.";
     }
     return "Кагари: ряд лежит. Другой полюс — переверните шар.";

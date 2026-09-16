@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useFrame, useThree } from "@react-three/fiber";
+import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import { arcsToStitches, getWrapBuffer, pinHit, MariWinder, strokePx, toVec3, type WrapBuffer } from "./craft";
-import { gridNodes, polePositions, regionIndex, snapToNode } from "./division";
+import { gridNodes, polePositions, regionIndex } from "./division";
 import { createGuideGeometry } from "./guides";
 import { PALETTES, THREAD_COLORS, threadHex } from "./palettes";
 import {
@@ -22,7 +22,7 @@ import {
 import { PUZZLES } from "./puzzles";
 import { createTemariMaterial, createWrapBaker, createWrapCoverMaterial, syncTemariMaterial, syncWrapCoverMaterial } from "./shader";
 import { createMotifGeometry, getYarnTexture } from "./stitches";
-import { useTemari } from "./store";
+import { pinPosition, useTemari } from "./store";
 import * as feel from "./feel";
 import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
 import { C8_EXTRA, jiwariMarkColor, jiwariStitches, jiwariVisibleStitches, vRulerLegs } from "./jiwari";
@@ -519,7 +519,7 @@ export function Ball() {
       const dx = e.clientX - prev.x;
       const dy = e.clientY - prev.y;
       ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (Math.hypot(dx, dy) > 7) {
+      if (Math.hypot(e.clientX - pointer.x, e.clientY - pointer.y) > 7) {
         pointer.dragged = true;
         setPoseDirty();
       }
@@ -635,6 +635,22 @@ export function Ball() {
       pins: () => useTemari.getState().pins.length,
       pinDump: () =>
         useTemari.getState().pins.map((pin) => ({ id: pin.id, p: pin.p })),
+      pinState: () => {
+        const s = useTemari.getState();
+        return { count: s.pins.length, arcs: s.pinArcs.length, active: s.activePin,
+          note: s.pinNote, jiwariOn: s.jiwariOn, craft: s.craft, sewn: s.sewn.length };
+      },
+      projectPin: (index: number) => {
+        const pin = useTemari.getState().pins[index];
+        const g = group.current;
+        if (!pin || !g) return null;
+        const point = new THREE.Vector3(...pin.p).multiplyScalar(1.04);
+        g.localToWorld(point);
+        point.project(camera);
+        const rect = gl.domElement.getBoundingClientRect();
+        return { x: rect.left + (point.x + 1) * rect.width / 2,
+          y: rect.top + (1 - point.y) * rect.height / 2 };
+      },
       face: (x: number, y: number, z: number) => {
         const g = group.current;
         if (!g) return;
@@ -858,6 +874,20 @@ export function Ball() {
     return toVec3(_local);
   };
 
+  const onPinPointerUp = (e: ThreeEvent<PointerEvent>) => {
+    // Use the hit instance, not the sphere point behind an elevated pin head.
+    e.stopPropagation();
+    const dragged = pointer.dragged;
+    pointer.down = false;
+    pointer.dragged = false;
+    if (mode !== "studio" || dragged || e.button !== 0 || e.instanceId == null) return;
+    const pin = pins[e.instanceId];
+    if (!pin) return;
+    if (snapGhost.current) snapGhost.current.visible = false;
+    if (craft === "pin") placePin(pin.p);
+    else if (craft === "stitch" && motif === "none") useTemari.getState().sketchToPin(pin.p);
+  };
+
   return (
     <group ref={group}>
       <mesh
@@ -873,7 +903,10 @@ export function Ball() {
             setHover(regionIndex(p[0], p[1], p[2], division));
             return;
           }
-          if (craft === "stitch") setHoverSlot(hitKikuSlot(p[0], p[1], p[2], division));
+          if (craft === "stitch") {
+            setHoverSlot(motif === "kiku" ? hitKikuSlot(p[0], p[1], p[2], division) : null);
+            if (snapGhost.current) snapGhost.current.visible = false;
+          }
           else if (craft === "pin") {
             const hit = pinHit(p, pins);
             setHoverSlot(null);
@@ -882,9 +915,9 @@ export function Ball() {
             const snapped =
               motif === "kiku"
                 ? snapToKikuMark(p, division, facingPole)
-                : { id: "", p: snapToNode(p, division) };
+                : { id: "", p: pinPosition(p, division, jiwariOn)! };
             if (ghost) {
-              if (!snapped) {
+              if (!snapped || hit >= 0) {
                 ghost.visible = false;
               } else {
                 ghost.visible = true;
@@ -905,10 +938,16 @@ export function Ball() {
             return;
           }
           if (craft === "pin") {
+            if (snapGhost.current) snapGhost.current.visible = false;
             placePin(p);
             return;
           }
           if (craft !== "stitch") return;
+          if (motif === "none") {
+            useTemari.getState().sketchToPin(p);
+            return;
+          }
+          if (motif !== "kiku") return;
           const slot = hitKikuSlot(p[0], p[1], p[2], division);
           if (slot) sew(slot);
         }}
@@ -1042,9 +1081,10 @@ export function Ball() {
         ref={shafts}
         args={[undefined, undefined, 80]}
         frustumCulled={false}
-        visible={jiwariOn && pins.length > 0}
+        visible={mode === "studio" && pins.length > 0}
         count={pins.length}
         renderOrder={20}
+        onPointerUp={onPinPointerUp}
       >
         <cylinderGeometry args={[0.0032, 0.0032, 0.048, 10]} />
         <meshStandardMaterial color="#3a3834" roughness={0.32} metalness={0.55} />
@@ -1053,9 +1093,10 @@ export function Ball() {
         ref={heads}
         args={[undefined, undefined, 80]}
         frustumCulled={false}
-        visible={jiwariOn && pins.length > 0}
+        visible={mode === "studio" && pins.length > 0}
         count={pins.length}
         renderOrder={21}
+        onPointerUp={onPinPointerUp}
       >
         <sphereGeometry args={[0.014, 24, 16]} />
         <meshStandardMaterial color="#f4efe6" roughness={0.16} metalness={0.12} />

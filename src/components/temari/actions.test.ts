@@ -135,7 +135,7 @@ describe("recipe compatibility in studio actions and state", () => {
     assert.equal(useTemari.getState().kagariSet, 0);
     finishPlan();
     assert.equal(action("fill").canExecute(getCraftState()), false);
-    assert.match(action("fill").getDisabledReason(getCraftState()) ?? "", /вторые 4/);
+    assert.match(action("fill").getDisabledReason(getCraftState()) ?? "", /Вторая группа/);
     dispatchCommand("motif-kiku");
     assert.equal(useTemari.getState().kagariSet, 1);
     assert.equal(useTemari.getState().kagariKept.length, 8);
@@ -183,5 +183,153 @@ describe("recipe compatibility in studio actions and state", () => {
     assert.equal(state.kagariPlaying, true);
     assert.deepEqual(state.pinHistory, []);
     assert.equal(state.pinNote, null);
+  });
+
+  it("places visible-grid-independent temporary pins without drawing or moving them to hidden nodes", () => {
+    useTemari.setState({ jiwariOn: false, jiwariPhase: "off", pins: [] });
+    const a = [0.17, 0.23, 1] as [number, number, number];
+    const b = [-0.31, 0.19, 1] as [number, number, number];
+    useTemari.getState().placePin(a);
+    useTemari.getState().placePin(b);
+    const placed = useTemari.getState().pins;
+    assert.equal(placed.length, 2);
+    assert.deepEqual(placed[0]!.p, a.map((n) => n / Math.hypot(...a)));
+    assert.deepEqual(placed[1]!.p, b.map((n) => n / Math.hypot(...b)));
+    assert.deepEqual(useTemari.getState().pinArcs, []);
+    assert.equal(useTemari.getState().activePin, null);
+    // Any pin is removed by one tap, without selecting it or drawing a line first.
+    useTemari.getState().placePin(placed[0]!.p);
+    assert.deepEqual(useTemari.getState().pins, [placed[1]]);
+    assert.deepEqual(useTemari.getState().pinArcs, []);
+    dispatchCommand("undo");
+    assert.deepEqual(useTemari.getState().pins, placed);
+  });
+
+  it("draws a free sketch only between existing pins in the separate stitch tool, with undo", () => {
+    const pins = [
+      { id: "first", p: around([0, 1, 0], 0.6, 0) },
+      { id: "second", p: around([0, 1, 0], 0.6, Math.PI / 2) },
+    ];
+    useTemari.setState({ pins: pins.slice(0, 1), jiwariOn: false, jiwariPhase: "off" });
+    assert.equal(action("stitch").canExecute(getCraftState()), false);
+    assert.match(action("stitch").getDisabledReason(getCraftState()) ?? "", /две булавки/);
+    useTemari.setState({ pins });
+    dispatchCommand("stitch");
+    useTemari.getState().sketchToPin([0, 1, 0]);
+    assert.deepEqual(useTemari.getState().pins, pins, "off-pin tap cannot create a mark");
+    assert.deepEqual(useTemari.getState().pinArcs, []);
+    assert.match(useTemari.getState().pinNote ?? "", /только метки/);
+    useTemari.getState().sketchToPin(pins[0]!.p);
+    assert.equal(useTemari.getState().activePin, 0);
+    const note = useTemari.getState().pinNote;
+    useTemari.getState().setCraft("stitch");
+    assert.equal(useTemari.getState().activePin, 0, "same tool preserves the selected start");
+    assert.equal(useTemari.getState().pinNote, note);
+    useTemari.getState().sketchToPin(pins[1]!.p);
+    assert.deepEqual(useTemari.getState().pinArcs, [{ a: pins[0]!.p, b: pins[1]!.p, color: 0 }]);
+    assert.deepEqual(useTemari.getState().pins, pins);
+    assert.deepEqual(useTemari.getState().sewn, [], "a free sketch cannot invent a kiku slot");
+    assert.equal(action("undo").canExecute(getCraftState()), true);
+    dispatchCommand("undo");
+    assert.deepEqual(useTemari.getState().pinArcs, []);
+    assert.equal(useTemari.getState().activePin, 0);
+  });
+
+  it("removing a temporary pin preserves existing sketch lines", () => {
+    const pins = kikuWorkingPins("simple", 0).slice(1, 3);
+    const arc = { a: pins[0]!.p, b: pins[1]!.p, color: 1 };
+    useTemari.setState({ jiwariOn: false, pins, pinArcs: [arc], craft: "pin" });
+    useTemari.getState().placePin(pins[0]!.p);
+    assert.deepEqual(useTemari.getState().pins, [pins[1]]);
+    assert.deepEqual(useTemari.getState().pinArcs, [arc]);
+    dispatchCommand("undo");
+    assert.deepEqual(useTemari.getState().pins, pins);
+    assert.deepEqual(useTemari.getState().pinArcs, [arc]);
+  });
+
+  it("keeps the pin tool selected when the ninth GT14 mark is placed", () => {
+    useTemari.getState().setMotif("kiku");
+    for (const pin of kikuWorkingPins("simple", 0)) useTemari.getState().placePin(pin.p);
+    assert.equal(useTemari.getState().pins.length, 9);
+    assert.equal(getCraftState().kikuMarksReady, true);
+    assert.equal(useTemari.getState().craft, "pin");
+    assert.deepEqual(useTemari.getState().pinArcs, []);
+    useTemari.getState().placePin(kikuWorkingPins("simple", 0)[0]!.p);
+    assert.equal(useTemari.getState().pins.length, 8);
+    assert.equal(getCraftState().kikuMarksReady, false);
+  });
+
+  it("rejects hidden legacy kiku-slot drawing in free mode and unsupported divisions", () => {
+    for (const division of ["simple", "c8", "c10"] as const) {
+      useTemari.setState({ division, motif: "none", craft: "stitch" });
+      useTemari.getState().sew({ pole: 0, ring: 0, sector: 0 });
+      assert.deepEqual(useTemari.getState().sewn, []);
+    }
+  });
+
+  it("switches from kiku to free pin placement when the grid is cleared", () => {
+    useTemari.getState().setMotif("kiku");
+    const marks = kikuWorkingPins("simple", 0);
+    useTemari.setState({
+      pins: marks, pinHistory: [{ pins: marks, pinArcs: [], activePin: null }],
+      kagariPlan: motifStitchPlan("simple", "kiku"), kagariPlaying: true,
+    });
+    dispatchCommand("jiwari-off");
+    assert.equal(useTemari.getState().motif, "none");
+    assert.equal(useTemari.getState().craft, "pin");
+    assert.equal(useTemari.getState().jiwariOn, false);
+    assert.deepEqual(useTemari.getState().kagariPlan, []);
+    assert.deepEqual(useTemari.getState().pinHistory, []);
+    assert.equal(action("pin").canExecute(getCraftState()), true);
+    useTemari.getState().placePin([0.2, 0.3, 1]);
+    assert.equal(useTemari.getState().pins.length, 1);
+    assert.ok(useTemari.getState().pins[0]!.id.startsWith("p-"));
+    assert.equal(useTemari.getState().pinNote, null);
+  });
+
+  it("does not let automatic marking phases overwrite manually placed pins or sketch selections", () => {
+    const pins = kikuWorkingPins("simple", 0).slice(0, 2);
+    for (const jiwariPhase of ["strip", "combine", "vruler", "south", "meridians"] as const) {
+      useTemari.setState({ jiwariOn: true, jiwariPhase, motif: "none", pins, craft: "pin" });
+      for (const id of ["pin", "stitch"]) {
+        assert.equal(action(id).canExecute(getCraftState()), false);
+        assert.equal(action(id).getDisabledReason(getCraftState()), "Дождитесь завершения разметки");
+      }
+      useTemari.getState().placePin([0, 0, 1]);
+      assert.deepEqual(useTemari.getState().pins, pins);
+      useTemari.setState({ craft: "stitch", activePin: null });
+      useTemari.getState().sketchToPin(pins[0]!.p);
+      assert.equal(useTemari.getState().activePin, null);
+      assert.deepEqual(useTemari.getState().pinArcs, []);
+    }
+    useTemari.setState({ jiwariPhase: "done" });
+    assert.equal(action("pin").canExecute(getCraftState()), true);
+    assert.equal(action("stitch").canExecute(getCraftState()), true);
+  });
+
+  it("requires the completed S8 grid to choose kiku, even when free pins already exist", () => {
+    useTemari.setState({ jiwariOn: false, jiwariPhase: "off", pins: kikuWorkingPins("simple", 0) });
+    assert.equal(action("motif-kiku").canExecute(getCraftState()), false);
+    assert.equal(action("motif-kiku").getDisabledReason(getCraftState()), "Выберите S8 в разделе „Разметка“");
+    useTemari.getState().setMotif("kiku");
+    assert.equal(useTemari.getState().motif, "none");
+    useTemari.setState({ jiwariOn: true, jiwariPhase: "meridians" });
+    assert.equal(action("motif-kiku").canExecute(getCraftState()), false);
+    assert.equal(action("motif-kiku").getDisabledReason(getCraftState()), "Дождитесь завершения разметки");
+    useTemari.getState().setMotif("kiku");
+    assert.equal(useTemari.getState().motif, "none");
+    useTemari.setState({ jiwariPhase: "done" });
+    assert.equal(action("motif-kiku").canExecute(getCraftState()), true);
+  });
+
+  it("allows choosing the sketch without a grid or pins, without manufacturing hidden marks", () => {
+    useTemari.setState({ jiwariOn: false, jiwariPhase: "off", pins: [] });
+    assert.equal(action("motif-none").canExecute(getCraftState()), true);
+    dispatchCommand("motif-none");
+    assert.deepEqual(useTemari.getState().pins, []);
+    useTemari.getState().placePin([0.3, 0.2, 1]);
+    const pins = useTemari.getState().pins;
+    dispatchCommand("motif-none");
+    assert.deepEqual(useTemari.getState().pins, pins);
   });
 });

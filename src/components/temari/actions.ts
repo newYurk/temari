@@ -18,6 +18,7 @@ export type TemariCraftState = {
   motif: MotifId;
   closedContour: boolean;
   hasPin: boolean;
+  pinCount: number;
   undoEmpty: boolean;
   kagariDir: KagariDir;
   kagariSpacing: KagariSpacing;
@@ -47,7 +48,7 @@ export function getCraftState(): TemariCraftState {
   const undoEmpty =
     s.mode === "kata"
       ? s.history.length === 0
-      : s.craft === "pin"
+      : s.craft === "pin" || s.motif === "none"
         ? s.pinHistory.length === 0
         : s.sewnHistory.length === 0;
   return {
@@ -60,6 +61,7 @@ export function getCraftState(): TemariCraftState {
     motif: s.motif,
     closedContour: isClosedContour(s.pins.map((pin) => pin.p)),
     hasPin: s.pins.length > 0,
+    pinCount: s.pins.length,
     undoEmpty,
     kagariDir: s.kagariDir,
     kagariSpacing: s.kagariSpacing,
@@ -75,6 +77,8 @@ export function getCraftState(): TemariCraftState {
 }
 
 const jiwariReady = (s: TemariCraftState) => s.jiwariOn && s.jiwariPhase === "done";
+const needFinishedMarking = (s: TemariCraftState) =>
+  s.jiwariOn && !jiwariReady(s) ? "Дождитесь завершения разметки" : null;
 
 const needMarks = (s: TemariCraftState) =>
   needWrap(s) ?? (jiwariReady(s) || s.hasPin ? null : "Сначала разметка");
@@ -85,7 +89,10 @@ const needRecipe = (s: TemariCraftState, motif = s.motif) => {
 };
 
 const needMotif = (s: TemariCraftState, motif: MotifId) =>
-  needWrap(s) ?? needRecipe(s, motif) ?? needMarks(s);
+  needWrap(s) ?? needRecipe(s, motif) ??
+  (motif === "kiku"
+    ? !s.jiwariOn ? "Выберите S8 в разделе „Разметка“" : needFinishedMarking(s)
+    : needMarks(s));
 
 const canFillMotif = (s: TemariCraftState) =>
   s.closedContour || s.motif !== "none" || jiwariReady(s);
@@ -95,9 +102,9 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "pin",
     label: "Булавки",
     cluster: "jiwari",
-    canExecute: (s) => !needWrap(s),
+    canExecute: (s) => !needWrap(s) && !needFinishedMarking(s),
     isActive: (s) => s.craft === "pin" && s.layerDone,
-    getDisabledReason: needWrap,
+    getDisabledReason: (s) => needWrap(s) ?? needFinishedMarking(s),
   },
   {
     id: "jiwari-off",
@@ -135,13 +142,17 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "stitch",
     label: "Стежок",
     cluster: "kagari",
-    canExecute: (s) => !needWrap(s) && !needRecipe(s) && (s.jiwariOn ? jiwariReady(s) : s.hasPin) && s.kikuMarksReady,
+    canExecute: (s) => !needWrap(s) && !needRecipe(s) && !needFinishedMarking(s) &&
+      (s.motif === "none" ? s.pinCount >= 2 : (s.jiwariOn ? jiwariReady(s) : s.hasPin) && s.kikuMarksReady),
     isActive: (s) => s.craft === "stitch",
     getDisabledReason: (s) =>
       needWrap(s) ??
       needRecipe(s) ??
-      (!s.kikuMarksReady
-        ? "Воткните булавки: полюс и ⅓ на меридианах"
+      needFinishedMarking(s) ??
+      (s.motif === "none"
+        ? s.pinCount >= 2 ? null : "Сначала поставьте две булавки для эскиза"
+        : !s.kikuMarksReady
+        ? "Поставьте метки: полюс и треть пути от экватора к полюсу"
         : s.jiwariOn
           ? jiwariReady(s)
             ? null
@@ -154,9 +165,9 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "motif-none",
     label: "Ряд",
     cluster: "kagari",
-    canExecute: (s) => !needMarks(s),
+    canExecute: (s) => !needWrap(s),
     isActive: (s) => s.motif === "none",
-    getDisabledReason: needMarks,
+    getDisabledReason: needWrap,
   },
   {
     id: "motif-kiku",
@@ -229,9 +240,9 @@ export const CRAFT_ACTIONS: CraftAction[] = [
       needMarks(s) ??
       needRecipe(s) ??
       (!s.kikuMarksReady
-        ? "Воткните булавки: полюс и ⅓ на меридианах"
+        ? "Поставьте метки: полюс и треть пути от экватора к полюсу"
         : s.motif === "kiku" && s.kagariIdleComplete && s.kagariSet === 0
-        ? "Сначала вторые 4 — снова «Кику»."
+        ? "Сначала нажмите «Вторая группа»"
         : s.motif === "kiku" && s.kagariIdleComplete && s.kikuLayers >= s.kikuFit
           ? "Экватор этого полюса. Дальше — переверните шар."
           : canFillMotif(s)
@@ -270,7 +281,7 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     label: "Распороть",
     cluster: "correction",
     canExecute: (s) => !s.undoEmpty,
-    getDisabledReason: (s) => (s.undoEmpty ? "Нет стежка, который можно распороть" : null),
+    getDisabledReason: (s) => (s.undoEmpty ? "Пока нечего отменять" : null),
   },
   {
     id: "reset",
