@@ -131,6 +131,12 @@
       footer { margin-top: 3.5rem; font-size: 0.78rem; color: var(--stone); }
       @media (max-width: 34rem) {
         #motifs-corrected { grid-template-columns: 1fr; }
+        .status-table, .status-table tbody, .status-table tr, .status-table td { display: block; width: 100%; }
+        .status-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+        .status-table tr { margin: 0 0 1.15rem; padding: 0.7rem 0.9rem; background: var(--paper); border-left: 1px solid var(--mark); }
+        .status-table td { padding: 0.35rem 0; border: 0; }
+        .status-table td::before { content: attr(data-label); display: block; margin-bottom: 0.15rem; color: var(--stone); font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; }
+        .status-table td:first-child { font-weight: 600; }
       }
     </style>
   </head>
@@ -254,18 +260,18 @@
       <h2 id="status">Состояние прототипа — 16.09.2026</h2>
       <p>Срез кода <code>cccc814</code>. «Реализовано» описывает код; «проверено» — имеющиеся
         подтверждения. Отсутствие проверки не считается ни успехом, ни доказанным отсутствием функции.</p>
-      <table>
+      <table class="status-table">
         <thead><tr><th>Область</th><th>Реализовано</th><th>Проверено / ограничение</th></tr></thead>
         <tbody>
-          <tr><td>Маки</td><td>полные круги, смена осей, отображение слоёв; ручной жест снят</td><td class="st-part">покрытие и материал требуют сверки кадра с расчётом; число витков — эвристика</td></tr>
-          <tr><td>Дзивари</td><td>Simple, C8, C10; Simple строится шагами, C8/C10 — готовой сеткой</td><td class="st-part">разметка не означает поддержку вышивки; в C10 найден повтор плоскости: 16 записей, 15 уникальных кругов</td></tr>
-          <tr><td>Кику Simple 8</td><td>рецепт и компиляция в <code>KagariOp</code>, последовательный показ</td><td class="st-part">контрольный вариант; полная непрерывность рабочей нити и ремесленная приёмка не закрыты</td></tr>
-          <tr><td>Кику C8 / C10</td><td><code>kikuRecipe</code> возвращает <code>null</code>; <code>compileKiku</code> всё же строит запасную геометрию</td><td class="st-no">подтверждённых рецептов и честного отказа неподдерживаемому сочетанию нет</td></tr>
-          <tr><td>Поворот и контакты</td><td>локальные поправки подхватов и подъёма</td><td class="st-no">зависимость от мировой Y и неполный поиск контактов; общий поворот на боковой центр не сохраняет путь</td></tr>
-          <tr><td>Ряды и цвет</td><td>выбор нити/цвета и направления; ограничение рядов экватором для Simple</td><td class="st-part">нет обязательного цикла цветов после kai 0; «Внутрь» не подтверждает sakasa; предел Simple не переносится в C8/C10</td></tr>
-          <tr><td>Другие мотивы</td><td>каталог и демонстрационные пути хоси, хиси, оби</td><td class="st-part">наличие изображения не подтверждает рецепт, закрепления и порядок шитья</td></tr>
-          <tr><td>Размер и метраж</td><td>формулы в <code>measure.ts</code>, калибровка ряда потребителей на C24</td><td class="st-no">полный пространственный путь и расход покупки не подтверждены; разные размеры требуют сквозных единиц</td></tr>
-          <tr><td>Техническая проверка</td><td>существующие тесты division, jiwari, patterns, kagari, library, stitches</td><td class="st-part">прошли на рабочем снимке 55584c7 с кодом cccc814; не заменяют проверки рецепта, контактов и художественной приёмки</td></tr>
+          <tr><td data-label="Область">Маки</td><td data-label="Реализовано">полные круги, смена осей, отображение слоёв; ручной жест снят</td><td class="st-part" data-label="Проверено / ограничение">покрытие и материал требуют сверки кадра с расчётом; число витков — эвристика</td></tr>
+          <tr><td data-label="Область">Дзивари</td><td data-label="Реализовано">Simple, C8, C10; Simple строится шагами, C8/C10 — готовой сеткой</td><td class="st-part" data-label="Проверено / ограничение">разметка не означает поддержку вышивки; в C10 найден повтор плоскости: 16 записей, 15 уникальных кругов</td></tr>
+          <tr><td data-label="Область">Кику Simple 8</td><td data-label="Реализовано">рецепт и компиляция в <code>KagariOp</code>, последовательный показ</td><td class="st-part" data-label="Проверено / ограничение">контрольный вариант; полная непрерывность рабочей нити и ремесленная приёмка не закрыты</td></tr>
+          <tr><td data-label="Область">Кику C8 / C10</td><td data-label="Реализовано"><code>kikuRecipe</code> возвращает <code>null</code>; <code>compileKiku</code> всё же строит запасную геометрию</td><td class="st-no" data-label="Проверено / ограничение">подтверждённых рецептов и честного отказа неподдерживаемому сочетанию нет</td></tr>
+          <tr><td data-label="Область">Поворот и контакты</td><td data-label="Реализовано">локальные поправки подхватов и подъёма</td><td class="st-no" data-label="Проверено / ограничение">зависимость от мировой Y и неполный поиск контактов; общий поворот на боковой центр не сохраняет путь</td></tr>
+          <tr><td data-label="Область">Ряды и цвет</td><td data-label="Реализовано">выбор нити/цвета и направления; ограничение рядов экватором для Simple</td><td class="st-part" data-label="Проверено / ограничение">нет обязательного цикла цветов после kai 0; «Внутрь» не подтверждает sakasa; предел Simple не переносится в C8/C10</td></tr>
+          <tr><td data-label="Область">Другие мотивы</td><td data-label="Реализовано">каталог и демонстрационные пути хоси, хиси, оби</td><td class="st-part" data-label="Проверено / ограничение">наличие изображения не подтверждает рецепт, закрепления и порядок шитья</td></tr>
+          <tr><td data-label="Область">Размер и метраж</td><td data-label="Реализовано">формулы в <code>measure.ts</code>, калибровка ряда потребителей на C24</td><td class="st-no" data-label="Проверено / ограничение">полный пространственный путь и расход покупки не подтверждены; разные размеры требуют сквозных единиц</td></tr>
+          <tr><td data-label="Область">Техническая проверка</td><td data-label="Реализовано">существующие тесты division, jiwari, patterns, kagari, library, stitches</td><td class="st-part" data-label="Проверено / ограничение">прошли на рабочем снимке 55584c7 с кодом cccc814; не заменяют проверки рецепта, контактов и художественной приёмки</td></tr>
         </tbody>
       </table>
 
