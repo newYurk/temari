@@ -1,0 +1,35 @@
+name: Check documentation
+on:
+  push:
+    paths:
+      - 'public/design.html'
+      - 'public/design/**'
+      - 'design.html'
+      - 'design/**'
+      - 'docs/design.html'
+      - 'docs/design/**'
+      - 'dist-pages/design.html'
+      - 'scripts/sync-design.mjs'
+      - '.github/workflows/documentation.yml'
+  pull_request:
+    paths:
+      - 'public/design.html'
+      - 'public/design/**'
+      - 'design.html'
+      - 'design/**'
+      - 'docs/design.html'
+      - 'docs/design/**'
+      - 'dist-pages/design.html'
+      - 'scripts/sync-design.mjs'
+      - '.github/workflows/documentation.yml'
+permissions:
+  contents: read
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node scripts/sync-design.mjs --check
