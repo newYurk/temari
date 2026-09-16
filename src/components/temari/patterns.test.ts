@@ -67,7 +67,8 @@ describe("kiku on Simple 8", () => {
     assert.ok(Math.abs(spec.inner - unitFromMm(5)) < 1e-6);
     assert.ok(Math.abs(spec.outer - Math.PI / 3) < 1e-9);
     const first = kikuThetas(spec, 0);
-    assert.ok(Math.abs(first.tOuter - spec.outer) < 1e-9, "round 0 goes to the pin");
+    assert.ok(first.tOuter < spec.outer, "round 0 sits just below the pin");
+    assert.ok(spec.outer - first.tOuter < spec.pitch * 1.05, "just below, not a short star");
     assert.ok(first.tOuter - first.tInner > 0.7, "first V is a long petal, not a tick");
     assert.ok(spec.inner + spec.rounds * spec.pitch <= spec.ceiling + spec.pitch);
     assert.ok(Math.abs(spec.pitch - unitFromMm(STITCH_THREAD_MM.pearl5)) < 1e-6);
@@ -261,17 +262,15 @@ describe("kiku on Simple 8", () => {
     }
   });
 
-  it("first bottom stitch sits at the GT14 pin", () => {
+  it("first bottom stitch sits just below the GT14 pin", () => {
     const spec = kikuSpec("simple");
     const ops = compileKiku("simple", "out", "even", 0, 0, 1, 0);
     const outer = ops.filter((op) => op.mark.t === "outer");
     assert.equal(outer.length, 4);
     for (const op of outer) {
       const theta = Math.acos(Math.min(1, Math.max(-1, op.mark.at[1])));
-      assert.ok(
-        Math.abs(theta - spec.outer) < 1e-5,
-        `outer ${theta} vs pin ${spec.outer}`,
-      );
+      assert.ok(theta < spec.outer, `outer ${theta} is poleward of pin ${spec.outer}`);
+      assert.ok(spec.outer - theta < spec.pitch * 1.05, "just below, not a new latitude");
     }
   });
 
@@ -349,6 +348,28 @@ describe("kiku on Simple 8", () => {
     for (const ring of [1, 3, spec.fit - 1]) {
       const d = minDotFor(ring);
       assert.ok(d > 0.975, `ring ${ring} min tanDot ${d} — later kai must not rib`);
+    }
+  });
+
+  it("packed flanks stay taut — colatitude does not S-wave back toward the pole", () => {
+    const pole: [number, number, number] = [0, 1, 0];
+    const spec = kikuSpec("simple", "even", "fit");
+    const step = Math.PI / 4;
+    for (const ring of [1, 3, spec.fit - 1]) {
+      const left = kikuFlank(pole, spec, ring, 0, step);
+      const pts = [left.a, ...left.via, left.b];
+      let maxDrop = 0;
+      let prev = polar(pole, pts[0]!).theta;
+      for (let i = 1; i < pts.length; i++) {
+        const th = polar(pole, pts[i]!).theta;
+        const drop = prev - th;
+        if (drop > maxDrop) maxDrop = drop;
+        prev = th;
+      }
+      assert.ok(
+        maxDrop < spec.pitch * 0.35,
+        `ring ${ring} theta drop ${maxDrop} — packed close-ups were a garden-hose S`,
+      );
     }
   });
 

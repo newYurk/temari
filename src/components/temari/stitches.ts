@@ -184,7 +184,7 @@ function arcPath(
   ];
   const pts: THREE.Vector3[] = [];
   const lift = (t: number, dir: THREE.Vector3) => {
-    const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT)) * diameter * 0.7;
+    const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT)) * diameter * 0.55;
     return dir.clone().multiplyScalar(1 + half + extra);
   };
   if (via.length === 0) {
@@ -270,28 +270,42 @@ function joinAroundMark(
   mark: THREE.Vector3,
   pearl: number,
 ) {
-  const keep = pearl * 2;
+  // Tight pearl U around the jiwari. Sample spacing on a long flank is
+  // ~one pearl, so popping "points inside keep" left a 2-pearl canyon
+  // (the packed-V close-ups). Land exactly `keep` from the mark, then
+  // a short past — not a cusp through the vertex (old diamond bead).
+  const keep = pearl * 0.78;
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
   }
   let i = 0;
   while (i < piece.length - 2 && piece[i]!.distanceToSquared(mark) < keep2) i++;
-  const from = pts[pts.length - 1];
-  const to = piece[i];
-  if (!from || !to) {
+  const fromRaw = pts[pts.length - 1];
+  const toRaw = piece[i];
+  if (!fromRaw || !toRaw) {
     for (let k = i; k < piece.length; k++) pts.push(piece[k]!);
     return;
   }
-  if (from.distanceToSquared(to) < pearl * pearl * 0.05) {
+  if (fromRaw.distanceToSquared(toRaw) < pearl * pearl * 0.05) {
     for (let k = i; k < piece.length; k++) {
-      if (k === 0 && nearVec(from, piece[k]!)) continue;
+      if (k === 0 && nearVec(fromRaw, piece[k]!)) continue;
       pts.push(piece[k]!);
     }
     return;
   }
-  const past = markTurnPast(from, mark, to, pearl);
-  for (const p of sphereBezier(from, past, to, 12)) pts.push(p);
+  const atKeep = (p: THREE.Vector3) => {
+    const d = p.distanceTo(mark);
+    if (d <= keep || d < 1e-9) return p.clone();
+    slerp(mark, p, keep / d, _a);
+    return _a.clone();
+  };
+  pts.pop();
+  const from = atKeep(fromRaw);
+  const to = atKeep(toRaw);
+  pts.push(from);
+  const past = markTurnPast(from, mark, to, pearl * 0.38);
+  for (const p of sphereBezier(from, past, to, 20)) pts.push(p);
   for (let k = i + 1; k < piece.length; k++) pts.push(piece[k]!);
 }
 
@@ -396,7 +410,7 @@ function stackedArcRibbon(
     for (let i = 0; i <= ARC_SEGS; i++) {
       const t = i / ARC_SEGS;
       const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT));
-      const extra = uniform + stacked * diameter * 0.7;
+      const extra = uniform + stacked * diameter * 0.55;
       slerpUnit(_pa, _pb, t, _a);
       pts.push(_a.clone().multiplyScalar(1 + half + extra));
     }
@@ -415,7 +429,7 @@ function stackedArcRibbon(
       for (let i = start; i <= 1; i++) {
         const t = (s + i) / steps;
         const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT));
-        const extra = uniform + stacked * diameter * 0.7;
+        const extra = uniform + stacked * diameter * 0.55;
         slerpUnit(a, b, i, _a);
         pts.push(_a.clone().multiplyScalar(1 + half + extra));
       }
@@ -449,9 +463,9 @@ function makeYarnTexture(fadeEdges: boolean) {
   if (!ctx) return tex;
   ctx.fillStyle = "#e8e0d6";
   ctx.fillRect(0, 0, 64, 16);
-  ctx.strokeStyle = "rgba(40,34,28,0.12)";
+  ctx.strokeStyle = "rgba(40,34,28,0.06)";
   ctx.lineWidth = 1;
-  for (const y of [5, 11]) {
+  for (const y of [2, 4, 6, 8, 10, 12, 14]) {
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(64, y);
@@ -620,7 +634,7 @@ function tubeOnSphere(
     };
     return Math.min(hermite(s / taperLen), hermite((total - s) / taperLen));
   };
-  const radialSegs = 10;
+  const radialSegs = 20;
   const ring = radialSegs + 1;
   const pos: number[] = [];
   const nrm: number[] = [];
@@ -645,15 +659,20 @@ function tubeOnSphere(
     _side.normalize();
     _mid.crossVectors(_t, _side).normalize();
     const r = radius * scaleAt(along[i] ?? 0);
+    // Pearl on the mari is slightly oval: pressed into the wrap, a bit
+    // wider on the surface. A round hose stands off the ball at close-up.
+    const rOut = r * 0.7;
+    const rAlong = r * 1.1;
     for (let j = 0; j <= radialSegs; j++) {
       const ang = (j / radialSegs) * Math.PI * 2;
       const c = Math.cos(ang);
       const s = Math.sin(ang);
-      const nx = _side.x * c + _mid.x * s;
-      const ny = _side.y * c + _mid.y * s;
-      const nz = _side.z * c + _mid.z * s;
-      pos.push(p.x + nx * r, p.y + ny * r, p.z + nz * r);
-      nrm.push(nx, ny, nz);
+      const nx = _side.x * c * rOut + _mid.x * s * rAlong;
+      const ny = _side.y * c * rOut + _mid.y * s * rAlong;
+      const nz = _side.z * c * rOut + _mid.z * s * rAlong;
+      pos.push(p.x + nx, p.y + ny, p.z + nz);
+      const nl = Math.hypot(nx, ny, nz) || 1;
+      nrm.push(nx / nl, ny / nl, nz / nl);
       uv.push(i / Math.max(1, nPath - 1), j / radialSegs);
     }
   }

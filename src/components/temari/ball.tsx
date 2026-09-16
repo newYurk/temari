@@ -430,12 +430,12 @@ export function Ball() {
     if (!shaft || !head) return;
     pins.forEach((pin, i) => {
       const n = _local.set(pin.p[0], pin.p[1], pin.p[2]).normalize();
-      dummy.position.copy(n).multiplyScalar(1.055);
+      dummy.position.copy(n).multiplyScalar(1.014);
       dummy.quaternion.setFromUnitVectors(Y_UP, n);
       dummy.scale.setScalar(i === activePin ? 1.28 : 1);
       dummy.updateMatrix();
       shaft.setMatrixAt(i, dummy.matrix);
-      dummy.position.copy(n).multiplyScalar(1.128);
+      dummy.position.copy(n).multiplyScalar(1.04);
       dummy.scale.setScalar(i === activePin ? 1.28 : 1);
       dummy.updateMatrix();
       head.setMatrixAt(i, dummy.matrix);
@@ -935,7 +935,7 @@ export function Ball() {
         count={pins.length}
         renderOrder={20}
       >
-        <cylinderGeometry args={[0.0065, 0.0065, 0.16, 8]} />
+        <cylinderGeometry args={[0.0032, 0.0032, 0.048, 10]} />
         <meshStandardMaterial color="#3a3834" roughness={0.32} metalness={0.55} />
       </instancedMesh>
       <instancedMesh
@@ -946,7 +946,7 @@ export function Ball() {
         count={pins.length}
         renderOrder={21}
       >
-        <sphereGeometry args={[0.028, 16, 12]} />
+        <sphereGeometry args={[0.014, 24, 16]} />
         <meshStandardMaterial color="#f4efe6" roughness={0.16} metalness={0.12} />
       </instancedMesh>
     </group>

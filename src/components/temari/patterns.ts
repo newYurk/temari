@@ -455,7 +455,9 @@ export function kikuThetas(
 ) {
   const ceiling = spec.ceiling ?? Math.min(Math.PI / 2 - unitFromMm(8), Math.PI * 0.49);
   const tInner = spec.inner + ring * spec.pitch;
-  const tOuter = Math.min(ceiling, spec.outer + ring * spec.stretch);
+  // First bottom stitch sits just poleward of the GT14 pin; later kai add
+  // Ozaki stretch from that stitch. Thread does not wrap the shaft.
+  const tOuter = Math.min(ceiling, spec.outer - spec.pitch * 0.7 + ring * spec.stretch);
   return { tInner, tOuter };
 }
 
@@ -610,11 +612,22 @@ function scale3(v: Vec3, s: number): Vec3 {
   return [v[0] * s, v[1] * s, v[2] * s];
 }
 
-/** Smooth mark → body join: same tangent as the parallel lay, so the miss is an S, not a knuckle. */
+function dirOnSphere(from: Vec3, to: Vec3): Vec3 {
+  const d = dot(from, to);
+  return normalize([
+    to[0] - from[0] * d,
+    to[1] - from[1] * d,
+    to[2] - from[2] * d,
+  ]);
+}
+
+/** Mark → body join. Taut: geodesic-ish into the offset, matching the lay at the body. */
 function hermiteJoin(from: Vec3, to: Vec3, mFrom: Vec3, mTo: Vec3, count: number): Vec3[] {
   const chord = Math.max(angleBetween(from, to), 1e-6);
-  const a = scale3(normalize(mFrom), chord);
-  const b = scale3(normalize(mTo), chord);
+  // Full-chord tangents S-wave the packed kai (close-up garden hose).
+  const scale = chord * 0.4;
+  const a = scale3(normalize(mFrom), scale);
+  const b = scale3(normalize(mTo), scale);
   const out: Vec3[] = [];
   for (let i = 0; i <= count; i++) {
     out.push(hermiteSphere(from, a, to, b, i / count));
@@ -663,8 +676,8 @@ export function kikuFlank(
   const i1 = Math.max(i0 + 2, n - 1 - i0);
   const p0 = off[i0]!;
   const p1 = off[i1]!;
-  const head = hermiteJoin(a, p0, tangentAt(off, 0), tangentAt(off, i0), 10);
-  const tail = hermiteJoin(p1, b, tangentAt(off, i1), tangentAt(off, n - 1), 10);
+  const head = hermiteJoin(a, p0, dirOnSphere(a, p0), tangentAt(off, i0), 8);
+  const tail = hermiteJoin(p1, b, tangentAt(off, i1), dirOnSphere(p1, b), 8);
   const pts: Vec3[] = [
     a,
     ...head.slice(1, -1),
