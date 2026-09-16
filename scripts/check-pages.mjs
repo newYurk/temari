@@ -21,6 +21,7 @@ try {
   await page.screenshot({ path: `${out}/lab-desktop.png`, fullPage: true });
   for (let center = 0; center < 6; center++) {
     await page.selectOption("#center", String(center));
+    await page.waitForFunction(c => document.querySelector("#sphere").dataset.center === String(c), center);
     assert.equal(await page.locator("#sphere text").count(), 8);
     assert.equal(
       await page.locator("#sphere").getAttribute("data-center"),
@@ -31,9 +32,12 @@ try {
   await page.screenshot({ path: `${out}/lab-side.png`, fullPage: true });
   await page.getByRole("button", { name: "На центр", exact: true }).click();
   await page.locator("#circumference").fill("320");
+  await page.waitForFunction(() => document.querySelector("#circumference-value").textContent === "32 см");
   assert.equal(await page.locator("#circumference-value").innerText(), "32 см");
+  await page.locator(".view-settings summary").click();
   await page.locator("#reverse").check();
   await page.locator("#step").fill("1");
+  await page.locator('#sphere[data-step="1"]').waitFor();
   assert.match(await page.locator("#progress").innerText(), /1 → 2$/);
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });

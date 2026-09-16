@@ -4,128 +4,103 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#ece8e1" />
-    <title>C8 · Геометрия цветка · Темари</title>
+    <title>C8 · Путь рабочей нити · Темари</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   </head>
   <body>
     <main>
-      <nav>
-        <a href="./">← Темари</a
-        ><a href="./design.html#status">Состояние модели</a>
-      </nav>
+      <nav><a href="./">← Темари</a><a href="./design.html#status">Состояние модели</a></nav>
       <header>
         <p class="eyebrow">Мастерская · исследование C8</p>
-        <h1>Один центр.<br />Восемь настоящих лучей.</h1>
-        <p class="intro">
-          Прежде чем укладывать нить, проверяем её опоры: на каких линиях лежат
-          метки и в каком порядке их обходить.
-        </p>
+        <h1>Одна нить.<br />Видимая и скрытая.</h1>
+        <p class="intro">Проследите один круг: от первого выхода из основы до завершения.
+          Рассмотрите, где нить лежит на поверхности, а где подхватывает основу под разметкой.</p>
       </header>
       <div class="workbench">
-        <section class="diagram" aria-label="Образец геометрии C8">
-          <svg
-            id="sphere"
-            viewBox="0 0 600 600"
-            role="img"
-            aria-label="Сфера с разметкой C8, восемью метками и четырьмя наружными остриями"
-          ></svg>
-          <p class="caption">
-            <span class="swatch inner"></span>1, 3, 5, 7 — внутренние
-            <span class="swatch outer"></span>2, 4, 6, 8 — наружные
-          </p>
+        <section class="diagram" aria-label="Образец пути нити C8">
+          <div id="thread-view">
+            <svg id="sphere" viewBox="0 0 600 600" role="img"
+              aria-label="Номера восьми меток на объёмном образце C8"></svg>
+          </div>
+          <p class="caption"><span class="swatch outer"></span>Пролёт
+            <span class="swatch hidden-thread"></span>Подхват и переход
+            <span class="swatch inner"></span>Разметочная опора</p>
           <p id="progress" class="progress" aria-live="polite"></p>
+          <p id="step-note" class="step-note"></p>
+          <div class="view-tools">
+            <button id="front" type="button">На центр</button>
+            <button id="side" type="button">Сбоку</button>
+            <button id="closeup" type="button">Подхват крупно</button>
+          </div>
+          <p class="gesture-note">Потяните шар, чтобы повернуть. Синие участки продолжают ту же нить.</p>
         </section>
         <section class="controls" aria-label="Настройки образца">
-          <div class="badge">Геометрический образец</div>
-          <h2>Четыре острия, одна группа</h2>
-          <p>
-            Начальный луч отмечен темнее. Каждый шаг соединяет соседние метки;
-            восьмой возвращает к первой. Вторая группа автоматически не
-            добавляется.
-          </p>
-          <label
-            >Центр разметки<select
-              id="center"
-              aria-label="Центр разметки"
-            ></select
-          ></label>
-          <label
-            >Обхват мари <output id="circumference-value"></output
-            ><input
-              id="circumference"
-              type="range"
-              min="180"
-              max="360"
-              step="10"
-              value="230"
-          /></label>
-          <label
-            >Показать соединений <output id="step-value"></output
-            ><input id="step" type="range" min="0" max="8" step="1" value="8"
-          /></label>
-          <div class="buttons">
-            <button id="next" type="button">Следующий шаг</button
-            ><button id="front" type="button">На центр</button
-            ><button id="side" type="button">Сбоку</button>
-          </div>
-          <label
-            >Поворот вида<input
-              id="turn"
-              type="range"
-              min="-180"
-              max="180"
-              value="0"
-          /></label>
-          <label
-            >Наклон вида<input
-              id="tilt"
-              type="range"
-              min="-90"
-              max="90"
-              value="0"
-          /></label>
-          <label class="check"
-            ><input id="reverse" type="checkbox" />Обратный обход лучей</label
-          >
+          <div class="badge">Технический образец</div>
+          <h2>Четыре острия, один круг</h2>
+          <p>Каждый шаг укладывает пролёт и выполняет подхват у следующей метки.
+            Начало и конец нити находятся в разных точках внутри основы.</p>
+          <label>Показать стежков <output id="step-value"></output>
+            <input id="step" type="range" min="0" max="8" step="1" value="8" /></label>
+          <div class="buttons"><button id="next" type="button">Следующий стежок</button>
+            <button id="restart" type="button">Сначала</button></div>
+          <label class="check"><input id="inside" type="checkbox" />Путь внутри — прозрачная основа</label>
+          <label>Приблизить текущий подхват <output id="zoom-value"></output>
+            <input id="zoom" type="range" min="1" max="8" step="1" value="1" /></label>
+          <label>Центр разметки<select id="center" aria-label="Центр разметки"></select></label>
+          <label>Обхват мари <output id="circumference-value"></output>
+            <input id="circumference" type="range" min="180" max="360" step="10" value="230" /></label>
+          <details class="view-settings"><summary>Вид и направление обхода</summary>
+            <label>Поворот вида<input id="turn" type="range" min="-180" max="180" value="0" /></label>
+            <label>Наклон вида<input id="tilt" type="range" min="-85" max="85" value="0" /></label>
+            <label class="check"><input id="reverse" type="checkbox" />Обратный обход лучей</label>
+            <label class="check"><input id="marks" type="checkbox" checked />Номера меток</label>
+          </details>
           <dl>
-            <div>
-              <dt>Внутренние метки</dt>
-              <dd>5 мм от центра</dd>
-            </div>
-            <div>
-              <dt>Наружные метки</dt>
-              <dd>20 мм от центра</dd>
-            </div>
-            <div>
-              <dt>Расстояние</dt>
-              <dd>вдоль поверхности мари</dd>
-            </div>
+            <div><dt>Внутренние / наружные метки</dt><dd>5 / 20 мм от центра</dd></div>
+            <div><dt>Диаметр рабочей нити</dt><dd id="thread-diameter"></dd></div>
+            <div><dt>Диаметр разметочной опоры</dt><dd id="support-diameter"></dd></div>
           </dl>
+          <p class="assumption">Размеры нити и проколов заданы для проверки модели; это не измерения пряжи из рецепта.</p>
         </section>
       </div>
+      <section class="checks" aria-labelledby="checks-title">
+        <div><p class="eyebrow">Что рассчитано</p><h2 id="checks-title">Путь учитывается целиком</h2>
+          <p id="validation" role="status" data-status="unresolved">Проверяем геометрию…</p>
+          <p id="validation-detail"></p></div>
+        <dl class="metrics">
+          <div><dt>Длина пути модели</dt><dd id="length-total"></dd></div>
+          <div><dt>Поверхностные пролёты</dt><dd id="length-surface"></dd></div>
+          <div><dt>Подхваты и выходы</dt><dd id="length-piercing"></dd></div>
+          <div><dt>Полностью скрытые участки</dt><dd id="length-buried"></dd></div>
+        </dl>
+        <details><summary>Численные проверки</summary>
+          <dl>
+            <div><dt>Зазор до разметочных опор</dt><dd id="support-gap"></dd></div>
+            <div><dt>Зазор между удалёнными частями нити</dt><dd id="self-gap"></dd></div>
+            <div><dt>Радиус нити × максимальная кривизна</dt><dd id="curvature"></dd></div>
+            <div><dt>Допуск аппроксимации</dt><dd id="tolerance"></dd></div>
+          </dl>
+          <p>Зазор считается между объёмными нитями, включая скрытые участки.
+            Положительный зазор означает, что нити разделены; проход под опорой сам по себе не означает касания.
+            Максимумы кривизны ищутся численно и сверяются со сгущением выборки.
+            Это не аналитический сертификат трубы.</p>
+        </details>
+      </section>
       <section class="scope">
-        <h2>Что именно здесь проверяем</h2>
-        <p>
-          Луч получается из пересечения настоящей плоскости дзивари с
-          касательной плоскостью в выбранном центре. Обхват задаёт радиус сферы:
-          при его изменении метки остаются в 5 и 20 мм по поверхности. Численные
-          тесты проверяют принадлежность кругам, масштаб и совместный поворот
-          разметки и меток для всех шести центров C8.
-        </p>
-        <p>
-          5 и 20 мм — тестовые расстояния, выбранные для этого образца. Цветные
-          дуги показывают порядок обхода между идеальными метками. Толщина линии
-          условная; подхваты иглой, закрепления, скрытые переходы и контакты
-          нитей здесь ещё не рассчитаны.
-        </p>
-        <p>
-          Ремесленный ориентир —
-          <a href="https://www.temarikai.com/PatternsPages/C8/GT55.html"
-            >GT55, Ginny T.</a
-          >: одна группа с четырьмя внешними остриями. Полный дизайн опирается
-          на предварительные ромбы и треугольники. Этот образец не воспроизводит
-          их и не является готовым рецептом GT55.
-        </p>
+        <h2>Границы этого образца</h2>
+        <p>Здесь одна непрерывная центральная линия с круглым сечением. Вход, выход и подхват —
+          отдельные участки той же нити. Показ внутри меняет прозрачность основы, а приближение — камеру;
+          рассчитанные пути и толщина остаются прежними. Восемь коротких разметочных опор заданы как
+          неподвижные нити. Бледная сетка служит геометрической направляющей.</p>
+        <p>Обхват задаёт радиус сферы; метки находятся в 5 и 20 мм по поверхности.
+          Глубина прокола, сгибы, скрытые пути и разнесение начала/конца выбраны для инженерной проверки.
+          Концы считаются закреплёнными условиями модели: способ закрепления, трение и натяжение
+          ещё не моделируются. Показанная длина относится к этому пути и не является расходом для покупки.</p>
+        <p>Ремесленный ориентир — <a href="https://www.temarikai.com/HowToPages/ToolKit/uwagakechidori.html">подхват uwagake</a>
+          и <a href="https://www.temarikai.com/PatternsPages/C8/GT55.html">GT55, Ginny T.</a>:
+          одна группа с четырьмя наружными остриями. Полная GT55 опирается на предварительные ромбы и треугольники.
+          Этот образец их не воспроизводит. Следующий ряд потребует прохода поверх прежнего пучка
+          и расширения верхнего подхвата; он не добавлен простым копированием первого.</p>
       </section>
     </main>
     <script type="module" src="/src/lab.ts"></script>
