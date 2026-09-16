@@ -617,6 +617,7 @@ export function Ball() {
       layerDone: () => useTemari.getState().layerDone,
       finish: () => useTemari.getState().finishLayer(),
       enterStudio: () => useTemari.getState().enterStudio(),
+      showExample: () => useTemari.getState().showExample(),
       setFacingPole: (i: number) => useTemari.getState().setFacingPole(i),
       pinAt: (x: number, y: number, z: number) => useTemari.getState().placePin([x, y, z]),
       craft: () => useTemari.getState().craft,
@@ -634,6 +635,22 @@ export function Ball() {
       },
       startAt: (x: number, y: number, z: number) => useTemari.getState().setStartPin([x, y, z]),
       fillKiku: () => useTemari.getState().fillKiku(),
+      packKiku: () => {
+        const s = useTemari.getState();
+        const plan = generateMotif("simple", "kiku", "out", "even", 0, s.selectedColor, 6, "all");
+        useTemari.setState({
+          division: "simple",
+          facingPole: 0,
+          motif: "kiku",
+          craft: "stitch",
+          kagariPlan: plan,
+          kagariLaid: plan.length,
+          kagariPlaying: false,
+          kikuLayers: 6,
+          kagariSet: 1,
+          kagariFocus: null,
+        });
+      },
       setCraft: (c: "wind" | "pin" | "stitch") => useTemari.getState().setCraft(c),
       setColor: (i: number) => useTemari.getState().setColor(i),
       spin: (x: number, y: number, z: number) => omega.current.set(x, y, z),

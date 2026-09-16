@@ -12,6 +12,12 @@ const ARC_SEGS = 32;
 /** Almost one pearl so the over cord clears; a hair less so it nestles, not a tent. */
 const STACK_LIFT = 0.92;
 
+function poleBlend(p: THREE.Vector3) {
+  const ny = Math.abs(p.y) / (p.length() || 1);
+  if (ny < 0.86) return 0;
+  return Math.min(1, (ny - 0.86) / 0.13);
+}
+
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
 const _side = new THREE.Vector3();
@@ -191,7 +197,7 @@ function arcPath(
     // Inner uwagake is one pearl on the mari. A 3-high stack here is the
     // title-page macaroni on the silhouette.
     const u = dir.clone().normalize();
-    if (Math.abs(u.y) > 0.93) extra = Math.min(extra, diameter * 0.35);
+    extra *= 1 - 0.92 * poleBlend(u);
     return dir.clone().multiplyScalar(1 + half + extra);
   };
   if (via.length === 0) {
@@ -279,7 +285,7 @@ function joinAroundMark(
   pearl: number,
 ) {
   const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
-  const keep = pearl * (inner ? 0.28 : 0.7);
+  const keep = pearl * (inner ? 0.22 : 0.7);
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
@@ -315,9 +321,19 @@ function joinAroundMark(
       [from.x, from.y, from.z],
       [to.x, to.y, to.z],
       pole,
-      6,
+      4,
     );
-    for (const p of turn) pts.push(new THREE.Vector3(p[0], p[1], p[2]));
+    const cap = Math.abs(mark.y) / (mark.length() || 1);
+    for (const p of turn) {
+      const q = new THREE.Vector3(p[0], p[1], p[2]);
+      const L = q.length() || 1;
+      if (Math.abs(q.y) / L > cap) {
+        const rho = Math.sqrt(Math.max(0, 1 - cap * cap));
+        const pr = Math.hypot(q.x, q.z) || 1e-9;
+        q.set((q.x / pr) * rho * L, Math.sign(q.y) * cap * L, (q.z / pr) * rho * L);
+      }
+      pts.push(q);
+    }
   } else {
     const past = markTurnPast(from, mark, to, pearl * 0.32);
     for (const p of sphereBezier(from, past, to, 20)) pts.push(p);
@@ -339,17 +355,13 @@ function scoopOnPath(
   const half = unitFromMm(kindMm(kind)) * 0.5;
   const surfaceR = at.length();
   const inner = Math.abs(at.y) / (at.length() || 1) > 0.75;
-  // Inner park must dive equatorward, under the stack. scoopAway(at, from)
-  // walks opposite the stitch — at the pole that is into the empty cap
-  // (the title-page macaroni).
-  const guide = inner
-    ? _t.copy(at).multiplyScalar(2).sub(from)
-    : from;
+  if (inner) return [];
+  const guide = from;
   const units = scoopAway(
     [at.x, at.y, at.z],
     [guide.x, guide.y, guide.z],
-    inner ? 4 : 8,
-    inner ? 0.8 : undefined,
+    8,
+    undefined,
   );
   const n = units.length;
   if (n === 0) return [];
@@ -390,43 +402,52 @@ function stackedArcChain(
   kind: ThreadKind,
 ) {
   if (chain.length === 1) return stackedArcCord(chain[0]!, kind);
-  const pts: THREE.Vector3[] = [];
-  for (let i = 0; i < chain.length; i++) {
-    const piece = arcPath(chain[i]!, kind);
-    if (piece.length < 2) continue;
+  const pearl = unitFromMm(kindMm(kind));
+  const parts: THREE.BufferGeometry[] = [];
+  const flush = (pts: THREE.Vector3[], parks: boolean) => {
+    if (pts.length < 2) return;
+    const path = parks ? buryWorkingStart(pts, kind) : buryWorkingEnds(pts, kind);
+    parts.push(tubeOnSphere(path, stitchRadius(kind), false, false));
+  };
+  let pts: THREE.Vector3[] = [];
+  let kai0 = chain[0]?.kai;
+  let headA = chain[0]?.a;
+  const joinPiece = (piece: THREE.Vector3[]) => {
     if (pts.length === 0) {
       pts.push(...piece);
-      continue;
+      return;
     }
     const mark = pts[pts.length - 1]!;
     const next0 = piece[0]!;
     if (nearVec(mark, next0) && pts.length > 1 && piece.length > 1) {
-      // Pearl U around the mark. A cusp through the vertex, or enter→exit
-      // as a cord, is a diamond bead on the ray (the user's packed-V shots).
       pts.pop();
-      joinAroundMark(pts, piece, mark, unitFromMm(kindMm(kind)));
+      joinAroundMark(pts, piece, mark, pearl);
     } else {
-      const pearl = unitFromMm(kindMm(kind));
-      const resume = mark.distanceToSquared(next0) < (2.2 * pearl) ** 2;
-      if (resume && pts.length > 1 && piece.length > 1) {
-        // Next kai of the same pearl: dive and come up. A slerp here is a
-        // noodle around the pole.
-        const prev = pts[pts.length - 2]!;
-        const nxt = piece[1]!;
-        pts.push(...scoopOnPath(mark, prev, kind));
-        pts.push(...scoopOnPath(next0, nxt, kind).reverse());
-        for (let k = 0; k < piece.length; k++) pts.push(piece[k]!);
-      } else {
-        const start = nearVec(mark, next0) ? 1 : 0;
-        for (let k = start; k < piece.length; k++) pts.push(piece[k]!);
-      }
+      const start = nearVec(mark, next0) ? 1 : 0;
+      for (let k = start; k < piece.length; k++) pts.push(piece[k]!);
     }
+  };
+  for (let i = 0; i < chain.length; i++) {
+    const s = chain[i]!;
+    if (s.kai !== kai0 && pts.length) {
+      const prev = chain[i - 1]!;
+      flush(pts, !!(headA && sameMark(headA, prev.b)));
+      pts = [];
+      kai0 = s.kai;
+      headA = s.a;
+    }
+    const piece = arcPath(s, kind);
+    if (piece.length < 2) continue;
+    joinPiece(piece);
   }
-  if (pts.length < 2) return new THREE.BufferGeometry();
-  // Closed drawing ≠ the thread joined itself. Park on the mari; don't weld.
-  const parks = chain.length > 2 && sameMark(chain[0]!.a, chain[chain.length - 1]!.b);
-  const path = parks ? buryWorkingStart(pts, kind) : buryWorkingEnds(pts, kind);
-  return tubeOnSphere(path, stitchRadius(kind), false, false);
+  if (pts.length >= 2) {
+    const last = chain[chain.length - 1]!;
+    flush(pts, !!(headA && sameMark(headA, last.b)));
+  }
+  const ok = parts.filter((g) => (g.getAttribute("position")?.count ?? 0) > 0);
+  if (ok.length === 0) return new THREE.BufferGeometry();
+  if (ok.length === 1) return ok[0]!;
+  return mergeGeometries(ok, false) ?? ok[0]!;
 }
 
 function stackedArcRibbon(
@@ -658,6 +679,13 @@ function tubeOnSphere(
     }
   }
   if (!closed) path.push(pts[pts.length - 1]!.clone());
+  for (const p of path) {
+    const t = poleBlend(p);
+    if (t <= 0) continue;
+    const L = p.length() || 1;
+    const maxR = 1 + radius * (1.1 - 0.75 * t);
+    if (L > maxR) p.multiplyScalar(maxR / L);
+  }
   const nPath = path.length;
   if (nPath < 2) return new THREE.BufferGeometry();
   const along = [0];
@@ -700,13 +728,9 @@ function tubeOnSphere(
     _side.normalize();
     _mid.crossVectors(_t, _side).normalize();
     const r = radius * scaleAt(along[i] ?? 0);
-    // Round pearl, a hair under one-pitch so packed kai nestle instead of
-    // cutting through each other. Flatten at the poles so the silhouette
-    // is a cap, not a fringe of tubes.
-    const pole = Math.abs(p.y) / (p.length() || 1);
-    const flat = pole > 0.93 ? 0.42 : 0.72;
-    const rOut = r * flat;
-    const rAlong = r * (pole > 0.93 ? 0.8 : 0.9);
+    const cap = poleBlend(p);
+    const rOut = r * (0.72 - 0.64 * cap);
+    const rAlong = r * (0.9 - 0.35 * cap);
     for (let j = 0; j <= radialSegs; j++) {
       const ang = (j / radialSegs) * Math.PI * 2;
       const c = Math.cos(ang);
