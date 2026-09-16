@@ -6,7 +6,7 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
-import { stackBump, scoopAway, scoopRadius, markTurnPast as markTurnPastVec, sphereBezier as sphereBezierVec, smallCircleJoin as smallCircleJoinVec } from "./kagari";
+import { stackBump, scoopAway, scoopRadius, markTurnPast as markTurnPastVec, sphereBezier as sphereBezierVec, innerBiteJoin as innerBiteJoinVec } from "./kagari";
 
 const ARC_SEGS = 32;
 /** Almost one pearl so the over cord clears; a hair less so it nestles, not a tent. */
@@ -285,7 +285,7 @@ function joinAroundMark(
   pearl: number,
 ) {
   const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
-  const keep = pearl * (inner ? 0.22 : 0.7);
+  const keep = pearl * (inner ? 0.5 : 0.7);
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
@@ -316,23 +316,14 @@ function joinAroundMark(
   const to = atKeep(toRaw);
   pts.push(from);
   if (inner) {
-    const pole: [number, number, number] = mark.y >= 0 ? [0, 1, 0] : [0, -1, 0];
-    const turn = smallCircleJoinVec(
+    for (const p of innerBiteJoinVec(
       [from.x, from.y, from.z],
+      [mark.x, mark.y, mark.z],
       [to.x, to.y, to.z],
-      pole,
-      4,
-    );
-    const cap = Math.abs(mark.y) / (mark.length() || 1);
-    for (const p of turn) {
-      const q = new THREE.Vector3(p[0], p[1], p[2]);
-      const L = q.length() || 1;
-      if (Math.abs(q.y) / L > cap) {
-        const rho = Math.sqrt(Math.max(0, 1 - cap * cap));
-        const pr = Math.hypot(q.x, q.z) || 1e-9;
-        q.set((q.x / pr) * rho * L, Math.sign(q.y) * cap * L, (q.z / pr) * rho * L);
-      }
-      pts.push(q);
+      pearl,
+      3,
+    )) {
+      pts.push(new THREE.Vector3(p[0], p[1], p[2]));
     }
   } else {
     const past = markTurnPast(from, mark, to, pearl * 0.32);
@@ -729,8 +720,9 @@ function tubeOnSphere(
     _mid.crossVectors(_t, _side).normalize();
     const r = radius * scaleAt(along[i] ?? 0);
     const cap = poleBlend(p);
-    const rOut = r * (0.72 - 0.64 * cap);
-    const rAlong = r * (0.9 - 0.35 * cap);
+    // Flatten height on the silhouette; keep width so the cap is pearls, not pasta.
+    const rOut = r * (0.88 - 0.12 * cap);
+    const rAlong = r * (0.88 - 0.5 * cap);
     for (let j = 0; j <= radialSegs; j++) {
       const ang = (j / radialSegs) * Math.PI * 2;
       const c = Math.cos(ang);

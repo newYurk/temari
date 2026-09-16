@@ -391,6 +391,57 @@ export function smallCircleJoin(from: Vec3, to: Vec3, pole: Vec3, n: number): Ve
 }
 
 /**
+ * Inner uwagake: a pearl bite *across* the jiwari.
+ * A small-circle around the pole is a 90° noodle on the cap — macaroni from above.
+ * The visible bead is one pearl, not a loop.
+ */
+export function innerBiteJoin(from: Vec3, mark: Vec3, to: Vec3, pearl: number, n = 4): Vec3[] {
+  const m = normalize(mark);
+  const pole: Vec3 = m[1] >= 0 ? [0, 1, 0] : [0, -1, 0];
+  let across = cross(m, pole);
+  if (hypot3(across) < 1e-8) across = [1, 0, 0];
+  across = normalize(across);
+  const r = 0.5 * ((hypot3(from) || 1) + (hypot3(to) || 1));
+  const half = pearl * 0.45;
+  const mk = (s: number): Vec3 => {
+    const q = normalize([m[0] + across[0] * s, m[1] + across[1] * s, m[2] + across[2] * s]);
+    return [q[0] * r, q[1] * r, q[2] * r];
+  };
+  let enter = mk(-half);
+  let exit = mk(half);
+  const d = (a: Vec3, b: Vec3) => {
+    const dx = a[0] - b[0];
+    const dy = a[1] - b[1];
+    const dz = a[2] - b[2];
+    return dx * dx + dy * dy + dz * dz;
+  };
+  if (d(from, exit) + d(to, enter) < d(from, enter) + d(to, exit)) {
+    const tmp = enter;
+    enter = exit;
+    exit = tmp;
+  }
+  const out: Vec3[] = [];
+  const cap = Math.abs(m[1]);
+  const push = (a: Vec3, b: Vec3, steps: number) => {
+    for (let i = 1; i <= steps; i++) {
+      const p = slerp3(a, b, i / steps);
+      const L = hypot3(p) || 1;
+      if (Math.abs(p[1]) / L > cap) {
+        const rho = Math.sqrt(Math.max(0, 1 - cap * cap));
+        const pr = Math.hypot(p[0], p[2]) || 1e-9;
+        out.push([(p[0] / pr) * rho * L, Math.sign(p[1]) * cap * L, (p[2] / pr) * rho * L]);
+      } else {
+        out.push(p);
+      }
+    }
+  };
+  push(from, enter, n);
+  push(enter, exit, Math.max(2, n));
+  push(exit, to, n);
+  return out;
+}
+
+/**
  * Uwagake at the pole: the working thread goes *over* the already-sewn bundle
  * on this meridian, closer to the pole than the new inner bite, then scoops.
  * That is the V opening — the needle's eye clearing the stack — not a new ray.
