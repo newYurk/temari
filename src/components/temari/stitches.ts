@@ -187,7 +187,11 @@ function arcPath(
   ];
   const pts: THREE.Vector3[] = [];
   const lift = (t: number, dir: THREE.Vector3) => {
-    const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts)) * diameter * STACK_LIFT;
+    let extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts)) * diameter * STACK_LIFT;
+    // Inner uwagake is one pearl on the mari. A 3-high stack here is the
+    // title-page macaroni on the silhouette.
+    const u = dir.clone().normalize();
+    if (Math.abs(u.y) > 0.93) extra = Math.min(extra, diameter * 0.35);
     return dir.clone().multiplyScalar(1 + half + extra);
   };
   if (via.length === 0) {
@@ -275,7 +279,7 @@ function joinAroundMark(
   pearl: number,
 ) {
   const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
-  const keep = pearl * (inner ? 0.5 : 0.7);
+  const keep = pearl * (inner ? 0.28 : 0.7);
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
@@ -402,8 +406,20 @@ function stackedArcChain(
       pts.pop();
       joinAroundMark(pts, piece, mark, unitFromMm(kindMm(kind)));
     } else {
-      const start = nearVec(mark, next0) ? 1 : 0;
-      for (let k = start; k < piece.length; k++) pts.push(piece[k]!);
+      const pearl = unitFromMm(kindMm(kind));
+      const resume = mark.distanceToSquared(next0) < (2.2 * pearl) ** 2;
+      if (resume && pts.length > 1 && piece.length > 1) {
+        // Next kai of the same pearl: dive and come up. A slerp here is a
+        // noodle around the pole.
+        const prev = pts[pts.length - 2]!;
+        const nxt = piece[1]!;
+        pts.push(...scoopOnPath(mark, prev, kind));
+        pts.push(...scoopOnPath(next0, nxt, kind).reverse());
+        for (let k = 0; k < piece.length; k++) pts.push(piece[k]!);
+      } else {
+        const start = nearVec(mark, next0) ? 1 : 0;
+        for (let k = start; k < piece.length; k++) pts.push(piece[k]!);
+      }
     }
   }
   if (pts.length < 2) return new THREE.BufferGeometry();
@@ -685,9 +701,12 @@ function tubeOnSphere(
     _mid.crossVectors(_t, _side).normalize();
     const r = radius * scaleAt(along[i] ?? 0);
     // Round pearl, a hair under one-pitch so packed kai nestle instead of
-    // cutting through each other. Slightly pressed into the wrap (rOut).
-    const rOut = r * 0.72;
-    const rAlong = r * 0.9;
+    // cutting through each other. Flatten at the poles so the silhouette
+    // is a cap, not a fringe of tubes.
+    const pole = Math.abs(p.y) / (p.length() || 1);
+    const flat = pole > 0.93 ? 0.42 : 0.72;
+    const rOut = r * flat;
+    const rAlong = r * (pole > 0.93 ? 0.8 : 0.9);
     for (let j = 0; j <= radialSegs; j++) {
       const ang = (j / radialSegs) * Math.PI * 2;
       const c = Math.cos(ang);
