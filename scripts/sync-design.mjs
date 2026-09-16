@@ -2,8 +2,8 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// These legacy mirrors are already tracked. Keep one editable document until
-// the Pages build is migrated; this command does not rebuild the game.
+// These legacy mirrors are already tracked. Pages builds from public/;
+// keep the mirrors synchronized until retired, without rebuilding the game.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const mode = process.argv[2];
 if (!["--check", "--write"].includes(mode) || process.argv.length !== 3) {
