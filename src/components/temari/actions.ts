@@ -1,4 +1,4 @@
-import { isClosedContour, kikuSpec, type KagariDir, type KagariSpacing, type MotifId } from "./patterns";
+import { isClosedContour, kikuMarksReady as kikuPinsComplete, kikuSpec, type KagariDir, type KagariSpacing, type MotifId } from "./patterns";
 import type { Craft } from "./craft";
 import type { Division } from "./division";
 import type { JiwariPhase } from "./jiwari";
@@ -25,6 +25,7 @@ export type TemariCraftState = {
   kagariIdleComplete: boolean;
   kikuLayers: number;
   kikuFit: number;
+  kikuMarksReady: boolean;
   selectedColor: number;
   paletteId: PaletteId;
 };
@@ -67,6 +68,7 @@ export function getCraftState(): TemariCraftState {
       !s.kagariPlaying && s.kagariPlan.length > 0 && s.kagariLaid >= s.kagariPlan.length,
     kikuLayers: s.kikuLayers,
     kikuFit: kikuSpec(s.division, s.kagariSpacing, "fit").fit,
+    kikuMarksReady: s.motif !== "kiku" || kikuPinsComplete(s.pins, s.division, s.facingPole),
     selectedColor: s.selectedColor,
     paletteId: s.paletteId,
   };
@@ -125,17 +127,19 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     id: "stitch",
     label: "Стежок",
     cluster: "kagari",
-    canExecute: (s) => !needWrap(s) && (s.jiwariOn ? jiwariReady(s) : s.hasPin),
+    canExecute: (s) => !needWrap(s) && (s.jiwariOn ? jiwariReady(s) : s.hasPin) && s.kikuMarksReady,
     isActive: (s) => s.craft === "stitch",
     getDisabledReason: (s) =>
       needWrap(s) ??
-      (s.jiwariOn
-        ? jiwariReady(s)
-          ? null
-          : "Сначала доведите разметку полоской"
-        : s.hasPin
-          ? null
-          : "Сначала выберите опорную булавку или линию разметки"),
+      (!s.kikuMarksReady
+        ? "Воткните булавки: полюс и ⅓ на меридианах"
+        : s.jiwariOn
+          ? jiwariReady(s)
+            ? null
+            : "Сначала доведите разметку полоской"
+          : s.hasPin
+            ? null
+            : "Сначала выберите опорную булавку или линию разметки"),
   },
   {
     id: "motif-none",
@@ -205,7 +209,7 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     label: "Залить",
     cluster: "kagari",
     canExecute: (s) => {
-      if (needMarks(s) || !canFillMotif(s)) return false;
+      if (needMarks(s) || !canFillMotif(s) || !s.kikuMarksReady) return false;
       if (s.motif === "kiku" && s.kagariIdleComplete) {
         if (s.kagariSet === 0) return false;
         if (s.kikuLayers >= s.kikuFit) return false;
@@ -214,7 +218,9 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     },
     getDisabledReason: (s) =>
       needMarks(s) ??
-      (s.motif === "kiku" && s.kagariIdleComplete && s.kagariSet === 0
+      (!s.kikuMarksReady
+        ? "Воткните булавки: полюс и ⅓ на меридианах"
+        : s.motif === "kiku" && s.kagariIdleComplete && s.kagariSet === 0
         ? "Сначала вторые 4 — снова «Кику»."
         : s.motif === "kiku" && s.kagariIdleComplete && s.kikuLayers >= s.kikuFit
           ? "До оби. Дальше — переверните шар."

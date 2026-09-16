@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { fillKikuSewn, kikuSpec, stitchesForSlot, hitKikuSlot, kikuThetas, around, nextKagariPole, compileKiku, stitchesFromOps, kikuFlank, kikuMarkPins, kikuWorkingPins } from "./patterns.ts";
+import { fillKikuSewn, kikuSpec, stitchesForSlot, hitKikuSlot, kikuThetas, around, nextKagariPole, compileKiku, stitchesFromOps, kikuFlank, kikuMarkPins, kikuWorkingPins, kikuMarksReady, snapToKikuMark, kikuPinHint, generateTitleMari } from "./patterns.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 
 function merPhi(p: [number, number, number]) {
@@ -262,6 +262,39 @@ describe("kiku on Simple 8", () => {
     }
   });
 
+  it("snapToKikuMark binds a meridian tap to the ⅓ mark, not the equator", () => {
+    const spec = kikuSpec("simple");
+    const marks = kikuWorkingPins("simple", 0);
+    const outer = marks.find((pin) => pin.id === "kiku-0-0");
+    assert.ok(outer);
+    if (!outer) return;
+    const near: [number, number, number] = [
+      outer.p[0] * 0.96,
+      outer.p[1] * 0.96 + 0.04,
+      outer.p[2] * 0.96,
+    ];
+    const hit = snapToKikuMark(near, "simple", 0);
+    assert.ok(hit);
+    if (!hit) return;
+    assert.equal(hit.id, "kiku-0-0");
+    const theta = Math.acos(Math.min(1, Math.max(-1, hit.p[1])));
+    assert.ok(Math.abs(theta - spec.outer) < 1e-6);
+    const equator: [number, number, number] = [0, 0, 1];
+    assert.equal(snapToKikuMark(equator, "simple", 0), null, "exact equator is not a kiku mark");
+    const farSouth: [number, number, number] = [0, -1, 0];
+    assert.equal(snapToKikuMark(farSouth, "simple", 0), null);
+  });
+
+  it("kikuMarksReady is all 9 working marks, not a free polygon", () => {
+    const marks = kikuWorkingPins("simple", 0);
+    assert.equal(marks.length, 9);
+    assert.equal(kikuMarksReady([], "simple", 0), false);
+    assert.equal(kikuMarksReady(marks.slice(0, 8), "simple", 0), false);
+    assert.equal(kikuMarksReady(marks, "simple", 0), true);
+    assert.match(kikuPinHint(0, 9), /полюс/);
+    assert.match(kikuPinHint(9, 9), /Можно шить/);
+  });
+
   it("first bottom stitch sits just below the GT14 pin", () => {
     const spec = kikuSpec("simple");
     const ops = compileKiku("simple", "out", "even", 0, 0, 1, 0);
@@ -384,5 +417,15 @@ describe("kiku on Simple 8", () => {
     const spec = kikuSpec("simple", "even", 1);
     assert.ok(Math.abs(th - spec.outer) < 0.02, "first corners sit on the pin, ⅓ from the equator");
     assert.ok(th > spec.inner + 0.5, "first V is long");
+  });
+
+  it("title kiku is kin on beni, not navy-on-burgundy", () => {
+    const stitches = generateTitleMari();
+    const kikuArcs = stitches.filter((s) => s.kind === "arc");
+    assert.ok(kikuArcs.length > 20);
+    assert.ok(
+      kikuArcs.every((s) => s.kind === "arc" && s.color === 1),
+      "kiku is gold pearl, not wrap or navy",
+    );
   });
 });

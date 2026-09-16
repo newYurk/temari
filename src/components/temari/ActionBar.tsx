@@ -3,7 +3,7 @@ import { RotateCcw, Undo2, Pin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { THREAD_COLORS } from "./palettes";
 import { jiwariPhaseHint } from "./jiwari";
-import { kagariPhaseHint, kikuSpec, stitchPoleIndex } from "./patterns";
+import { kagariPhaseHint, kikuPinHint, kikuSpec, kikuWorkingPins, stitchPoleIndex } from "./patterns";
 import { useTemari } from "./store";
 import {
   CRAFT_ACTIONS,
@@ -112,6 +112,8 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const sewnHistory = useTemari((s) => s.sewnHistory);
   const pinHistory = useTemari((s) => s.pinHistory);
   const mode = useTemari((s) => s.mode);
+  const facingPole = useTemari((s) => s.facingPole);
+  const pinNote = useTemari((s) => s.pinNote);
   const setColor = useTemari((s) => s.setColor);
 
   const [tip, setTip] = useState<string | null>(null);
@@ -140,6 +142,8 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
       kagariPlan.length,
       kagariSet,
       kikuLayers,
+      facingPole,
+      pinNote,
       history,
       sewnHistory,
       pinHistory,
@@ -156,27 +160,35 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     kagariSpacing === "open" ? "space-even" : kagariSpacing === "even" ? "space-tight" : "space-open";
   const spaceAction = actionById(nextSpace);
 
+  const pinNeed = motif === "kiku" ? kikuWorkingPins(division, facingPole).length : 0;
+  const pinning = motif === "kiku" && kagariPlan.length === 0 && pinNeed > 0 && pins.length < pinNeed;
+  const marksUp = motif === "kiku" && kagariPlan.length === 0 && pinNeed > 0 && pins.length >= pinNeed;
   const hint =
     tip ??
-    (stage === "kagari" && motif !== "none" && kagariPlan.length > 0
-      ? kagariPhaseHint(
-          motif,
-          division,
-          kagariDir,
-          kagariLaid,
-          kagariPlan.length,
-          kagariPlaying,
-          Math.max(0, stitchPoleIndex(kagariPlan[0]!, division, motif)),
-          kagariSet,
-          motif === "kiku" &&
-            kagariSet === 1 &&
-            kikuLayers < kikuSpec(division, kagariSpacing, "fit").fit,
-        )
-      : jiwariOn
-        ? jiwariPhaseHint(jiwariPhase, jiwariLaid)
-        : layerDone
-          ? "Выберите разметку"
-          : "Намотка — большой круг");
+    pinNote ??
+    (pinning
+      ? kikuPinHint(pins.length, pinNeed)
+      : marksUp
+        ? kikuPinHint(pinNeed, pinNeed)
+        : stage === "kagari" && motif !== "none" && kagariPlan.length > 0
+        ? kagariPhaseHint(
+            motif,
+            division,
+            kagariDir,
+            kagariLaid,
+            kagariPlan.length,
+            kagariPlaying,
+            Math.max(0, stitchPoleIndex(kagariPlan[0]!, division, motif)),
+            kagariSet,
+            motif === "kiku" &&
+              kagariSet === 1 &&
+              kikuLayers < kikuSpec(division, kagariSpacing, "fit").fit,
+          )
+        : jiwariOn
+          ? jiwariPhaseHint(jiwariPhase, jiwariLaid)
+          : layerDone
+            ? "Выберите разметку"
+            : "Намотка — большой круг");
 
   const toolIds = stage === "jiwari" ? JIWARI_IDS : KAGARI_IDS;
   const fillReady = fill ? fill.canExecute(state) : false;

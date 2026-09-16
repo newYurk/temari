@@ -28,6 +28,9 @@ import {
   nextKagariPole,
   kikuSpec,
   kikuWorkingPins,
+  kikuMarksReady,
+  snapToKikuMark,
+  KIKU_PIN_MISS,
   sameFocus,
   slotKey,
   type KagariDir,
@@ -164,6 +167,7 @@ type TemariState = {
   sewn: SewnEntry[];
   pins: Pin[];
   pinArcs: PinArc[];
+  pinNote: string | null;
   activePin: number | null;
   hover: number;
   hoverSlot: KikuSlot | null;
@@ -310,6 +314,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   sewn: [],
   pins: [],
   pinArcs: [],
+  pinNote: null,
   activePin: null,
   hover: -1,
   hoverSlot: null,
@@ -364,6 +369,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       sewn: [],
       pins: [],
       pinArcs: [],
+      pinNote: null,
       activePin: null,
       history: [],
       sewnHistory: [],
@@ -641,6 +647,29 @@ export const useTemari = create<TemariState>((set, get) => ({
     if (get().motif === id && id !== "none") {
       if (id === "kiku") {
         const s = get();
+        if (!kikuMarksReady(s.pins, s.division, s.facingPole)) {
+          const marks = kikuWorkingPins(s.division, s.facingPole);
+          const onThisPole = s.pins.some((pin) =>
+            marks.some((m) => pin.id === m.id || pin.p[0] * m.p[0] + pin.p[1] * m.p[1] + pin.p[2] * m.p[2] > 0.995),
+          );
+          if (!onThisPole) {
+            const kept = [...s.kagariKept, ...s.kagariPlan.slice(0, s.kagariLaid)];
+            set({
+              pins: [],
+              craft: "pin",
+              activePin: null,
+              pinNote: null,
+              kagariSet: 0,
+              kikuLayers: 1,
+              kagariPlan: [],
+              kagariLaid: 0,
+              kagariPlaying: false,
+              kagariFocus: null,
+              kagariKept: kept,
+            });
+          }
+          return;
+        }
         const complete = s.kagariLaid >= s.kagariPlan.length && s.kagariPlan.length > 0;
         if (complete && s.kagariSet === 0) {
           set({ kagariSet: 1 });
@@ -659,6 +688,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       get().startKagari();
       return;
     }
+    const pinningKiku = id === "kiku";
     set({
       motif: id,
       sewn: [],
@@ -667,11 +697,15 @@ export const useTemari = create<TemariState>((set, get) => ({
       kagariSet: 0,
       kikuLayers: 1,
       kagariDir: id === "kiku" ? "out" : get().kagariDir,
-      pins: withKikuMarks(get(), id),
+      craft: pinningKiku ? "pin" : get().craft,
+      pins: pinningKiku ? [] : withKikuMarks(get(), id),
+      pinArcs: pinningKiku ? [] : get().pinArcs,
+      pinNote: null,
+      activePin: null,
       ...idleKagari(),
     });
     rememberStudio(get());
-    if (id !== "none") get().startKagari();
+    if (id !== "none" && id !== "kiku") get().startKagari();
   },
 
   setCraft: (craft) => {
@@ -758,6 +792,45 @@ export const useTemari = create<TemariState>((set, get) => ({
   placePin: (local) => {
     const state = get();
     if (state.mode !== "studio" || state.craft !== "pin") return;
+    if (state.motif === "kiku") {
+      const mark = snapToKikuMark(local, state.division, state.facingPole);
+      if (!mark) {
+        set({ pinNote: KIKU_PIN_MISS });
+        return;
+      }
+      const snap: PinSnap = {
+        pins: state.pins,
+        pinArcs: state.pinArcs,
+        activePin: state.activePin,
+      };
+      const hit = state.pins.findIndex(
+        (pin) => pin.id === mark.id || pin.p[0] * mark.p[0] + pin.p[1] * mark.p[1] + pin.p[2] * mark.p[2] > 0.995,
+      );
+      feel.pin();
+      if (hit >= 0) {
+        set({
+          pins: state.pins.filter((_, i) => i !== hit),
+          activePin: null,
+          pinNote: null,
+          craft: "pin",
+          pinHistory: [...state.pinHistory, snap].slice(-40),
+        });
+        rememberStudio(get());
+        return;
+      }
+      if (state.pins.length >= MAX_PINS) return;
+      const pins = [...state.pins, { id: mark.id, p: mark.p }];
+      const ready = kikuMarksReady(pins, state.division, state.facingPole);
+      set({
+        pins,
+        activePin: pins.length - 1,
+        pinNote: null,
+        craft: ready ? "stitch" : "pin",
+        pinHistory: [...state.pinHistory, snap].slice(-40),
+      });
+      rememberStudio(get());
+      return;
+    }
     const p: Vec3 = snapToNode(local, state.division);
     const hit = pinHit(p, state.pins, 0.995);
     const snap: PinSnap = {
@@ -937,11 +1010,27 @@ export const useTemari = create<TemariState>((set, get) => ({
     const poles = polePositions(get().division);
     const n = Math.max(1, poles.length);
     const next = get().poseDirty ? 0 : (get().viewPole + 1) % n;
+    const state = get();
+    const flipped = next !== state.facingPole;
     set({
       viewPole: next,
       facingPole: next,
-      viewNonce: get().viewNonce + 1,
+      viewNonce: state.viewNonce + 1,
       poseDirty: false,
+      ...(flipped && state.motif === "kiku"
+        ? {
+            pins: [],
+            craft: "pin" as const,
+            activePin: null,
+            pinNote: null,
+            kagariSet: 0 as const,
+            kikuLayers: 1,
+            kagariPlan: [],
+            kagariLaid: 0,
+            kagariPlaying: false,
+            kagariFocus: null,
+          }
+        : {}),
     });
   },
   setPoseDirty: () => {
@@ -1005,6 +1094,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       set(idleKagari());
       return;
     }
+    if (state.motif === "kiku" && !kikuMarksReady(state.pins, state.division, state.facingPole)) return;
     const which = state.motif === "obi" ? "all" : state.facingPole;
     const onlySet = state.motif === "kiku" ? state.kagariSet : "all";
     const plan = motifStitchPlan(
@@ -1033,13 +1123,14 @@ export const useTemari = create<TemariState>((set, get) => ({
       kagariFocus: stitchFocus(plan[0], state.division, state.motif),
       kagariKept: kept,
       craft: "stitch",
-      pins: withKikuMarks(state, state.motif),
+      pins: state.motif === "kiku" ? state.pins : withKikuMarks(state, state.motif),
     });
     rememberStudio(get());
   },
   setFacingPole: (index) => {
     const i = Math.max(0, Math.round(index));
-    if (get().facingPole === i) return;
+    const state = get();
+    if (state.facingPole === i) return;
     set({ facingPole: i });
   },
   advanceKagari: () => {
@@ -1069,6 +1160,11 @@ export const useTemari = create<TemariState>((set, get) => ({
         return;
       }
       if (state.motif === "kiku") {
+        if (!kikuMarksReady(state.pins, state.division, state.facingPole)) return;
+        if (state.kagariPlan.length === 0) {
+          get().startKagari();
+          return;
+        }
         const spec = kikuSpec(state.division, state.kagariSpacing, "fit");
         if (state.kagariSet === 0) return;
         if (state.kikuLayers >= spec.fit) return;

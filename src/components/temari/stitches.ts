@@ -6,9 +6,11 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
-import { stackBump, scoopAway, scoopRadius, markTurnPast as markTurnPastVec, sphereBezier as sphereBezierVec } from "./kagari";
+import { stackBump, scoopAway, scoopRadius, markTurnPast as markTurnPastVec, sphereBezier as sphereBezierVec, smallCircleJoin as smallCircleJoinVec } from "./kagari";
 
 const ARC_SEGS = 32;
+/** Almost one pearl so the over cord clears; a hair less so it nestles, not a tent. */
+const STACK_LIFT = 0.92;
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -175,6 +177,7 @@ function arcPath(
   const sitB = stitch.sitB ?? 0;
   const sitMid = stitch.sitMid ?? 0;
   const sitMidT = stitch.sitMidT;
+  const sitAts = stitch.sitAts;
   const uniform = stitch.lift ?? 0;
   const via = stitch.via ?? [];
   const anchors: THREE.Vector3[] = [
@@ -184,7 +187,7 @@ function arcPath(
   ];
   const pts: THREE.Vector3[] = [];
   const lift = (t: number, dir: THREE.Vector3) => {
-    const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT)) * diameter * 0.55;
+    const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts)) * diameter * STACK_LIFT;
     return dir.clone().multiplyScalar(1 + half + extra);
   };
   if (via.length === 0) {
@@ -261,8 +264,9 @@ function sphereBezier(
 
 /**
  * Replace the cusp at `mark` with a pearl U around it.
- * Visiting the mark as a vertex makes a diamond bead: tube rings pile up
- * and the tangent at the tip is across the jiwari (the old enter→exit bar).
+ * Outer V: the U sits past the pin (tip side). Inner uwagake: the U sits
+ * on the open side and must not enter the polar cap — a poleward loop is
+ * macaroni on the silhouette.
  */
 function joinAroundMark(
   pts: THREE.Vector3[],
@@ -270,11 +274,8 @@ function joinAroundMark(
   mark: THREE.Vector3,
   pearl: number,
 ) {
-  // Tight pearl U around the jiwari. Sample spacing on a long flank is
-  // ~one pearl, so popping "points inside keep" left a 2-pearl canyon
-  // (the packed-V close-ups). Land exactly `keep` from the mark, then
-  // a short past — not a cusp through the vertex (old diamond bead).
-  const keep = pearl * 0.78;
+  const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
+  const keep = pearl * (inner ? 0.5 : 0.7);
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
@@ -304,8 +305,19 @@ function joinAroundMark(
   const from = atKeep(fromRaw);
   const to = atKeep(toRaw);
   pts.push(from);
-  const past = markTurnPast(from, mark, to, pearl * 0.38);
-  for (const p of sphereBezier(from, past, to, 20)) pts.push(p);
+  if (inner) {
+    const pole: [number, number, number] = mark.y >= 0 ? [0, 1, 0] : [0, -1, 0];
+    const turn = smallCircleJoinVec(
+      [from.x, from.y, from.z],
+      [to.x, to.y, to.z],
+      pole,
+      6,
+    );
+    for (const p of turn) pts.push(new THREE.Vector3(p[0], p[1], p[2]));
+  } else {
+    const past = markTurnPast(from, mark, to, pearl * 0.32);
+    for (const p of sphereBezier(from, past, to, 20)) pts.push(p);
+  }
   for (let k = i + 1; k < piece.length; k++) pts.push(piece[k]!);
 }
 
@@ -322,7 +334,19 @@ function scoopOnPath(
 ): THREE.Vector3[] {
   const half = unitFromMm(kindMm(kind)) * 0.5;
   const surfaceR = at.length();
-  const units = scoopAway([at.x, at.y, at.z], [from.x, from.y, from.z]);
+  const inner = Math.abs(at.y) / (at.length() || 1) > 0.75;
+  // Inner park must dive equatorward, under the stack. scoopAway(at, from)
+  // walks opposite the stitch — at the pole that is into the empty cap
+  // (the title-page macaroni).
+  const guide = inner
+    ? _t.copy(at).multiplyScalar(2).sub(from)
+    : from;
+  const units = scoopAway(
+    [at.x, at.y, at.z],
+    [guide.x, guide.y, guide.z],
+    inner ? 4 : 8,
+    inner ? 0.8 : undefined,
+  );
   const n = units.length;
   if (n === 0) return [];
   return units.map((p, i) => {
@@ -403,14 +427,15 @@ function stackedArcRibbon(
   const sitB = stitch.sitB ?? 0;
   const sitMid = stitch.sitMid ?? 0;
   const sitMidT = stitch.sitMidT;
+  const sitAts = stitch.sitAts;
   const uniform = stitch.lift ?? 0;
   const via = stitch.via ?? [];
   const pts: THREE.Vector3[] = [];
   if (via.length === 0) {
     for (let i = 0; i <= ARC_SEGS; i++) {
       const t = i / ARC_SEGS;
-      const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT));
-      const extra = uniform + stacked * diameter * 0.55;
+      const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts));
+      const extra = uniform + stacked * diameter * STACK_LIFT;
       slerpUnit(_pa, _pb, t, _a);
       pts.push(_a.clone().multiplyScalar(1 + half + extra));
     }
@@ -428,8 +453,8 @@ function stackedArcRibbon(
       const start = s === 0 ? 0 : 1;
       for (let i = start; i <= 1; i++) {
         const t = (s + i) / steps;
-        const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT));
-        const extra = uniform + stacked * diameter * 0.55;
+        const stacked = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts));
+        const extra = uniform + stacked * diameter * STACK_LIFT;
         slerpUnit(a, b, i, _a);
         pts.push(_a.clone().multiplyScalar(1 + half + extra));
       }
@@ -659,10 +684,10 @@ function tubeOnSphere(
     _side.normalize();
     _mid.crossVectors(_t, _side).normalize();
     const r = radius * scaleAt(along[i] ?? 0);
-    // Pearl on the mari is slightly oval: pressed into the wrap, a bit
-    // wider on the surface. A round hose stands off the ball at close-up.
-    const rOut = r * 0.7;
-    const rAlong = r * 1.1;
+    // Round pearl, a hair under one-pitch so packed kai nestle instead of
+    // cutting through each other. Slightly pressed into the wrap (rOut).
+    const rOut = r * 0.72;
+    const rAlong = r * 0.9;
     for (let j = 0; j <= radialSegs; j++) {
       const ang = (j / radialSegs) * Math.PI * 2;
       const c = Math.cos(ang);

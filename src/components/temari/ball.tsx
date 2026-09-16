@@ -9,6 +9,10 @@ import {
   generateMotif,
   generateTitleMari,
   hitKikuSlot,
+  kikuMarksReady,
+  kikuSpec,
+  kikuWorkingPins,
+  snapToKikuMark,
   stitchFocus,
   stitchesForSlot,
   stitchesFromSewn,
@@ -75,6 +79,9 @@ function ThreadLayer({
               opacity={opacity}
               depthWrite={opacity >= 1}
               side={THREE.FrontSide}
+              polygonOffset
+              polygonOffsetFactor={-1}
+              polygonOffsetUnits={-1}
             />
           </mesh>
         ) : null,
@@ -291,6 +298,8 @@ export function Ball() {
   const setWrapStarted = useTemari((s) => s.setWrapStarted);
   const setFacingPole = useTemari((s) => s.setFacingPole);
   const viewPole = useTemari((s) => s.viewPole);
+  const facingPole = useTemari((s) => s.facingPole);
+  const motif = useTemari((s) => s.motif);
   const setPoseDirty = useTemari((s) => s.setPoseDirty);
 
   const material = useMemo(() => createTemariMaterial(), []);
@@ -301,6 +310,12 @@ export function Ball() {
   const target = mode === "kata" && puzzle ? puzzle.target : [];
   const wrap = getWrapBuffer();
   const nodes = useMemo(() => gridNodes(division), [division]);
+  const markNodes = useMemo(() => {
+    if (mode !== "studio" || craft !== "pin" || motif !== "kiku") return nodes;
+    return kikuWorkingPins(division, facingPole).map((pin) => pin.p);
+  }, [craft, division, facingPole, mode, motif, nodes]);
+  const marksReady = motif !== "kiku" || kikuMarksReady(pins, division, facingPole);
+  const outerTheta = kikuSpec(division).outer;
 
   const preset: MotifId =
     mode === "title" ? "kiku" : "none";
@@ -449,15 +464,15 @@ export function Ball() {
   useLayoutEffect(() => {
     const mesh = nodesMesh.current;
     if (!mesh) return;
-    nodes.forEach((p, i) => {
+    markNodes.forEach((p, i) => {
       dummy.position.set(p[0] * 1.006, p[1] * 1.006, p[2] * 1.006);
       dummy.scale.setScalar(1);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
     });
-    mesh.count = nodes.length;
+    mesh.count = markNodes.length;
     mesh.instanceMatrix.needsUpdate = true;
-  }, [dummy, nodes]);
+  }, [dummy, markNodes]);
 
   useEffect(() => {
     const el = gl.domElement;
@@ -601,7 +616,22 @@ export function Ball() {
       nodes: () => gridNodes(useTemari.getState().division).length,
       layerDone: () => useTemari.getState().layerDone,
       finish: () => useTemari.getState().finishLayer(),
+      enterStudio: () => useTemari.getState().enterStudio(),
+      setFacingPole: (i: number) => useTemari.getState().setFacingPole(i),
       pinAt: (x: number, y: number, z: number) => useTemari.getState().placePin([x, y, z]),
+      craft: () => useTemari.getState().craft,
+      pinKiku: () => {
+        const s = useTemari.getState();
+        const pins = kikuWorkingPins(s.division, s.facingPole);
+        useTemari.setState({
+          motif: "kiku",
+          craft: "stitch",
+          pins,
+          pinArcs: [],
+          activePin: null,
+          pinNote: null,
+        });
+      },
       startAt: (x: number, y: number, z: number) => useTemari.getState().setStartPin([x, y, z]),
       fillKiku: () => useTemari.getState().fillKiku(),
       setCraft: (c: "wind" | "pin" | "stitch") => useTemari.getState().setCraft(c),
@@ -697,7 +727,9 @@ export function Ball() {
           best = i;
         }
       }
-      setFacingPole(best);
+      const st = useTemari.getState();
+      const pinning = st.motif === "kiku" && st.craft === "pin" && st.pins.length > 0;
+      if (!pinning) setFacingPole(best);
     }
     const spd = omega.current.length();
     if (g && !spinning.current && spd > 0.0007) {
@@ -786,11 +818,18 @@ export function Ball() {
             const hit = pinHit(p, pins);
             setHoverSlot(null);
             if (hit < 0 && hover !== -1) setHover(-1);
-            const snapped = snapToNode(p, division);
             const ghost = snapGhost.current;
+            const snapped =
+              motif === "kiku"
+                ? snapToKikuMark(p, division, facingPole)
+                : { id: "", p: snapToNode(p, division) };
             if (ghost) {
-              ghost.visible = true;
-              ghost.position.set(snapped[0] * 1.04, snapped[1] * 1.04, snapped[2] * 1.04);
+              if (!snapped) {
+                ghost.visible = false;
+              } else {
+                ghost.visible = true;
+                ghost.position.set(snapped.p[0] * 1.04, snapped.p[1] * 1.04, snapped.p[2] * 1.04);
+              }
             }
           }
         }}
@@ -873,6 +912,18 @@ export function Ball() {
         <ThreadLayer stitches={ghostStitches} colors={THREAD_COLORS} opacity={0.42} order={11} />
       ) : null}
 
+      {mode === "studio" && craft === "pin" && motif === "kiku" && !marksReady ? (
+        <mesh
+          position={[0, (facingPole === 1 ? -1 : 1) * Math.cos(outerTheta), 0]}
+          rotation={[Math.PI / 2, 0, 0]}
+          renderOrder={13}
+          raycast={() => {}}
+        >
+          <torusGeometry args={[Math.sin(outerTheta), 0.0026, 6, 64]} />
+          <meshStandardMaterial color="#c4a574" roughness={0.62} metalness={0.18} />
+        </mesh>
+      ) : null}
+
       <mesh ref={needle} visible={false}>
         <sphereGeometry args={[0.018, 12, 10]} />
         <meshStandardMaterial color={stitchHex} roughness={0.38} metalness={0.14} />
@@ -906,7 +957,7 @@ export function Ball() {
         args={[undefined, undefined, 80]}
         frustumCulled={false}
         visible={mode === "studio" && craft === "pin" && layerDone && jiwariOn}
-        count={nodes.length}
+        count={markNodes.length}
       >
         <sphereGeometry args={[0.012, 10, 8]} />
         <meshStandardMaterial color={palette.thread} roughness={0.5} metalness={0.08} transparent opacity={0.55} />

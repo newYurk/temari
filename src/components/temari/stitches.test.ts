@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { stackBump, markTurnPast, sphereBezier } from "./kagari.ts";
+import { stackBump, markTurnPast, sphereBezier, smallCircleJoin } from "./kagari.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 
 describe("thread stack is local, not a lifted petal", () => {
@@ -73,6 +73,23 @@ describe("kiku mark turn is a U around the vertex, not a diamond", () => {
       const a = sub(pts[i]!, pts[i - 1]!);
       const b = sub(pts[i + 1]!, pts[i]!);
       assert.ok(dot(a, b) > 0, `tangent reversal at ${i} would draw a diamond`);
+    }
+  });
+
+  it("inner U does not enter the polar cap", () => {
+    const mark = v(0.04, 0.99, 0.12);
+    const from = v(0.14, 0.97, 0.18);
+    const to = v(-0.1, 0.97, 0.2);
+    const pole: [number, number, number] = [0, 1, 0];
+    const pts = smallCircleJoin(from, to, pole, 6);
+    const markDot = dot(
+      [mark[0] / Math.hypot(...mark), mark[1] / Math.hypot(...mark), mark[2] / Math.hypot(...mark)],
+      pole,
+    );
+    for (const p of pts) {
+      const n = Math.hypot(...p) || 1;
+      const d = dot([p[0] / n, p[1] / n, p[2] / n], pole);
+      assert.ok(d <= markDot + 0.02, "macaroni: inner turn went closer to the pole than the stitch");
     }
   });
 });

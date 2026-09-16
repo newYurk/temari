@@ -216,6 +216,27 @@ describe("kagari recipe atom", () => {
     assert.ok(scoopRadius(0, surface, half) === surface, "t=0 is still on the mari");
   });
 
+  it("inner scoop walks toward the equator, not into the polar cap", () => {
+    const at: [number, number, number] = [0.04, Math.cos(0.14), Math.sin(0.14)];
+    const n = Math.hypot(...at) || 1;
+    const inner: [number, number, number] = [at[0] / n, at[1] / n, at[2] / n];
+    const from: [number, number, number] = [0.12, Math.cos(0.28), Math.sin(0.28)];
+    const fn = Math.hypot(...from) || 1;
+    const flank: [number, number, number] = [from[0] / fn, from[1] / fn, from[2] / fn];
+    const poleward: [number, number, number] = [
+      2 * inner[0] - flank[0],
+      2 * inner[1] - flank[1],
+      2 * inner[2] - flank[2],
+    ];
+    const walk = scoopAway(inner, poleward, 4, 0.8);
+    const pole: [number, number, number] = [0, 1, 0];
+    const atDot = inner[0] * pole[0] + inner[1] * pole[1] + inner[2] * pole[2];
+    for (const p of walk) {
+      const d = p[0] * pole[0] + p[1] * pole[1] + p[2] * pole[2];
+      assert.ok(d <= atDot + 1e-5, "inner park must not walk into the cap");
+    }
+  });
+
   it("a finished set-round parks at the start; one petal does not", () => {
     const round = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, 1, 0));
     assert.equal(round.length, 8);
@@ -268,6 +289,21 @@ describe("kagari recipe atom", () => {
     }
     const a = stitches.filter((s) => s.kind === "arc" && s.set === 0);
     assert.ok(a.every((s) => s.kind !== "arc" || !s.sitMid), "A stays on the mari");
+  });
+
+  it("later kai sits on earlier opposite set at the real crossing", () => {
+    const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, 3, "all"));
+    const a1 = stitches.filter((s) => s.kind === "arc" && s.set === 0 && s.kai === 1);
+    assert.ok(a1.length > 0);
+    const withKousa = a1.filter((s) => s.kind === "arc" && (s.sitAts?.length ?? 0) > 0);
+    assert.ok(withKousa.length >= 4, "A1 meets B0 along the petal");
+    for (const s of withKousa) {
+      if (s.kind !== "arc") continue;
+      for (const at of s.sitAts ?? []) {
+        assert.ok(at.t > 0.08 && at.t < 0.92, `cross-kai t=${at.t} is on the flank`);
+        assert.ok(at.n <= 2, "one meeting is one pearl, not the whole stack");
+      }
+    }
   });
 
   it("uwagake height at the inner is one pearl, not the whole stack", () => {
