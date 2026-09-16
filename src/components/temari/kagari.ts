@@ -10,7 +10,7 @@ type Vec3 = [number, number, number];
 export type Crossing = "over-all" | "over-1" | "under";
 export type RecipeStitch = "uwagake-chidori" | "chidori" | "sakasa";
 
-/** Library entry: what the player picks. Names live here, not in the renderer. */
+/** Geometry for one pattern implementation. Names live in library.ts, not here. */
 export type PatternRecipe = {
   id: string;
   requires: "simple" | "c8" | "c10";
