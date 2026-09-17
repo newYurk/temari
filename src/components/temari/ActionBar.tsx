@@ -14,8 +14,8 @@ type Stage = "jiwari" | "kagari";
 const MARKINGS = [
   { id: "jiwari-off", division: "none", name: "Без сетки", detail: "Свои метки", note: "Булавки можно ставить в любом месте шара." },
   { id: "jiwari-simple", division: "simple", name: "S8 · простая", detail: "8 долей", note: "S8: восемь долей между двумя полюсами. Для первой кику." },
-  { id: "jiwari-c8", division: "c8", name: "C8", detail: "6 центров", note: "C8: шесть основных центров, по восемь лучей в каждом." },
-  { id: "jiwari-c10", division: "c10", name: "C10", detail: "12 центров", note: "C10: двенадцать основных центров, по десять лучей в каждом." },
+  { id: "jiwari-c8", division: "c8", name: "C8", detail: "6 центров", note: "C8: шесть основных центров, по восемь лучей в каждом. Узоры на ней — позже; кику шьётся на S8." },
+  { id: "jiwari-c10", division: "c10", name: "C10", detail: "12 центров", note: "C10: двенадцать основных центров, по десять лучей в каждом. Узоры на ней — позже; кику шьётся на S8." },
 ] as const;
 const MOTIFS = [
   { id: "motif-kiku", name: "Кику", detail: "Хризантема", icon: <IconKiku /> },
