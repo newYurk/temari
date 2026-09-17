@@ -412,6 +412,17 @@ describe("quick kiku: marking and pins at the facing pole in one tap", () => {
     assert.deepEqual(useTemari.getState().kagariKept, north);
   });
 
+  it("turns the working pole to the eye instead of leaving it on the silhouette", () => {
+    useTemari.setState({ facingPole: 1, viewPole: 0, poseDirty: true });
+    const nonce = useTemari.getState().viewNonce;
+    dispatchCommand("quick-kiku");
+    const s = useTemari.getState();
+    assert.equal(s.viewPole, 1);
+    assert.equal(s.viewPole, s.facingPole);
+    assert.equal(s.viewNonce, nonce + 1, "the view turn is a command, not a state");
+    assert.equal(s.poseDirty, false);
+  });
+
   it("leaves the pin tool selected so a nudge cannot move the working pole", () => {
     dispatchCommand("quick-kiku");
     assert.equal(useTemari.getState().craft, "pin");

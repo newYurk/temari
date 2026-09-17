@@ -1333,6 +1333,10 @@ export const useTemari = create<TemariState>((set, get) => ({
       // The pin tool keeps the working pole fixed, so a nudge cannot move the flower.
       craft: "pin",
       facingPole,
+      // Turn that pole to the eye: the marks are then a wide ring, not a rim of dots.
+      viewPole: facingPole,
+      viewNonce: s.viewNonce + 1,
+      poseDirty: false,
       fills: sameBall ? s.fills : emptyFills("simple"),
       jiwariOn: true,
       jiwariPhase: "done",

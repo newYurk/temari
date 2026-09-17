@@ -440,11 +440,16 @@ export function Ball() {
     if (!pole) return;
     omega.current.set(0, 0, 0);
     _axis.set(pole[0], pole[1], pole[2]).normalize();
-    _feed.set(0, 1, 0);
+    // The working pole turns towards the eye, the way a ball is held while sewing:
+    // the whole flower is in front, not foreshortened against the silhouette.
+    // A hand's worth of tilt is kept so the ball still reads as a ball, not a disc.
+    _feed.copy(camera.position).normalize();
+    _feed.y += 0.34;
+    _feed.normalize();
     _q.setFromUnitVectors(_axis, _feed);
     g.quaternion.copy(_q);
     g.position.set(0, 0, 0);
-  }, [poles, viewNonce, viewPole]);
+  }, [camera, poles, viewNonce, viewPole]);
 
   useEffect(() => {
     wrap.reset();
