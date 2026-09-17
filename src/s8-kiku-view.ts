@@ -154,9 +154,9 @@ function show(summary: S8KikuSummary) {
     const item = document.createElement('li');
     const steps = summary.refinements.filter(r => r.windowId === w.id), last = steps.slice(-2);
     const cond = summary.conditioning.find(r => r.windowId === w.id)!;
-    const name = w.kind === 'approach' ? 'приход к' : w.kind === 'departure' ? 'уход от' : 'возврат поверх начала к';
+    const name = w.kind === 'approach' ? 'приход к точке' : w.kind === 'departure' ? 'уход от точки' : 'возврат поверх начала к точке';
     const fmt = (key: 'lengthDifferenceMm' | 'shapeDifferenceMm', digits: number) => steps.map(r => r[key].toExponential(1).replace('.', ',')).join(' → ');
-    item.textContent = `${name} точке ${w.tip + 1}: Δдлины ${fmt('lengthDifferenceMm', 1)}; Δформы ${fmt('shapeDifferenceMm', 1)}; к покрытию ${mm(cond.shapeDifferenceMm, 4)}`;
+    item.textContent = `${name} ${w.tip + 1}: Δдлины ${fmt('lengthDifferenceMm', 1)}; Δформы ${fmt('shapeDifferenceMm', 1)}; к покрытию ${mm(cond.shapeDifferenceMm, 4)}`;
     item.dataset.ok = String(last.every(r => r.lengthDifferenceMm <= .002 && r.shapeDifferenceMm <= .02) && cond.shapeDifferenceMm <= .02 && cond.lengthDifferenceMm <= .002);
     return item;
   }));
