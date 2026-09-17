@@ -1,6 +1,6 @@
 # Контрольная кику Simple 8: перенос обратного подхвата
 
-16.09.2026, дополнено 17.09; ветка `codex/temari-next-s8` (не принято ни в `codex/temari-next`, ни в `main`). Модуль — `src/components/temari/s8-kiku.ts`, просмотр — `lab.html#s8-kiku`. Модель толстой нити и её решатель — [spatial-contact.md](spatial-contact.md), маршрут иглы — [needle-route.md](needle-route.md).
+16.09.2026, дополнено 17.09; тема `codex/temari-next-s8` слита в `codex/temari-next` (`e52c07f`), в `main` не принято. Модуль — `src/components/temari/s8-kiku.ts`, просмотр — `lab.html#s8-kiku`. Модель толстой нити и её решатель — [spatial-contact.md](spatial-contact.md), маршрут иглы — [needle-route.md](needle-route.md).
 
 ## Ремесленные основания
 

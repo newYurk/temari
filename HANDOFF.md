@@ -1,6 +1,6 @@
 # Передача работы: ветка `codex/temari-next`
 
-Обновлено 16.09.2026. Документ для независимого ревью перед включением в `main`. **Ничего из перечисленного не принято в `main` и не опубликовано на основном сайте.** Зелёные тесты не означают принятой работы: ремесленную и художественную приёмку проводит пользователь или мастер.
+Обновлено 17.09.2026 (утро). Документ для независимого ревью перед включением в `main`. **Ничего из перечисленного не принято в `main` и не опубликовано на основном сайте.** Зелёные тесты не означают принятой работы: ремесленную и художественную приёмку проводит пользователь или мастер.
 
 - База: `origin/main` = `e541872` (проверенный снимок, 202 теста).
 - Ветка: `codex/temari-next`, draft PR [#92](https://github.com/newYurk/temari/pull/92). Pages публикуется только из `main` (`.github/workflows/pages.yml`), поэтому пуши в ветку сайт не меняют; на ветке запускается только проверка зеркал документации.
@@ -17,9 +17,9 @@
 | Форматы данных | `SpatialContactInput.minBendRadiusMm` (необязателен, по умолчанию `1,25·r`); `SpatialContactOptions`: `curvatureTolerance`, `minRelativeSpeed`, `curvaturePrecision`, `maxStepThreadRadii`; новые метрики результата; `reactions[]` получили `kind`, `slack`, а `gapMm` стал `number \| null`. `spatialSplineBasis` возвращает `secondDerivatives`. `LOWER_KAGARI_DIMENSIONS.minBendRadiusMm = 0.25`. `ComputedLowerKagari`: `checks.refinements`, `resolutions[].resolved/curvature`, метрики `seedLengthMm/minBendRadiusMm/minimumSpans`; опция `spansPerBendRadius`; предел числа точек 48 → 128. |
 | Зависимости | Не менялись. |
 | Публикация | Не выполнялась. `vite.pages.config.ts` закрепляет dev-сервер на порту 8860 (`strictPort`) — только локальный просмотр. |
-| Модель (ветка `codex/temari-next-s8`) | Опора `curve` в `spatial-contact.ts`: ранее уложенная нить — точная трубка своих кусков Безье. Simple 8 строит препятствия из неё вместо капсул; решатель остановки строже (10⁻⁴ / 2·10⁻⁶ / 5·10⁻⁷); окна подтверждаются перезапуском. |
-| Приёмка (ветка `codex/temari-next-s8`) | Правило 4 Simple 8: контроль обусловленности — пробы ×2 вместо покрытия/2, пороги прежние (решение за владельцем). Правило неподвижной точки (≤ 10⁻⁴ мм, ≤ 4 перезапусков). |
-| Форматы данных (ветка `codex/temari-next-s8`) | `SpatialSupport` получил вид `{ kind: 'curve', piecesMm, radiusMm }`, тип `SpatialCubicMm`; `S8KikuLevel.samplesPerSpan` вместо `obstacleToleranceMm`; из `S8_KIKU_DIMENSIONS` убран `obstacleToleranceMm`, добавлены `settleToleranceMm`, `maxSettleRestarts`. |
+| Модель (Simple 8, `e52c07f`) | Опора `curve` в `spatial-contact.ts`: ранее уложенная нить — точная трубка своих кусков Безье. Simple 8 строит препятствия из неё вместо капсул; решатель остановки строже (10⁻⁴ / 2·10⁻⁶ / 5·10⁻⁷); окна подтверждаются перезапуском. |
+| Приёмка (Simple 8, `e52c07f`) | Правило 4 Simple 8: контроль обусловленности — пробы ×2 вместо покрытия/2, пороги прежние (решение за владельцем). Правило неподвижной точки (≤ 10⁻⁴ мм, ≤ 4 перезапусков). |
+| Форматы данных (Simple 8, `e52c07f`) | `SpatialSupport` получил вид `{ kind: 'curve', piecesMm, radiusMm }`, тип `SpatialCubicMm`; `S8KikuLevel.samplesPerSpan` вместо `obstacleToleranceMm`; из `S8_KIKU_DIMENSIONS` убран `obstacleToleranceMm`, добавлены `settleToleranceMm`, `maxSettleRestarts`. |
 | Документация | `spec/spatial-contact.md` переписан; `rules.md`, `spec/embroidery-model.md`, `public/design.html` (+ зеркала штатным скриптом), `docs/papers.md` (8 проверенных DOI), `STATE.md` сокращён до 86 строк, хроника — `docs/journal.md`. |
 
 ## Задачи
@@ -85,7 +85,7 @@
 - **Проблема:** на 320 px кружок цвета переносился отдельно от подписи и выглядел как ключ соседнего пункта.
 - **Результат:** пары «кружок + подпись» не разрываются (коммит `f647e99`); проверено кадром 320 px.
 
-### Т4. Перенос подхвата в контрольный Simple 8 — ветка `codex/temari-next-s8`, слита в `codex/temari-next` 17.09 (не в `main`)
+### Т4. Перенос подхвата в контрольный Simple 8 — тема `codex/temari-next-s8`, слита в `codex/temari-next` 17.09 (`e52c07f`, не в `main`)
 - **Цель:** отдельный стежок → круг → следующий ряд с верхним охватом пучка на Simple 8 (размещение GT14).
 - **17.09, ночь, до перехода на трубки** (`36b687e`, `4bbe7b5`, `47ee7eb`):
   - неподвижная точка — перезапуск окна из своего решения, пока сдвиг не станет ≤ 10⁻⁴ мм;
