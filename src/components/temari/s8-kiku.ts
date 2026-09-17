@@ -1,7 +1,7 @@
 import { boundCurvatureTimesRadius, type CurvatureBound } from './curvature-bound';
 import { jiwariNormals } from './jiwari';
 import { localMarkingRays, pointOnMarkingRayMm, type MarkingCircle } from './local-marking';
-import { solveSpatialContact, type SpatialContactOptions, type SpatialContactResult, type SpatialSupport } from './spatial-contact';
+import { solveSpatialContact, type SpatialContactOptions, type SpatialContactResult, type SpatialCubicMm, type SpatialSupport } from './spatial-contact';
 import { fitSpatialSeed } from './spatial-spline-seed';
 import { curvesLength, shapeDifferenceMm } from './thick-rope-ladder';
 import { closestSegmentApproach, evaluateCurve, sampleCurve, validateThreadCoupon } from './thread-geometry';
@@ -55,8 +55,7 @@ export const S8_KIKU_DIMENSIONS = Object.freeze({
   tailDepthMm: 2,
   corridorMarginMm: 0.05,
   numericalClearanceMm: 0.003,
-  /** Earlier material is covered by capsules within this certified distance, the same at every level. */
-  obstacleToleranceMm: 0.0002,
+  /** Earlier material within this distance of a window's seed route is an obstacle (exact tube of its own pieces). */
   obstacleSearchMm: 3,
   maxObstacles: 256,
   validationToleranceMm: 0.001,
@@ -117,7 +116,8 @@ export type S8Window = {
 };
 export type S8KikuLevel = {
   factor: number;
-  obstacleToleranceMm: number;
+  /** Constraint probes per spline span (4; the conditioning rebuild doubles it). */
+  samplesPerSpan: number;
   coupon: C8ThreadCoupon;
   /** restarts: warm restarts used; settleMoveMm: the last restart's shape change (NaN if none ran). */
   solves: { windowId: string; controlCount: number; result: SpatialContactResult; obstacles: number; restarts: number; settleMoveMm: number }[];
@@ -141,7 +141,7 @@ export type S8KikuResult = {
   tips: S8Tip[];
   windows: S8Window[];
   levels: S8KikuLevel[];
-  /** The finest level rebuilt with half the obstacle cover tolerance. */
+  /** The finest level rebuilt with twice as many constraint probes per span. */
   perturbed: S8KikuLevel;
   refinements: S8KikuRefinement[];
   conditioning: S8KikuRefinement[];
@@ -193,38 +193,29 @@ function raisedSeed(leg: Leg, s0: number, s1: number, rise: number, fall: number
   ];
 }
 
-/**
- * Certified capsule cover of one piece of earlier material: dense chords
- * (error <= tolerance/4) merged by Douglas-Peucker (deviation <= tolerance/2).
- * Every capsule has the same inflation (tolerance), so the cover does not
- * change with the number of spline pieces of the covered window.
- */
-function capsules(id: string, curves: readonly ThreadCurve[], radius: number, tolerance: number): SpatialSupport[] {
-  const points: V[] = [];
-  for (const curve of curves) for (const p of sampleCurve(curve, tolerance / 4).points)
-    if (!points.length || norm(sub(p, points.at(-1)!)) > 1e-12) points.push(p);
-  const segmentDistance = (p: V, a: V, b: V) => {
-    const ab = sub(b, a), t = Math.max(0, Math.min(1, dot(sub(p, a), ab) / Math.max(dot(ab, ab), 1e-300)));
-    return norm(sub(p, add(a, mul(ab, t))));
-  };
-  const out: SpatialSupport[] = [];
-  const split = (i: number, j: number) => {
-    let worst = 0, at = -1;
-    for (let k = i + 1; k < j; k++) { const d = segmentDistance(points[k], points[i], points[j]); if (d > worst) { worst = d; at = k; } }
-    if (worst > tolerance / 2 && at > 0) { split(i, at); split(at, j); return; }
-    out.push({ id: `${id}-c${out.length + 1}`, kind: 'segment', fromMm: points[i], toMm: points[j], radiusMm: radius + tolerance });
-  };
-  if (points.length > 1) split(0, points.length - 1);
-  return out;
+const polyline = (curves: readonly ThreadCurve[]) => curves.flatMap(c => sampleCurve(c, .05).points);
+/** Whether a piece of earlier material comes within distance of the route (sampling error included). */
+function near(curve: ThreadCurve, route: readonly V[], distance: number) {
+  const sample = sampleCurve(curve, .05), points = sample.points;
+  for (let i = 1; i < route.length; i++) for (let j = 1; j < points.length; j++)
+    if (closestSegmentApproach(route[i - 1], route[i], points[j - 1], points[j]).distanceMm < distance + sample.errorBoundMm) return true;
+  return false;
 }
 
-const polyline = (curves: readonly ThreadCurve[]) => curves.flatMap(c => sampleCurve(c, .05).points);
-function near(obstacle: SpatialSupport, route: readonly V[], distance: number) {
-  const pieces: [V, V][] = obstacle.kind === 'segment' ? [[obstacle.fromMm, obstacle.toMm]]
-    : sampleCurve({ kind: 'arc', from: obstacle.fromMm, to: obstacle.toMm }, .05).points.slice(1).map((p, i, all) => [i ? all[i - 1] : obstacle.fromMm, p] as [V, V]);
-  for (let i = 1; i < route.length; i++) for (const [a, b] of pieces)
-    if (closestSegmentApproach(route[i - 1], route[i], a, b).distanceMm < distance + obstacle.radiusMm) return true;
-  return false;
+/**
+ * Earlier material as exact tubes: its Bezier pieces near the route form one
+ * curve support, its arcs (about the ball centre) are arc supports. Nothing is
+ * approximated, so no cover tolerance enters the solve.
+ */
+function tubes(id: string, curves: readonly ThreadCurve[], radius: number, route: readonly V[], distance: number): SpatialSupport[] {
+  const out: SpatialSupport[] = [], pieces: SpatialCubicMm[] = [];
+  curves.forEach((curve, i) => {
+    if (!near(curve, route, distance + radius)) return;
+    if (curve.kind === 'bezier') pieces.push(curve.controls);
+    else out.push({ id: `${id}-a${i + 1}`, kind: 'arc', centerMm: [0, 0, 0], fromMm: curve.from, toMm: curve.to, radiusMm: radius });
+  });
+  if (pieces.length) out.unshift({ id, kind: 'curve', piecesMm: pieces, radiusMm: radius });
+  return out;
 }
 
 /**
@@ -427,8 +418,8 @@ export function planS8Kiku(input: S8KikuInput = {}) {
 }
 export type S8KikuPlan = ReturnType<typeof planS8Kiku>;
 
-/** One complete construction at one resolution factor and obstacle cover. */
-export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, obstacleToleranceMm = plan.d.obstacleToleranceMm): S8KikuLevel {
+/** One complete construction at one resolution factor and constraint sampling. */
+export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpan = 4): S8KikuLevel {
   const { d, R, r, frames, catches, legs, legPieces, supports, bite, hullCorridor, startCurves } = plan;
   const markingObstacles: SpatialSupport[] = supports.map(s => ({ id: s.id, kind: 'arc', centerMm: [0, 0, 0],
     fromMm: start(s.curve), toMm: end(s.curve), radiusMm: s.radiusMm + d.numericalClearanceMm }));
@@ -442,7 +433,8 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, obstacleToler
   // stationarity test moves the finest window by 2e-3 mm; these stop within
   // 1.4e-4 mm of the strictest setting tried (spec/s8-control-kiku.md).
   const solverOptions: SpatialContactOptions = { maxIterations: 8000, maxOuterIterations: 60, feasibilityToleranceMm: .0001,
-    stationarityTolerance: 2e-6, complementarityToleranceMm: 5e-7, curvatureTolerance: d.curvatureToleranceRKappa, ...plan.solverOptions };
+    stationarityTolerance: 2e-6, complementarityToleranceMm: 5e-7, curvatureTolerance: d.curvatureToleranceRKappa, maxConstraintSamples: 4096,
+    ...plan.solverOptions, samplesPerSpan };
   const op = (kind: ThreadOperationKind, step: number, markIndex?: number) => {
     const o: ThreadOperation = { id: `s8-op-${operations.length + 1}-${kind}`, order: operations.length, step, kind, spanIds: [],
       ...(markIndex === undefined ? {} : { markId: `mark-${markIndex + 1}` }),
@@ -463,10 +455,7 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, obstacleToler
     for (const g of groups) {
       // The group ending at this window's start port is its neighbour, not an obstacle.
       if (norm(sub(g.endMm, from)) < 1e-9) continue;
-      const cover = g.curves.length === 1 && g.curves[0].kind === 'arc'
-        ? [{ id: `prior-${g.id}`, kind: 'arc' as const, centerMm: [0, 0, 0] as V, fromMm: start(g.curves[0]), toMm: end(g.curves[0]), radiusMm: r + d.numericalClearanceMm }]
-        : capsules(`prior-${g.id}`, g.curves, r + d.numericalClearanceMm, obstacleToleranceMm);
-      for (const c of cover) if (near(c, route, d.obstacleSearchMm)) obstacles.push(c);
+      obstacles.push(...tubes(`prior-${g.id}`, g.curves, r + d.numericalClearanceMm, route, d.obstacleSearchMm));
     }
     const controlCount = Math.ceil(w.minimumSpans * factor) + 3;
     let result: SpatialContactResult, restarts = 0, settleMoveMm = NaN;
@@ -532,7 +521,7 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, obstacleToler
     kind: 'engineering-thread-path', bodyRadiusMm: R, threadId: 's8-kiku-thread', threadRadiusMm: r, spans, operations, supports,
     marks: frames.map(f => ({ id: `mark-${f.index + 1}`, rayIndex: f.index, circleId: f.circleId,
       role: f.role === 'upper' ? 'inner' : 'outer', distanceMm: f.distanceMm, positionMm: f.markMm })),
-    fixture: { ...d, factor, obstacleToleranceMm, stage: plan.stage === 'stitch' ? 1 : 2 }, crossings,
+    fixture: { ...d, factor, samplesPerSpan, stage: plan.stage === 'stitch' ? 1 : 2 }, crossings,
     assumptions: [
       'Simple 8 control kiku: GT14 mark placement; bite, port angle, window and lift sizes are engineering values.',
       'Thick-rope model: every visible window is a shortest centre line with curvature at most 1/minBendRadius.',
@@ -560,7 +549,7 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, obstacleToler
       undeclaredCrossings.push(`${x.certain ? 'crossing' : 'near-crossing'} ${x.a} / ${x.b}`);
     }
   } catch (error) { undeclaredCrossings = [`projection check unresolved: ${String(error)}`]; }
-  return { factor, obstacleToleranceMm, coupon, solves, undeclaredCrossings, diagnostics,
+  return { factor, samplesPerSpan, coupon, solves, undeclaredCrossings, diagnostics,
     validation: validateThreadCoupon(coupon, d.validationToleranceMm),
     curvature: boundCurvatureTimesRadius(working, r),
     hiddenCurvature: plan.hiddenCurvature, lengthMm: curvesLength(working) };
@@ -583,7 +572,7 @@ export function judgeS8Kiku(plan: S8KikuPlan, levels: S8KikuLevel[], perturbed: 
   if (!plan.canonical) diagnostics.push(`Non-canonical ladder ${plan.factors.join('/')} is diagnostic only.`);
   if (d.maxSettleRestarts === 0) diagnostics.push('Windows were not checked for a fixed point: diagnostic only.');
   for (const level of [...levels, perturbed]) {
-    const tag = level === perturbed ? `x${level.factor} (cover ${level.obstacleToleranceMm} mm)` : `x${level.factor}`;
+    const tag = level === perturbed ? `x${level.factor} (${level.samplesPerSpan} probes per span)` : `x${level.factor}`;
     diagnostics.push(...level.diagnostics.map(x => `${tag} ${x}`));
     for (const s of level.solves) if (s.result.status !== 'converged') {
       diagnostics.push(`${tag} ${s.windowId}: numerical solve ${s.result.status}.`);
@@ -614,7 +603,7 @@ export function judgeS8Kiku(plan: S8KikuPlan, levels: S8KikuLevel[], perturbed: 
     }
     const c = perWindow(conditioning, w.id)[0];
     if (!(c.lengthDifferenceMm <= d.lengthToleranceMm && c.shapeDifferenceMm <= d.shapeToleranceMm))
-      diagnostics.push(`${w.id}: sensitive to the obstacle cover (length ${c.lengthDifferenceMm.toExponential(2)}, shape ${c.shapeDifferenceMm.toExponential(2)}).`);
+      diagnostics.push(`${w.id}: sensitive to the constraint sampling (length ${c.lengthDifferenceMm.toExponential(2)}, shape ${c.shapeDifferenceMm.toExponential(2)}).`);
   }
   const asymptotic = refinements.filter(x => perWindow(refinements, x.windowId).slice(-S8_KIKU_ASYMPTOTIC_REFINEMENTS).includes(x));
   return { status: rejected ? 'rejected' : diagnostics.length ? 'unresolved' : 'accepted', stage: plan.stage, dimensions: d,
@@ -631,11 +620,11 @@ export function judgeS8Kiku(plan: S8KikuPlan, levels: S8KikuLevel[], perturbed: 
  * obstacles. Every level of the canonical ladder is a complete construction
  * checked independently; acceptance needs the asymptotic refinements to be
  * within tolerance and contracting, and the finest level to be insensitive to
- * the obstacle cover.
+ * twice as many constraint probes.
  */
 export function computeS8Kiku(input: S8KikuInput = {}): S8KikuResult {
   const plan = planS8Kiku(input);
   const levels = plan.factors.map(f => buildS8KikuLevel(plan, f));
-  const perturbed = buildS8KikuLevel(plan, plan.factors.at(-1)!, plan.d.obstacleToleranceMm / 2);
+  const perturbed = buildS8KikuLevel(plan, plan.factors.at(-1)!, 8);
   return judgeS8Kiku(plan, levels, perturbed);
 }

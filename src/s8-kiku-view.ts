@@ -149,14 +149,14 @@ function show(summary: S8KikuSummary) {
     return item;
   };
   el('levels').replaceChildren(...summary.levels.map(l => levelItem(l, `×${String(l.factor).replace('.', ',')}`)),
-    levelItem(summary.perturbed, `×${String(summary.perturbed.factor).replace('.', ',')}, покрытие вдвое точнее`));
+    levelItem(summary.perturbed, `×${String(summary.perturbed.factor).replace('.', ',')}, пробы вдвое чаще`));
   el('windows').replaceChildren(...summary.windows.map(w => {
     const item = document.createElement('li');
     const steps = summary.refinements.filter(r => r.windowId === w.id), last = steps.slice(-2);
     const cond = summary.conditioning.find(r => r.windowId === w.id)!;
     const name = w.kind === 'approach' ? 'приход к точке' : w.kind === 'departure' ? 'уход от точки' : 'возврат поверх начала к точке';
     const fmt = (key: 'lengthDifferenceMm' | 'shapeDifferenceMm', digits: number) => steps.map(r => r[key].toExponential(1).replace('.', ',')).join(' → ');
-    item.textContent = `${name} ${w.tip + 1}: Δдлины ${fmt('lengthDifferenceMm', 1)}; Δформы ${fmt('shapeDifferenceMm', 1)}; к покрытию ${mm(cond.shapeDifferenceMm, 4)}`;
+    item.textContent = `${name} ${w.tip + 1}: Δдлины ${fmt('lengthDifferenceMm', 1)}; Δформы ${fmt('shapeDifferenceMm', 1)}; к частоте проб ${mm(cond.shapeDifferenceMm, 4)}`;
     item.dataset.ok = String(last.every(r => r.lengthDifferenceMm <= .002 && r.shapeDifferenceMm <= .02) && cond.shapeDifferenceMm <= .02 && cond.lengthDifferenceMm <= .002);
     return item;
   }));

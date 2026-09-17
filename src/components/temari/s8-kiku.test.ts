@@ -113,7 +113,7 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
     // Synthetic levels: identical perfect constructions with chosen window differences.
     const curve = plan.windows[0].seed;
     const level = (factor: number, shift: number): S8KikuLevel => ({
-      factor, obstacleToleranceMm: plan.d.obstacleToleranceMm, coupon: {} as S8KikuLevel['coupon'], diagnostics: [], undeclaredCrossings: [],
+      factor, samplesPerSpan: 4, coupon: {} as S8KikuLevel['coupon'], diagnostics: [], undeclaredCrossings: [],
       validation: { status: 'passed', diagnostics: [], toleranceMm: .001, lengthMm: { total: 0, surface: 0, piercing: 0, buried: 0 }, maxCurvatureTimesRadius: 0, minSupportGapMm: 1, minSelfGapMm: 1 },
       curvature: { status: 'certified', lower: .5, upper: .5, minSpeedBound: 1, argmax: { curve: 0, t: 0 }, witnesses: [], leaves: 1 },
       hiddenCurvature: plan.hiddenCurvature, lengthMm: 1,

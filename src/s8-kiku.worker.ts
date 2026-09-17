@@ -2,7 +2,7 @@ import { computeS8Kiku, S8_KIKU_DIMENSIONS, type S8KikuLevel, type S8KikuStage }
 
 export type S8KikuSummary = ReturnType<typeof summarise>;
 
-const levelSummary = (l: S8KikuLevel) => ({ factor: l.factor, obstacleToleranceMm: l.obstacleToleranceMm, validation: l.validation.status,
+const levelSummary = (l: S8KikuLevel) => ({ factor: l.factor, samplesPerSpan: l.samplesPerSpan, validation: l.validation.status,
   codes: [...new Set(l.validation.diagnostics.map(d => d.code))], undeclared: l.undeclaredCrossings.length,
   curvature: l.curvature.upper, hiddenCurvature: l.hiddenCurvature.upper, lengthMm: l.lengthMm,
   solves: l.solves.map(s => ({ windowId: s.windowId, controlCount: s.controlCount, status: s.result.status, lengthMm: s.result.lengthMm,
