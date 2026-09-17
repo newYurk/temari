@@ -14,8 +14,10 @@ type Stage = "jiwari" | "kagari";
 const MARKINGS = [
   { id: "jiwari-off", division: "none", name: "Без сетки", detail: "Свои метки", note: "Булавки можно ставить в любом месте шара." },
   { id: "jiwari-simple", division: "simple", name: "S8 · простая", detail: "8 долей", note: "S8: восемь долей между двумя полюсами. Для первой кику." },
-  { id: "jiwari-c8", division: "c8", name: "C8", detail: "6 центров", note: "C8: шесть основных центров, по восемь лучей в каждом. Узоры на ней — позже; кику шьётся на S8." },
-  { id: "jiwari-c10", division: "c10", name: "C10", detail: "12 центров", note: "C10: двенадцать основных центров, по десять лучей в каждом. Узоры на ней — позже; кику шьётся на S8." },
+  { id: "jiwari-c8", division: "c8", name: "C8", detail: "6 центров", note: "C8: шесть основных центров. Узоры позже — кику шьётся на S8.",
+    help: "C8: шесть основных центров, по восемь лучей в каждом. Узоры для неё — позже; кику шьётся на S8." },
+  { id: "jiwari-c10", division: "c10", name: "C10", detail: "12 центров", note: "C10: двенадцать основных центров. Узоры позже — кику на S8.",
+    help: "C10: двенадцать основных центров, по десять лучей в каждом. Узоры для неё — позже; кику шьётся на S8." },
 ] as const;
 const MOTIFS = [
   { id: "motif-kiku", name: "Кику", detail: "Хризантема", icon: <IconKiku /> },
@@ -206,7 +208,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
       <div className="space-y-3">
         {MARKINGS.slice(1).map((item) => <div key={item.id} className="flex items-center gap-3">
           <MarkingDiagram division={item.division} className="size-20 shrink-0" />
-          <div><p className="text-sm font-medium">{item.name}</p><p className="mt-1 text-xs leading-relaxed text-ink/75">{item.note}</p></div>
+          <div><p className="text-sm font-medium">{item.name}</p><p className="mt-1 text-xs leading-relaxed text-ink/75">{"help" in item ? item.help : item.note}</p></div>
         </div>)}
       </div>
       <p className="mt-3 text-xs leading-relaxed text-ink/75">Точки на схемах — основные центры пересечения линий, в том числе на обратной стороне шара. Число лучей не равно числу лепестков.</p>
