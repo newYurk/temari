@@ -243,6 +243,11 @@ type TemariState = {
   startKagari: () => void;
   advanceKagari: () => void;
   fillKiku: () => void;
+  /**
+   * Sew every row this pole still has room for, in the order the hand would:
+   * one kai of the first four, then of the second four, and so on. One undo.
+   */
+  finishKiku: () => void;
   setStartPin: (local: Vec3) => void;
   setFacingPole: (index: number) => void;
   showExample: () => void;
@@ -329,6 +334,24 @@ type KagariStep = Pick<
 function kagariStep(s: TemariState): KagariStep {
   return { kagariPlan: s.kagariPlan, kagariLaid: s.kagariLaid, kagariFocus: s.kagariFocus,
     kagariKept: s.kagariKept, kagariSet: s.kagariSet, kikuLayers: s.kikuLayers, craft: s.craft };
+}
+
+/**
+ * Stitches that grow this pole's flower from the rows it has to `toLayer`.
+ * First four are one round; after the other four each kai packs both groups —
+ * GT14 alternate, not all-of-A then all-of-B, so layers are grown one by one.
+ */
+function kikuExtra(s: TemariState, toLayer: number): Stitch[] {
+  const plan = (layers: number, onlySet: 0 | 1) =>
+    motifStitchPlan(s.division, "kiku", s.kagariDir, s.kagariSpacing, s.facingPole,
+      s.selectedColor, layers, onlySet);
+  const extra: Stitch[] = [];
+  for (let layer = s.kikuLayers + 1; layer <= toLayer; layer++) {
+    for (const onlySet of [0, 1] as const) {
+      extra.push(...plan(layer, onlySet).slice(plan(layer - 1, onlySet).length));
+    }
+  }
+  return extra;
 }
 
 /** Deeper than a flower has groups; a long session cannot grow it without bound. */
@@ -1253,31 +1276,7 @@ export const useTemari = create<TemariState>((set, get) => ({
         if (state.kagariSet === 0) return;
         if (state.kikuLayers >= spec.capacity) return;
         const nextL = state.kikuLayers + 1;
-        const extraOf = (onlySet: 0 | 1) => {
-          const before = motifStitchPlan(
-            state.division,
-            "kiku",
-            state.kagariDir,
-            state.kagariSpacing,
-            state.facingPole,
-            state.selectedColor,
-            state.kikuLayers,
-            onlySet,
-          ).length;
-          return motifStitchPlan(
-            state.division,
-            "kiku",
-            state.kagariDir,
-            state.kagariSpacing,
-            state.facingPole,
-            state.selectedColor,
-            nextL,
-            onlySet,
-          ).slice(before);
-        };
-        // First four are one round. After the other four, Fill packs the next
-        // kai of both — GT14 alternate, not all-of-A then all-of-B.
-        const extra = [...extraOf(0), ...extraOf(1)];
+        const extra = kikuExtra(state, nextL);
         if (extra.length === 0) return;
         feel.stitch();
         set({
@@ -1343,6 +1342,28 @@ export const useTemari = create<TemariState>((set, get) => ({
       startPin: p,
       originNonce: state.originNonce + 1,
     });
+  },
+  finishKiku: () => {
+    const state = get();
+    if (state.mode !== "studio" || !state.layerDone) return;
+    if (state.motif !== "kiku" || state.kagariPlaying) return;
+    if (!kikuMarksReady(state.pins, state.division, state.facingPole)) return;
+    // Both groups must be standing, and the row under the needle finished.
+    if (state.kagariSet === 0 || state.kagariPlan.length === 0) return;
+    if (state.kagariLaid < state.kagariPlan.length) return;
+    const spec = kikuSpec(state.division, state.kagariSpacing, "fit");
+    if (state.kikuLayers >= spec.capacity) return;
+    const extra = kikuExtra(state, spec.capacity);
+    if (extra.length === 0) return;
+    feel.stitch();
+    set({
+      kikuLayers: spec.capacity,
+      kagariHistory: pushKagari(state),
+      kagariPlan: [...state.kagariPlan, ...extra],
+      kagariPlaying: true,
+      kagariFocus: stitchFocus(extra[0], state.division, "kiku"),
+    });
+    rememberStudio(get());
   },
   quickKiku: () => {
     const s = get();

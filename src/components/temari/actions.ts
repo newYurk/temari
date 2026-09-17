@@ -300,6 +300,23 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     getDisabledReason: (s) => (s.mode === "studio" ? null : "Откройте мастерскую"),
   },
   {
+    id: "kiku-finish",
+    label: "Дошить",
+    cluster: "kagari",
+    // Only with both groups standing, the row finished and room left at this pole.
+    canExecute: (s) =>
+      s.mode === "studio" && s.motif === "kiku" && s.kikuMarksReady &&
+      s.kagariIdleComplete && s.kagariSet === 1 && s.kikuLayers < s.kikuFit,
+    getDisabledReason: (s) =>
+      s.motif !== "kiku"
+        ? "Сначала выберите кику"
+        : !s.kagariIdleComplete || s.kagariSet === 0
+          ? "Сначала обе группы лепестков"
+          : s.kikuLayers >= s.kikuFit
+            ? "Экватор этого полюса. Дальше — переверните шар."
+            : null,
+  },
+  {
     id: "example",
     label: "Пример",
     cluster: "correction",
@@ -378,6 +395,9 @@ export function dispatchCommand(actionId: string, payload?: unknown) {
       return;
     case "quick-kiku":
       s.quickKiku();
+      return;
+    case "kiku-finish":
+      s.finishKiku();
       return;
     case "layer":
       if (typeof payload === "number") s.setKikuLayers(s.kikuLayers + payload);

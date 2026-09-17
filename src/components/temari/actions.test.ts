@@ -440,6 +440,33 @@ describe("quick kiku: marking and pins at the facing pole in one tap", () => {
     assert.equal(action("undo").canExecute(getCraftState()), false);
   });
 
+  it("sews every row this pole has room for in one step, undone in one step", () => {
+    dispatchCommand("quick-kiku");
+    assert.equal(action("kiku-finish").canExecute(getCraftState()), false, "not before the groups");
+    dispatchCommand("fill");
+    finishPlan();
+    assert.equal(action("kiku-finish").canExecute(getCraftState()), false, "not on one group");
+    dispatchCommand("motif-kiku");
+    finishPlan();
+    const two = useTemari.getState();
+    const fit = getCraftState().kikuFit;
+    assert.ok(fit > two.kikuLayers, `room left: ${fit} > ${two.kikuLayers}`);
+    assert.equal(action("kiku-finish").canExecute(getCraftState()), true);
+    dispatchCommand("kiku-finish");
+    finishPlan();
+    const done = useTemari.getState();
+    assert.equal(done.kikuLayers, fit);
+    assert.ok(done.kagariPlan.length > two.kagariPlan.length);
+    assert.equal(done.kagariLaid, done.kagariPlan.length);
+    // The pole is full: the step is offered no more.
+    assert.equal(action("kiku-finish").canExecute(getCraftState()), false);
+    assert.match(action("kiku-finish").getDisabledReason(getCraftState()) ?? "", /Экватор/);
+    dispatchCommand("undo");
+    const back = useTemari.getState();
+    assert.equal(back.kikuLayers, two.kikuLayers);
+    assert.deepEqual(back.kagariPlan, two.kagariPlan);
+  });
+
   it("turns the working pole to the eye instead of leaving it on the silhouette", () => {
     useTemari.setState({ facingPole: 1, viewPole: 0, poseDirty: true });
     const nonce = useTemari.getState().viewNonce;
