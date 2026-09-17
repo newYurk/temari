@@ -22,8 +22,8 @@ try {
     await page.locator(`#s8-view[data-stage="${stage}"][data-status]`).waitFor({ timeout: stage === 'row2' ? 3600000 : stage === 'round' ? 1800000 : 600000 });
     const status = await view.getAttribute('data-status');
     const statusText = await page.locator('#s8-status').innerText();
-    // A worker error must surface as itself, not as a missing-level count.
-    if (/не завершён/.test(statusText)) throw new Error(`${stage}: ${statusText}`);
+    // A worker or rendering error must surface as itself, not as a missing-level count.
+    if (/не завершён/.test(statusText) || errors.length) throw new Error(`${stage}: ${statusText} ${errors.join(' | ')}`);
     const levels = await page.locator('#s8-levels li').allTextContents();
     const windows = await page.locator('#s8-windows li').allTextContents();
     report[stage] = { status, statusText: await page.locator('#s8-status').innerText(), levels, windows };

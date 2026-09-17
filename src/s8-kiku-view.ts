@@ -131,8 +131,11 @@ function show(summary: S8KikuSummary) {
   const maxStep = Math.max(...summary.coupon.operations.map(op => op.step));
   const slider = el<HTMLInputElement>('step');
   slider.max = String(maxStep); slider.value = String(maxStep); text('step-value', String(maxStep));
+  const scope = summary.earlierRounds.length
+    ? `оба круга приняты своими лестницами (по ${summary.levels.length} уровней сетки и контрольному построению); второй круг уточнялся поверх самого мелкого построения первого, каждый уровень проверен как вся нить`
+    : `все ${summary.levels.length} уровней сетки и контрольное построение сходятся, каждое окно подтверждено перезапуском и проходит проверку всей нити`;
   text('status', summary.status === 'accepted'
-    ? `Принято: все ${summary.levels.length} уровней сетки и контрольное построение сходятся, каждое окно подтверждено перезапуском и проходит проверку всей нити; последние уточнения сжимаются. Это модель толстой нити, не равновесие настоящей пряжи.`
+    ? `Принято: ${scope}; последние уточнения сжимаются. Это модель толстой нити, не равновесие настоящей пряжи.`
     : `Не принято (${summary.status === 'rejected' ? 'отказ' : 'не подтверждено'}): ${summary.diagnostics.join(' ')}`);
   const mm = (v: number, digits = 3) => `${v.toFixed(digits).replace('.', ',')} мм`;
   const finest = summary.levels.at(-1)!;
@@ -170,19 +173,24 @@ function show(summary: S8KikuSummary) {
   setView(view);
   draw();
 }
-function compute(next: S8KikuStage) {
-  if (results.has(next) || pending.has(next)) return;
+function computing(next: S8KikuStage) {
   text('status', next === 'stitch' ? 'Считаем стежок на пяти уровнях сетки и контрольном построении…'
     : next === 'round' ? 'Считаем круг на пяти уровнях сетки — это занимает заметно больше времени…'
-    : 'Считаем два круга на пяти уровнях сетки — это десятки минут…');
+    : 'Считаем два круга, у каждого своя лестница из пяти уровней, — это десятки минут…');
   el('status').dataset.status = 'unresolved';
+}
+function compute(next: S8KikuStage) {
+  if (results.has(next) || pending.has(next)) return;
+  computing(next);
   const worker = new Worker(new URL('./s8-kiku.worker.ts', import.meta.url), { type: 'module' });
   pending.set(next, worker);
   worker.onmessage = event => {
     worker.terminate(); pending.delete(next);
     if (event.data.error) { if (current === next) { text('status', `Расчёт не завершён: ${event.data.error}`); stage.dataset.status = 'unresolved'; } return; }
     results.set(next, event.data.summary);
-    if (current === next) show(event.data.summary);
+    if (current !== next) return;
+    try { show(event.data.summary); }
+    catch (error) { text('status', `Расчёт не завершён: отображение: ${error instanceof Error ? error.message : String(error)}`); stage.dataset.status = 'unresolved'; }
   };
   worker.onerror = () => { worker.terminate(); pending.delete(next); if (current === next) { text('status', 'Расчёт не завершён.'); stage.dataset.status = 'unresolved'; } };
   worker.postMessage({ stage: next });
@@ -199,6 +207,10 @@ function setStage(next: S8KikuStage) {
     // Nothing of another stage stays on screen while this one is computed.
     for (const id of ['length', 'bend', 'refine', 'width']) text(id, '—');
     el('levels').replaceChildren(); el('windows').replaceChildren();
+    const slider = el<HTMLInputElement>('step');
+    slider.max = '0'; slider.value = '0'; text('step-value', '0');
+    delete stage.dataset.shownSpans;
+    if (pending.has(next)) computing(next);
     draw(); compute(next);
   }
 }

@@ -177,6 +177,11 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
     // ...but a level that fails as a complete thread still fails, whatever the selection.
     const broken = { ...levels[2], validation: { ...levels[2].validation, status: 'failed' as const, diagnostics: [{ code: 'self-penetration', message: 'x' }] } } as S8KikuLevel;
     assert.equal(judgeS8Kiku(canonical, [levels[0], levels[1], broken, levels[3], levels[4]] as S8KikuLevel[], levels[4] as S8KikuLevel, () => false).status, 'rejected');
+    // A failed solve is reported unless the window was reused from an earlier round (reported there).
+    const failing = (reusedRounds: number) => ({ ...levels[4], reusedRounds, solves: levels[4].solves.map((s, i) => i ? s
+      : { ...s, result: { ...s.result, status: 'failed' as const } }) }) as S8KikuLevel;
+    assert.equal(judgeS8Kiku(canonical, levels as S8KikuLevel[], failing(0), () => false).status, 'rejected');
+    assert.equal(judgeS8Kiku(canonical, levels as S8KikuLevel[], failing(1), () => false).status, 'accepted');
     const crossing = { ...levels[4], undeclaredCrossings: ['crossing a / b'] } as S8KikuLevel;
     assert.equal(judgeS8Kiku(canonical, levels as S8KikuLevel[], crossing, () => false).status, 'rejected');
     // Changed tolerances or solver settings are diagnostic only, even on the canonical ladder.
@@ -198,14 +203,17 @@ describe('Simple 8 control kiku: two rounds', () => {
       conditioning: [{ windowId: id, from: 2, to: 2, lengthDifferenceMm: 0, shapeDifferenceMm: 0 }],
       metrics: { lengthDifferenceMm: length, maxShapeDifferenceMm: 2 * length, curvatureLimit: .8 }, levels: [], coupon: {} }) as unknown as S8KikuResult;
     const statuses = ['accepted', 'unresolved', 'rejected'] as const;
-    for (const a of statuses) for (const b of statuses) {
-      const combined = combineS8Rounds(result(a, 'departure-0', 1e-3, a === 'accepted' ? [] : ['first']), result(b, 'departure-0-r2', 2e-3, b === 'accepted' ? [] : ['last']));
+    for (const a of statuses) for (const b of statuses) for (const [la, lb] of [[1e-3, 2e-3], [3e-3, 2e-3]]) {
+      const lastResult = result(b, 'departure-0-r2', lb, b === 'accepted' ? [] : ['last']);
+      const combined = combineS8Rounds(result(a, 'departure-0', la, a === 'accepted' ? [] : ['first']), lastResult);
       const expected = a === 'rejected' || b === 'rejected' ? 'rejected' : a === 'accepted' && b === 'accepted' ? 'accepted' : 'unresolved';
       assert.equal(combined.status, expected, `${a} + ${b}`);
       assert.deepEqual(combined.refinements.map(r => r.windowId), ['departure-0', 'departure-0-r2']);
       assert.deepEqual(combined.conditioning.map(r => r.windowId), ['departure-0', 'departure-0-r2']);
-      assert.equal(combined.metrics.lengthDifferenceMm, 2e-3);
-      assert.equal(combined.metrics.maxShapeDifferenceMm, 4e-3);
+      assert.equal(combined.metrics.lengthDifferenceMm, Math.max(la, lb));
+      assert.equal(combined.metrics.maxShapeDifferenceMm, 2 * Math.max(la, lb));
+      assert.equal(combined.levels, lastResult.levels);
+      assert.equal(combined.coupon, lastResult.coupon);
       assert.equal(combined.earlierRounds!.length, 1);
       if (a !== 'accepted') assert.ok(combined.diagnostics.includes('Round 1: first'));
       if (b !== 'accepted') assert.ok(combined.diagnostics.includes('Round 2 (complete thread): last'));
@@ -215,7 +223,10 @@ describe('Simple 8 control kiku: two rounds', () => {
   it('builds the earlier round against the same marking in both stages', () => {
     const round = planS8Kiku({ stage: 'round' }), row2 = planS8Kiku({ stage: 'row2' });
     assert.deepEqual(row2.supports, round.supports);
-    assert.throws(() => planS8Kiku({ stage: 'row2', lowerRowAdvanceMm: 13 }), RangeError);
+    assert.throws(() => planS8Kiku({ stage: 'row2', lowerRowAdvanceMm: 13 }), /beyond the window reach/);
+    planS8Kiku({ stage: 'row2', lowerRowAdvanceMm: 12 });
+    // Material past the pole's horizon is refused before any solve.
+    assert.throws(() => planS8Kiku({ stage: 'round', outerFractionOfQuarter: .78 }), /horizon/);
   });
 });
 
@@ -239,7 +250,7 @@ describe('Simple 8 control kiku: solved windows', () => {
     for (const tip of [2, 4, 6]) {
       assert.ok(ids.includes(`bite-${tip}-r2-under-approach-${tip}`) && ids.includes(`bite-${tip}-r2-under-departure-${tip}`), ids.filter(x => x.startsWith(`bite-${tip}-r2`)).join(' '));
     }
-    assert.ok(ids.some(x => x.startsWith('bite-0-r2-under-departure-0')), ids.filter(x => x.startsWith('bite-0-r2')).join(' '));
+    assert.ok(ids.includes('bite-0-r2-under-departure-0'), ids.filter(x => x.startsWith('bite-0-r2')).join(' '));
     assert.ok(!ids.some(x => /^bite-[1357]-r2-under-(?!jiwari)/.test(x)), 'lower stitches of round 2 are 3 mm away from round 1');
     assert.ok(level.curvature.status === 'certified' && level.curvature.upper < 1);
     // The earlier round's spans are the very curves of its construction.

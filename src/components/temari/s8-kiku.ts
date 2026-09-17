@@ -85,8 +85,11 @@ export const S8_KIKU_DIMENSIONS = Object.freeze({
  * them (or passing solverOptions) makes a computation diagnostic only; the
  * other dimensions define the modelled kiku itself.
  */
-export const S8_KIKU_ACCEPTANCE_KEYS = Object.freeze(['numericalClearanceMm', 'obstacleSearchMm', 'maxObstacles', 'validationToleranceMm',
-  'lengthToleranceMm', 'shapeToleranceMm', 'curvatureToleranceRKappa', 'settleToleranceMm', 'maxSettleRestarts', 'contraction'] as const);
+export const S8_KIKU_ACCEPTANCE_KEYS = Object.freeze(['numericalClearanceMm', 'portGuardMm', 'obstacleSearchMm', 'maxObstacles', 'validationToleranceMm',
+  'lengthToleranceMm', 'shapeToleranceMm', 'curvatureToleranceRKappa', 'settleToleranceMm', 'maxSettleRestarts', 'contraction',
+  // Seed shapes are initial guesses, but their length sets the model-derived ladder.
+  'approachLiftMm', 'departureLiftMm', 'approachRiseMm', 'upperApproachFallMm', 'lowerApproachFallMm',
+  'upperDepartureRiseMm', 'lowerDepartureRiseMm', 'departureFallMm', 'closingLiftMm', 'closingFallMm'] as const);
 /** Canonical resolution ladder in spline spans per minimum bend radius; fixed before any result. */
 export const S8_KIKU_LADDER: readonly number[] = Object.freeze([1, 1.5, 2, 3, 4]);
 /** The acceptance decision uses the last two refinements of the canonical ladder. */
@@ -463,9 +466,15 @@ export function planS8Kiku(input: S8KikuInput = {}) {
     { zone: 'piercing', curve: bezier(startJoin, add(startJoin, mul(toward(startJoin, startExit), d.tailLeadMm / 3)),
       sub(startExit, mul(startDir, d.tailLeadMm / 3)), startExit) },
   ];
-  // Every stitch (and the open end) must pass under its own marking segment.
+  // Every stitch (and the open end) must lie within the window reach of its marking segment
+  // (the segment extends supportMarginMm farther).
   for (const c of [...catches, openEnd]) if (!(rowAlong(c.tip, c.row) <= windowLength(c.tip)))
-    throw new RangeError(`Stitch at tip ${c.tip}, row ${c.row} lies beyond its marking segment.`);
+    throw new RangeError(`Stitch at tip ${c.tip}, row ${c.row} lies beyond the window reach of its marking segment.`);
+  // The crossing checks project onto the tangent plane at the pole; fail before solving if the
+  // prescribed material cannot be projected (solved windows are checked after solving).
+  const horizon = (p: V) => dot(unit(p), center) > Math.sin(Math.PI / 180);
+  if (!supports.every(s => horizon(start(s.curve)) && horizon(end(s.curve))) || !windows.every(w => w.seed.every(c => horizon(start(c)) && horizon(end(c)))))
+    throw new RangeError('Marking segments or windows reach within 1 degree of the pole\'s horizon; the crossing check cannot project them.');
   const hiddenCurves = [...startCurves.map(c => c.curve), ...catches.flatMap(bite)];
   const hiddenCurvature = boundCurvatureTimesRadius(hiddenCurves, r);
   return { d, stage, handedness, startTip: s0, factors, canonical, overridden, R, r, S, center, frames, tips, rows, catches, openEnd, legs, legPieces, windows, supports,
@@ -619,9 +628,10 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpa
     if (plan.rows > 1) {
       // Uwagake: a later row's stitch is taken under the whole bundle. A hidden passage that
       // meets an earlier round's window in projection is declared under it. The projection test
-      // cannot separate a crossing at a sample or span joint from a touch, so both are declared;
-      // the validator then requires exactly one transverse crossing on the declared side and
-      // fails the level otherwise.
+      // cannot separate a crossing at a sample or span joint from a touch, so both are declared.
+      // The validator then needs one certified transverse crossing on the declared side: a
+      // missing or wrong-side crossing fails the level, a tangent or ambiguous one leaves it
+      // unresolved.
       const roundOf = new Map(plan.windows.map(w => [w.id, w.round]));
       const biteOf = new Map(biteSpans.flatMap(b => b.ids.map(id => [id, b] as const)));
       const under = new Map<string, { bite: typeof biteSpans[number]; window: string }>();
@@ -683,12 +693,12 @@ export function judgeS8Kiku(plan: S8KikuPlan, levels: S8KikuLevel[], perturbed: 
   if (!plan.canonical) diagnostics.push(`Non-canonical ladder ${plan.factors.join('/')} is diagnostic only.`);
   if (d.maxSettleRestarts === 0) diagnostics.push('Windows were not checked for a fixed point: diagnostic only.');
   if (plan.overridden.length) diagnostics.push(`Non-default acceptance or solver settings (${plan.overridden.join(', ')}): diagnostic only.`);
-  const judgedIds = new Set(plan.windows.filter(judged).map(w => w.id));
+  const roundOf = new Map(plan.windows.map(w => [w.id, w.round]));
   for (const level of [...levels, perturbed]) {
     const tag = level === perturbed ? `x${level.factor} (${level.samplesPerSpan} probes per span)` : `x${level.factor}`;
     diagnostics.push(...level.diagnostics.map(x => `${tag} ${x}`));
-    // Windows outside the judged set are reused from an earlier round and reported there.
-    for (const s of level.solves) if (judgedIds.has(s.windowId) && s.result.status !== 'converged') {
+    // Windows reused from an earlier round are reported by that round's own ladder.
+    for (const s of level.solves) if (!(roundOf.get(s.windowId)! < level.reusedRounds) && s.result.status !== 'converged') {
       diagnostics.push(`${tag} ${s.windowId}: numerical solve ${s.result.status}.`);
       if (s.result.status === 'failed') rejected = true;
     }
