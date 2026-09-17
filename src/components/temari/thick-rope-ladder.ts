@@ -35,8 +35,9 @@ export function curvesLength(curves: readonly ThreadCurve[]) {
   let total = 0;
   for (const curve of curves) {
     const n = 2048;
-    let integral = Math.hypot(...curveDerivative(curve, 0)) + Math.hypot(...curveDerivative(curve, 1));
-    for (let i = 1; i < n; i++) integral += (i % 2 ? 4 : 2) * Math.hypot(...curveDerivative(curve, i / n));
+    const speed = (t: number) => { const v = curveDerivative(curve, t); return Math.hypot(v[0], v[1], v[2]); };
+    let integral = speed(0) + speed(1);
+    for (let i = 1; i < n; i++) integral += (i % 2 ? 4 : 2) * speed(i / n);
     total += integral / (3 * n);
   }
   return total;
