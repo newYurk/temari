@@ -1088,18 +1088,43 @@ function stitchSamples(s: Extract<Stitch, { kind: "arc" }>, n = 20): Vec3[] {
  * Same kai: B on A. Later kai: the new thread on every earlier opposite
  * set it actually meets. Parallel same-set flanks stay on the mari.
  */
+const arcSamples = new WeakMap<Extract<Stitch, { kind: "arc" }>, Vec3[]>();
+const arcCaps = new WeakMap<Extract<Stitch, { kind: "arc" }>, { c: Vec3; ang: number }>();
+
 export function annotateSetCrossings(stitches: Stitch[]): Stitch[] {
   const arcs = stitches.filter((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc");
   const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
   const reach = pearl * 1.35;
-  // Every arc is sampled once: the pair loop asked for the same samples again
-  // and again, and the workshop runs this after each stitch.
-  const samples = new Map<Extract<Stitch, { kind: "arc" }>, ReturnType<typeof stitchSamples>>();
+  // Every arc is sampled once, and the samples outlive the call: a stitch is
+  // immutable, the workshop runs this after each stitch, and the flower it
+  // runs over is the same objects plus one.
   const samplesOf = (s: Extract<Stitch, { kind: "arc" }>) => {
-    const hit = samples.get(s);
+    const hit = arcSamples.get(s);
     if (hit) return hit;
     const made = stitchSamples(s);
-    samples.set(s, made);
+    arcSamples.set(s, made);
+    return made;
+  };
+  /**
+   * A stitch covers a small cap of the ball. Two caps further apart than their
+   * radii plus the reach cannot meet, and the pair loop is quadratic: on a full
+   * flower this rejects almost every pair with one dot product.
+   */
+  const capOf = (s: Extract<Stitch, { kind: "arc" }>) => {
+    const hit = arcCaps.get(s);
+    if (hit) return hit;
+    const pts = samplesOf(s);
+    let x = 0, y = 0, z = 0;
+    for (const p of pts) { x += p[0]; y += p[1]; z += p[2]; }
+    const len = Math.hypot(x, y, z) || 1;
+    const c: Vec3 = [x / len, y / len, z / len];
+    let ang = 0;
+    for (const p of pts) {
+      const dot = Math.max(-1, Math.min(1, c[0] * p[0] + c[1] * p[1] + c[2] * p[2]));
+      ang = Math.max(ang, Math.acos(dot));
+    }
+    const made = { c, ang };
+    arcCaps.set(s, made);
     return made;
   };
   return stitches.map((s) => {
@@ -1112,6 +1137,12 @@ export function annotateSetCrossings(stitches: Stitch[]): Stitch[] {
       if (other.set === s.set) continue;
       const earlier = other.kai < s.kai || (other.kai === s.kai && other.set < s.set);
       if (!earlier) continue;
+      // Chord <= angle, so the reach used as an angle only ever keeps more pairs.
+      const capA = capOf(s);
+      const capB = capOf(other);
+      const between = Math.acos(Math.max(-1, Math.min(1,
+        capA.c[0] * capB.c[0] + capA.c[1] * capB.c[1] + capA.c[2] * capB.c[2])));
+      if (between > capA.ang + capB.ang + reach) continue;
       const c = closestApproachT(self, samplesOf(other));
       if (c.dist > reach) continue;
       const sameKai = other.kai === s.kai;

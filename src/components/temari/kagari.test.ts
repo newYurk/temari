@@ -291,6 +291,22 @@ describe("kagari recipe atom", () => {
     assert.ok(a.every((s) => s.kind !== "arc" || !s.sitMid), "A stays on the mari");
   });
 
+  it("finds the same crossings in a deep flower as in a shallow one", () => {
+    // The pair loop rejects distant stitches by their caps before measuring.
+    // These counts are what the plain, unrejected loop found; a rejection that
+    // reaches too far would quietly drop crossings and show up here.
+    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 56], [10, 160, 152, 384]]) {
+      const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, layers!, "all"))
+        .filter((s) => s.kind === "arc");
+      assert.equal(stitches.length, arcs, `arcs at ${layers} rounds`);
+      assert.equal(stitches.filter((s) => s.kind === "arc" && s.sitMid).length, carrying,
+        `stitches carrying a crossing at ${layers} rounds`);
+      assert.equal(
+        stitches.reduce((n, s) => n + (s.kind === "arc" ? s.sitAts?.length ?? 0 : 0), 0),
+        points, `crossing points at ${layers} rounds`);
+    }
+  });
+
   it("later kai sits on earlier opposite set at the real crossing", () => {
     const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, 3, "all"));
     const a1 = stitches.filter((s) => s.kind === "arc" && s.set === 0 && s.kai === 1);
