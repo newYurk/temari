@@ -1,0 +1,34 @@
+name: branch preview
+
+# Asks newYurk/branches to rebuild the branch previews at https://newyurk.github.io/branches/
+# right after a push, a branch deletion or a change to a pull request. Pull request events use
+# this file from main, so they also cover branches cut before this file existed. Needs the repo secret BRANCHES_DISPATCH_TOKEN
+# (fine-grained token, only newYurk/branches, Actions: read and write). Without it, or if the
+# call fails, the job stays green: newYurk/branches also checks on its own every few minutes.
+on:
+  push:
+  delete:
+  pull_request:
+    types: [opened, reopened, synchronize, closed, ready_for_review, converted_to_draft]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: ask newYurk/branches to publish
+        env:
+          GH_TOKEN: ${{ secrets.BRANCHES_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "no BRANCHES_DISPATCH_TOKEN secret, nothing to do"; exit 0; fi
+          # A publish that has not started yet will see this push anyway.
+          waiting=$(gh run list -R newYurk/branches -w publish.yml --limit 20 --json status \
+            -q '[.[] | select(.status == "queued" or .status == "pending" or .status == "waiting" or .status == "requested")] | length' \
+            || echo error)
+          if [ "$waiting" = error ]; then echo "::warning::cannot read newYurk/branches runs (token expired?)"; exit 0; fi
+          if [ "$waiting" != 0 ]; then echo "a publish is already waiting"; exit 0; fi
+          gh workflow run publish.yml -R newYurk/branches --ref main \
+            || echo "::warning::could not start newYurk/branches publish (token expired?)"
