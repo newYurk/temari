@@ -1092,9 +1092,19 @@ export function annotateSetCrossings(stitches: Stitch[]): Stitch[] {
   const arcs = stitches.filter((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc");
   const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
   const reach = pearl * 1.35;
+  // Every arc is sampled once: the pair loop asked for the same samples again
+  // and again, and the workshop runs this after each stitch.
+  const samples = new Map<Extract<Stitch, { kind: "arc" }>, ReturnType<typeof stitchSamples>>();
+  const samplesOf = (s: Extract<Stitch, { kind: "arc" }>) => {
+    const hit = samples.get(s);
+    if (hit) return hit;
+    const made = stitchSamples(s);
+    samples.set(s, made);
+    return made;
+  };
   return stitches.map((s) => {
     if (s.kind !== "arc" || s.pole == null || s.kai == null || s.set == null) return s;
-    const self = stitchSamples(s);
+    const self = samplesOf(s);
     const ats: { t: number; n: number }[] = [];
     for (const other of arcs) {
       if (other === s) continue;
@@ -1102,7 +1112,7 @@ export function annotateSetCrossings(stitches: Stitch[]): Stitch[] {
       if (other.set === s.set) continue;
       const earlier = other.kai < s.kai || (other.kai === s.kai && other.set < s.set);
       if (!earlier) continue;
-      const c = closestApproachT(self, stitchSamples(other));
+      const c = closestApproachT(self, samplesOf(other));
       if (c.dist > reach) continue;
       const sameKai = other.kai === s.kai;
       // Cross-kai tips already have sitA / sitB. Same-kai kousa is near

@@ -21,7 +21,7 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import { createTemariMaterial, createWrapBaker, createWrapCoverMaterial, syncTemariMaterial, syncWrapCoverMaterial } from "./shader";
-import { createMotifGeometry, getPerleBump, getPerleTexture, getYarnTexture } from "./stitches";
+import { createMotifGeometry, createMotifGeometryParts, getPerleBump, getPerleTexture, getYarnTexture } from "./stitches";
 import { pinPosition, useTemari } from "./store";
 import * as feel from "./feel";
 import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
@@ -80,9 +80,16 @@ function ThreadLayer({
   kind?: ThreadKind;
   order?: number;
 }) {
+  // Opaque thread is drawn as the pieces it is made of — merging the whole
+  // flower after every stitch was the long frame. A ghost stays one geometry:
+  // overlapping pieces would blend with themselves.
   const geos = useMemo(() => {
-    return colors.map((_, i) => createMotifGeometry(stitches, i, kind));
-  }, [stitches, kind, colors]);
+    return colors.map((_, i) =>
+      opacity >= 1
+        ? createMotifGeometryParts(stitches, i, kind)
+        : [createMotifGeometry(stitches, i, kind)].filter((g): g is THREE.BufferGeometry => !!g),
+    );
+  }, [stitches, kind, colors, opacity]);
   // A pearl cord shows its two plies; flat metallic jiwari keeps the plain yarn.
   const cord = kind !== "metallic";
   const yarn = useMemo(() => (cord ? getPerleTexture() : getYarnTexture()), [cord]);
@@ -90,15 +97,16 @@ function ThreadLayer({
 
   useEffect(() => {
     return () => {
-      for (const geo of geos) geo?.dispose();
+      // Kept tubes belong to the cache and outlive this layer.
+      for (const list of geos) for (const geo of list) if (!geo.userData.cached) geo.dispose();
     };
   }, [geos]);
 
   return (
     <group>
-      {geos.map((geo, i) =>
-        geo ? (
-          <mesh key={i} geometry={geo} renderOrder={order}>
+      {geos.flatMap((list, i) =>
+        list.map((geo, j) => (
+          <mesh key={`${i}-${j}`} geometry={geo} renderOrder={order}>
             <meshStandardMaterial
               map={yarn}
               bumpMap={bump ?? undefined}
@@ -115,7 +123,7 @@ function ThreadLayer({
               polygonOffsetUnits={-1}
             />
           </mesh>
-        ) : null,
+        )),
       )}
     </group>
   );
