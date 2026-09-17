@@ -76,7 +76,8 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   } else if (motif === "kiku" && kagariPlan.length) {
     instruction = kagariPhaseHint(motif, division, kagariDir, kagariLaid, kagariPlan.length,
       kagariPlaying, Math.max(0, stitchPoleIndex(kagariPlan[0]!, division, motif)), kagariSet,
-      kagariSet === 1 && kikuLayers < kikuSpec(division, kagariSpacing, "fit").capacity);
+      kagariSet === 1 && kikuLayers < kikuSpec(division, kagariSpacing, "fit").capacity,
+      kikuLayers, kikuSpec(division, kagariSpacing, "fit").capacity);
   } else if (motif === "kiku") {
     instruction = "Метки готовы. Нажмите «Начать кику».";
   } else if (jiwariOn && jiwariPhase !== "done") {

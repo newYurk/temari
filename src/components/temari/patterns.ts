@@ -1217,6 +1217,9 @@ export function kagariPhaseHint(
   poleIndex = 0,
   kagariSet: 0 | 1 = 0,
   canGrow = true,
+  /** Rows lying at this pole and how many the thread leaves room for. */
+  rows = 0,
+  rowsFit = 0,
 ): string {
   const support = motifSupport(division, motif);
   if (!support.supported) return support.reason;
@@ -1226,9 +1229,11 @@ export function kagariPhaseHint(
       return "Нажмите «Вторая группа» — следующие четыре лепестка.";
     }
     if (motif === "kiku") {
+      // Say how far the flower has grown: a beginner cannot count rows on a ball.
+      const count = rows > 0 && rowsFit > 0 ? `Ряд ${rows} из ${rowsFit}. ` : "";
       return canGrow
-        ? "Нажмите «Следующий ряд» — продолжить обе группы."
-        : "Кагари: ряд лежит. Другой полюс — переверните шар.";
+        ? `${count}Нажмите «Следующий ряд» — продолжить обе группы.`
+        : `${count}Кагари: ряд лежит. Другой полюс — переверните шар.`;
     }
     return "Кагари: ряд лежит. Другой полюс — переверните шар.";
   }

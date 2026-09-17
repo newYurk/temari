@@ -28,8 +28,22 @@ try {
     await page.getByRole('button', { name: /Начать кику/ }).click();
     await page.waitForTimeout(2500);
     await page.screenshot({ path: out + '/' + tag + '-3-sewing-north.png' });
+    // A laid group goes back whole — the first thing a hand reaches for.
+    await page.getByRole('button', { name: /Вторая группа/ }).click();
+    await page.waitForTimeout(2600);
+    const two = await page.evaluate(() => window.__temari.kagari());
+    assert.equal(two.set, 1, tag + ': the second group is laid');
+    await page.getByRole('button', { name: /Отменить/ }).click();
+    await page.waitForTimeout(500);
+    const undone = await page.evaluate(() => window.__temari.kagari());
+    assert.equal(undone.set, 0, tag + ': «Отменить» takes the group back');
+    assert.equal(undone.kept, 0, tag + ': the first group stays under the needle');
+    assert.equal(undone.laid, undone.n, tag + ': the flower is left complete, not mid-stitch');
+    await page.getByRole('button', { name: /Вторая группа/ }).click();
+    await page.waitForTimeout(2600);
     // Turn the south pole to the viewer, prepare it with one tap.
-    const northSewn = (await page.evaluate(() => window.__temari.kagari())).laid;
+    const k = await page.evaluate(() => window.__temari.kagari());
+    const northSewn = k.kept + k.laid;
     assert.ok(northSewn > 0, tag + ': the north flower is sewn');
     const facing = () => page.evaluate(() => window.__temari.kagari().pole);
     for (let i = 0; i < 4 && (await facing()) !== 1; i++) {

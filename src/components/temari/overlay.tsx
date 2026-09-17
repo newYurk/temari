@@ -72,11 +72,13 @@ function RecenterButton({ className }: { className?: string }) {
       title={label}
       onClick={resetView}
       className={cn(
-        "pointer-events-auto flex size-10 items-center justify-center rounded-full bg-linen/80 text-ink ring-1 ring-line",
+        "pointer-events-auto flex h-10 items-center justify-center gap-1.5 rounded-full bg-linen/80 px-2.5 text-sm text-ink ring-1 ring-line sm:px-3",
         className,
       )}
     >
       <IconPoles next={nextNorth ? "north" : "south"} className="size-5" />
+      {/* An icon alone did not say what the button does; the word fits from small up. */}
+      <span className="hidden sm:inline">{label}</span>
     </button>
   );
 }

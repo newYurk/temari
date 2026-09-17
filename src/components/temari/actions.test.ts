@@ -412,6 +412,34 @@ describe("quick kiku: marking and pins at the facing pole in one tap", () => {
     assert.deepEqual(useTemari.getState().kagariKept, north);
   });
 
+  it("takes a laid group back, one group per «Отменить», down to the bare marks", () => {
+    dispatchCommand("quick-kiku");
+    const marks = useTemari.getState().pins.length;
+    assert.equal(action("undo").canExecute(getCraftState()), false, "nothing sewn yet");
+    dispatchCommand("fill");
+    finishPlan();
+    const first = useTemari.getState().kagariPlan;
+    assert.ok(first.length > 0);
+    // The second group: four more petals, over the first four.
+    dispatchCommand("motif-kiku");
+    finishPlan();
+    const both = useTemari.getState();
+    assert.equal(both.kagariSet, 1);
+    assert.ok(both.kagariKept.length + both.kagariPlan.length > first.length);
+    assert.equal(action("undo").canExecute(getCraftState()), true);
+    dispatchCommand("undo");
+    const back = useTemari.getState();
+    assert.equal(back.kagariSet, 0);
+    assert.deepEqual(back.kagariPlan, first);
+    assert.deepEqual(back.kagariKept, []);
+    dispatchCommand("undo");
+    const bare = useTemari.getState();
+    assert.deepEqual(bare.kagariPlan, []);
+    assert.deepEqual(bare.kagariKept, []);
+    assert.equal(bare.pins.length, marks, "the marks stay; only the thread goes back");
+    assert.equal(action("undo").canExecute(getCraftState()), false);
+  });
+
   it("turns the working pole to the eye instead of leaving it on the silhouette", () => {
     useTemari.setState({ facingPole: 1, viewPole: 0, poseDirty: true });
     const nonce = useTemari.getState().viewNonce;

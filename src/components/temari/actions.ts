@@ -23,6 +23,7 @@ export type TemariCraftState = {
   kagariDir: KagariDir;
   kagariSpacing: KagariSpacing;
   kagariSet: 0 | 1;
+  kagariHistory: unknown[];
   kagariIdleComplete: boolean;
   kikuLayers: number;
   kikuFit: number;
@@ -50,7 +51,7 @@ export function getCraftState(): TemariCraftState {
       ? s.history.length === 0
       : s.craft === "pin" || s.motif === "none"
         ? s.pinHistory.length === 0
-        : s.sewnHistory.length === 0;
+        : s.sewnHistory.length === 0 && s.kagariHistory.length === 0;
   return {
     mode: s.mode,
     layerDone: s.layerDone,
@@ -66,6 +67,7 @@ export function getCraftState(): TemariCraftState {
     kagariDir: s.kagariDir,
     kagariSpacing: s.kagariSpacing,
     kagariSet: s.kagariSet,
+    kagariHistory: s.kagariHistory,
     kagariIdleComplete:
       !s.kagariPlaying && s.kagariPlan.length > 0 && s.kagariLaid >= s.kagariPlan.length,
     kikuLayers: s.kikuLayers,

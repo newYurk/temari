@@ -198,6 +198,8 @@ type TemariState = {
   kagariFocus: Vec3 | null;
   kagariKept: Stitch[];
   kagariSet: 0 | 1;
+  /** One entry per group of petals laid, so «Отменить» can take a group back. */
+  kagariHistory: KagariStep[];
   facingPole: number;
   startPin: Vec3 | null;
   originNonce: number;
@@ -312,9 +314,26 @@ function withKikuMarks(
 
 function idleKagari(): Pick<
   TemariState,
-  "kagariPlan" | "kagariLaid" | "kagariPlaying" | "kagariFocus" | "kagariKept"
+  "kagariPlan" | "kagariLaid" | "kagariPlaying" | "kagariFocus" | "kagariKept" | "kagariHistory"
 > {
-  return { kagariPlan: [], kagariLaid: 0, kagariPlaying: false, kagariFocus: null, kagariKept: [] };
+  return { kagariPlan: [], kagariLaid: 0, kagariPlaying: false, kagariFocus: null, kagariKept: [],
+    kagariHistory: [] };
+}
+
+/** What a group of petals is undone back to: the thread as it stood before it. */
+type KagariStep = Pick<
+  TemariState,
+  "kagariPlan" | "kagariLaid" | "kagariFocus" | "kagariKept" | "kagariSet" | "kikuLayers" | "craft"
+>;
+
+function kagariStep(s: TemariState): KagariStep {
+  return { kagariPlan: s.kagariPlan, kagariLaid: s.kagariLaid, kagariFocus: s.kagariFocus,
+    kagariKept: s.kagariKept, kagariSet: s.kagariSet, kikuLayers: s.kikuLayers, craft: s.craft };
+}
+
+/** Deeper than a flower has groups; a long session cannot grow it without bound. */
+function pushKagari(s: TemariState) {
+  return [...s.kagariHistory, kagariStep(s)].slice(-20);
 }
 
 export const useTemari = create<TemariState>((set, get) => ({
@@ -360,6 +379,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   kagariFocus: null,
   kagariKept: [],
   kagariSet: 0,
+  kagariHistory: [],
   facingPole: 0,
   startPin: null,
   originNonce: 0,
@@ -721,14 +741,14 @@ export const useTemari = create<TemariState>((set, get) => ({
         }
         const complete = s.kagariLaid >= s.kagariPlan.length && s.kagariPlan.length > 0;
         if (complete && s.kagariSet === 0) {
-          set({ kagariSet: 1 });
+          set({ kagariSet: 1, kagariHistory: pushKagari(s) });
           get().startKagari();
           return;
         }
         if (complete && s.kagariSet === 1) {
           const next = nextKagariPole(s.division, s.motif, s.kagariPlan, s.kagariKept);
           if (next != null && s.facingPole === next) {
-            set({ kagariSet: 0, kikuLayers: 1 });
+            set({ kagariSet: 0, kikuLayers: 1, kagariHistory: pushKagari(s) });
             get().startKagari();
           }
           return;
@@ -962,6 +982,13 @@ export const useTemari = create<TemariState>((set, get) => ({
       rememberStudio(get());
       return;
     }
+    const group = state.kagariHistory[state.kagariHistory.length - 1];
+    if (group) {
+      // A laid group goes back whole: the needle stops where it entered it.
+      set({ ...group, kagariPlaying: false, kagariHistory: state.kagariHistory.slice(0, -1) });
+      rememberStudio(get());
+      return;
+    }
     const prev = state.sewnHistory[state.sewnHistory.length - 1];
     if (!prev) return;
     set({
@@ -1167,6 +1194,8 @@ export const useTemari = create<TemariState>((set, get) => ({
     const first = plan.length > 0 ? 1 : 0;
     if (first) feel.stitch();
     set({
+      // A group opened from here is the first one; later groups record their own step.
+      ...(state.kagariPlan.length === 0 ? { kagariHistory: pushKagari(state) } : {}),
       kagariPlan: plan,
       kagariLaid: first,
       kagariPlaying: plan.length > first,
@@ -1253,6 +1282,7 @@ export const useTemari = create<TemariState>((set, get) => ({
         feel.stitch();
         set({
           kikuLayers: nextL,
+          kagariHistory: pushKagari(state),
           kagariPlan: [...state.kagariPlan, ...extra],
           kagariPlaying: true,
           kagariFocus: stitchFocus(extra[0], state.division, "kiku"),
