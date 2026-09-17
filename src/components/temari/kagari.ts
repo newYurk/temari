@@ -211,6 +211,58 @@ export function stackOver(previous: number[], crossing: Crossing): number[] {
  * Closest approach of two unit-sphere polylines, as parameters in [0, 1].
  * Used for the A/B kousa: the crossing is near the inner marks, not mid-flank.
  */
+/**
+ * Sharpen a closest approach found on samples.
+ *
+ * Samples locate a crossing no better than the spacing between them, and that
+ * spacing is as wide as the hump a cord makes there — so the hump was landing
+ * beside the crossing instead of on it. Two points are enough to start; this
+ * walks in on the real curves, halving the window each round.
+ */
+export function refineApproach(
+  pointA: (t: number) => Vec3,
+  pointB: (t: number) => Vec3,
+  tA: number,
+  tB: number,
+  windowA: number,
+  windowB: number,
+  rounds = 5,
+  grid = 2,
+): { tA: number; tB: number; dist: number } {
+  const clamp = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t);
+  const gap = (ta: number, tb: number) => {
+    const a = pointA(ta);
+    const b = pointB(tb);
+    return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  };
+  let bestA = clamp(tA);
+  let bestB = clamp(tB);
+  let best = gap(bestA, bestB);
+  let spanA = windowA;
+  let spanB = windowB;
+  for (let round = 0; round < rounds; round++) {
+    let nextA = bestA;
+    let nextB = bestB;
+    for (let i = -grid; i <= grid; i++) {
+      const ta = clamp(bestA + (i / grid) * spanA);
+      for (let j = -grid; j <= grid; j++) {
+        const tb = clamp(bestB + (j / grid) * spanB);
+        const d = gap(ta, tb);
+        if (d < best) {
+          best = d;
+          nextA = ta;
+          nextB = tb;
+        }
+      }
+    }
+    bestA = nextA;
+    bestB = nextB;
+    spanA /= grid;
+    spanB /= grid;
+  }
+  return { tA: bestA, tB: bestB, dist: best };
+}
+
 export function closestApproachT(
   a: readonly Vec3[],
   b: readonly Vec3[],

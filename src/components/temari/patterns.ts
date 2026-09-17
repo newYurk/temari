@@ -1,7 +1,7 @@
 import { polePositions, type Division } from "./division.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 import { COLOR_COUNT } from "./palettes.ts";
-import { biteAcross, closestApproachT, stackOver, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
+import { biteAcross, closestApproachT, refineApproach, stackOver, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
 
 export type KikuSlot = { pole: number; ring: number; sector: number };
 
@@ -1089,7 +1089,49 @@ function stitchSamples(s: Extract<Stitch, { kind: "arc" }>, n = 20): Vec3[] {
  * set it actually meets. Parallel same-set flanks stay on the mari.
  */
 const arcSamples = new WeakMap<Extract<Stitch, { kind: "arc" }>, Vec3[]>();
+/** Sharpened crossings, kept per pair: neither stitch changes between rebuilds. */
+const arcPairs = new WeakMap<
+  Extract<Stitch, { kind: "arc" }>,
+  WeakMap<Extract<Stitch, { kind: "arc" }>, { tA: number; tB: number; dist: number }>
+>();
 const arcCaps = new WeakMap<Extract<Stitch, { kind: "arc" }>, { c: Vec3; ang: number }>();
+
+/** Longest step between a stitch's samples: how far a crossing can hide. */
+function stepOf(s: Extract<Stitch, { kind: "arc" }>) {
+  const pts = stitchSamples(s);
+  let step = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]!;
+    const b = pts[i]!;
+    step = Math.max(step, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+  }
+  return step;
+}
+
+function pointOn(s: Extract<Stitch, { kind: "arc" }>) {
+  const anchors = [s.a, ...(s.via ?? []), s.b];
+  return (t: number) => sampleAnchors(anchors, t);
+}
+
+function crossingOf(
+  a: Extract<Stitch, { kind: "arc" }>,
+  b: Extract<Stitch, { kind: "arc" }>,
+  coarse: { tA: number; tB: number; dist: number },
+) {
+  let byA = arcPairs.get(a);
+  if (!byA) {
+    byA = new WeakMap();
+    arcPairs.set(a, byA);
+  }
+  const hit = byA.get(b);
+  if (hit) return hit;
+  const n = stitchSamples(a).length;
+  const m = stitchSamples(b).length;
+  const made = refineApproach(pointOn(a), pointOn(b), coarse.tA, coarse.tB,
+    1 / Math.max(1, n - 1), 1 / Math.max(1, m - 1));
+  byA.set(b, made);
+  return made;
+}
 
 export function annotateSetCrossings(stitches: Stitch[]): Stitch[] {
   const arcs = stitches.filter((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc");
@@ -1143,7 +1185,11 @@ export function annotateSetCrossings(stitches: Stitch[]): Stitch[] {
       const between = Math.acos(Math.max(-1, Math.min(1,
         capA.c[0] * capB.c[0] + capA.c[1] * capB.c[1] + capA.c[2] * capB.c[2])));
       if (between > capA.ang + capB.ang + reach) continue;
-      const c = closestApproachT(self, samplesOf(other));
+      // Samples only bracket the crossing: between them the curves can come a
+      // whole segment closer, so the bracket is kept wide and then walked in.
+      const coarse = closestApproachT(self, samplesOf(other));
+      if (coarse.dist > reach + stepOf(s) + stepOf(other)) continue;
+      const c = crossingOf(s, other, coarse);
       if (c.dist > reach) continue;
       const sameKai = other.kai === s.kai;
       // Cross-kai tips already have sitA / sitB. Same-kai kousa is near

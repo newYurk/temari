@@ -10,7 +10,13 @@ import { stackBump, scoopAway, scoopRadius, markTurnPast as markTurnPastVec, sph
 
 const ARC_SEGS = 32;
 /** Almost one pearl so the over cord clears; a hair less so it nestles, not a tent. */
-const STACK_LIFT = 0.92;
+/**
+ * Rise over one thread underneath, in diameters. The model declares a circular
+ * section that does not compress, and two such cords touch when their centres
+ * are one diameter apart — so this is 1, not a coefficient to taste. Compression
+ * is a separate question with no source yet (issue #93).
+ */
+const STACK_LIFT = 1;
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
