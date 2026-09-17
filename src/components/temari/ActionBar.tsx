@@ -30,6 +30,36 @@ const COLOR_NAMES = ["Красная", "Золотая", "Светлая", "Тё
 const actionById = (id: string) => CRAFT_ACTIONS.find((action) => action.id === id)!;
 const focusStyle = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 
+/**
+ * What a chrysanthemum is made of, for the step where it is sewn. Source is the
+ * control pattern GT14 (Ginny T., TemariKai): two working threads alternate by
+ * rounds, each round of one set lying over the other.
+ */
+function KikuHelp() {
+  return (
+    <div className="mb-4 space-y-3 text-sm leading-relaxed">
+      <p>
+        Кику — хризантема. Её шьют <b>двумя нитями по четыре лепестка</b>: сначала первая
+        четвёрка, потом вторая — она ложится поверх первой там, где они встречаются.
+        Дальше каждый круг добавляет по ряду обеим: ряды идут от полюса к экватору, пока
+        остаётся место. Сколько уже лежит и сколько поместится, написано в подсказке над
+        кнопками.
+      </p>
+      <p>
+        Стежок — <b>увагакэ тидори</b>: у метки игла берёт маленький подхват намотки, и нить
+        идёт дальше поверх ранее уложенных. Метки ставятся на полюсе и на трети пути от
+        экватора к нему; булавки — временные, их вынимают по ходу работы, и в дошитом цветке
+        их не остаётся.
+      </p>
+      <p className="text-ink/75">
+        «Отменить» снимает <b>целую группу</b> лепестков, а не один стежок: нить не режут
+        посреди круга. «Дошить» доводит этот полюс до экватора одним шагом — это для проверки,
+        в настоящей работе каждый ряд кладут руками.
+      </p>
+    </div>
+  );
+}
+
 export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const s = useTemari(useShallow((s) => ({
     division: s.division, motif: s.motif, craft: s.craft, pins: s.pins,
@@ -49,6 +79,8 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const [tip, setTip] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>(motif === "none" ? "jiwari" : "kagari");
   const help = useRef<HTMLDialogElement>(null);
+  const sewing = stage === "kagari";
+  const helpTitle = sewing ? "Как шьётся кику" : "Как читать разметку";
 
   useEffect(() => { if (motif !== "none") setStage("kagari"); }, [motif]);
   useEffect(() => { setTip(null); }, [division, motif, craft, pins, jiwariOn, kagariPlan, s.pinNote]);
@@ -130,7 +162,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
                   <span aria-hidden className="text-xs opacity-60">{i + 1}</span>{label}
                 </button>)}
             </div>
-            <button type="button" aria-label="Как читать разметку" title="Как читать разметку"
+            <button type="button" aria-label={helpTitle} title={helpTitle}
               onClick={() => help.current?.showModal()}
               className={cn("flex size-10 shrink-0 items-center justify-center rounded-full text-ink/65 hover:bg-ink/5", focusStyle)}>
               <CircleHelp className="size-5" />
@@ -207,10 +239,11 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     <dialog ref={help} aria-labelledby="marking-help-title"
       className="fixed inset-0 m-auto max-h-[85dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-3xl border border-line bg-linen p-5 text-ink shadow-xl backdrop:bg-ink/30">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 id="marking-help-title" className="font-display text-2xl">Как читать разметку</h2>
+        <h2 id="marking-help-title" className="font-display text-2xl">{helpTitle}</h2>
         <button type="button" aria-label="Закрыть подсказку" onClick={() => help.current?.close()}
           className={cn("flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-ink/5", focusStyle)}><X className="size-5" /></button>
       </div>
+      {sewing ? <KikuHelp /> : null}
       <p className="mb-4 text-sm leading-relaxed">Разметка, или дзивари, — нити, которые делят поверхность шара и помогают расположить узор.</p>
       <div className="space-y-3">
         {MARKINGS.slice(1).map((item) => <div key={item.id} className="flex items-center gap-3">
