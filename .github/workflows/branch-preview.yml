@@ -1,12 +1,15 @@
 name: branch preview
 
 # Asks newYurk/branches to rebuild the branch previews at https://newyurk.github.io/branches/
-# right after a push or a branch deletion. Needs the repo secret BRANCHES_DISPATCH_TOKEN
+# right after a push, a branch deletion or a change to a pull request. Pull request events use
+# this file from main, so they also cover branches cut before this file existed. Needs the repo secret BRANCHES_DISPATCH_TOKEN
 # (fine-grained token, only newYurk/branches, Actions: read and write). Without it, or if the
 # call fails, the job stays green: newYurk/branches also checks on its own every few minutes.
 on:
   push:
   delete:
+  pull_request:
+    types: [opened, reopened, synchronize, closed, ready_for_review, converted_to_draft]
   workflow_dispatch:
 
 permissions: {}
