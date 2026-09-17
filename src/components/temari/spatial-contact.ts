@@ -396,14 +396,14 @@ const boxDistance = (p: PointMm, lo: PointMm, hi: PointMm) =>
 
 const treeStack: CurveTree[] = [];
 /**
- * Nearest point of a curve support: the least (distance, parameter) over its
- * pieces, parameter = (piece + t) / pieces (a piece end and the next piece's
- * start share a value). Without a tree every piece is visited (reference);
+ * Nearest point of a curve support: the least (distance, parameter, piece)
+ * over its pieces, parameter = (piece + t) / pieces (a piece end and the next
+ * piece's start share a value). Without a tree every piece is visited (reference);
  * the tree only skips pieces whose box, or chord distance less the bulge of
- * the control polygon, is strictly farther than the best distance so far. The
- * piece lies within that distance of its chord (convex hull), so a skipped
- * piece is strictly farther, up to rounding in exact ties at a shared end
- * point, where both pieces give the same point and distance.
+ * the control polygon, exceeds the best distance so far by more than a
+ * rounding slack. The piece lies within the bulge of its chord (convex hull),
+ * so a skipped piece is strictly farther: exact ties, e.g. between parallel
+ * straight pieces, are always compared, as in the reference.
  */
 function closestOnCurve(point: PointMm, support: Extract<SpatialSupport, { kind: "curve" }>, tree?: CurveTree) {
   const pieces = support.piecesMm, count = pieces.length;
@@ -411,16 +411,20 @@ function closestOnCurve(point: PointMm, support: Extract<SpatialSupport, { kind:
   const consider = (index: number) => {
     closestOnCubic(point, pieces[index]);
     const at = (index + cubicT) / count;
-    if (cubicDistance < distance || (cubicDistance === distance && at < parameter)) { distance = cubicDistance; parameter = at; piece = index; t = cubicT; }
+    if (cubicDistance < distance || (cubicDistance === distance && (at < parameter || (at === parameter && index < piece)))) {
+      distance = cubicDistance; parameter = at; piece = index; t = cubicT;
+    }
   };
   if (!tree) for (let i = 0; i < count; i++) consider(i);
   else {
+    // Box and chord distances round differently from the Bernstein sums (a few ulps of the coordinates).
+    const slack = 1e-12 * (1 + Math.abs(point[0]) + Math.abs(point[1]) + Math.abs(point[2]));
     treeStack.length = 0; treeStack.push(tree);
     while (treeStack.length) {
       const node = treeStack.pop()!;
-      if (boxDistance(point, node.lo, node.hi) > distance) continue;
+      if (boxDistance(point, node.lo, node.hi) > distance + slack) continue;
       if (node.piece >= 0) {
-        if (segmentDistance(point, node.from!, node.to!) - node.bulge! <= distance) consider(node.piece);
+        if (segmentDistance(point, node.from!, node.to!) - node.bulge! <= distance + slack) consider(node.piece);
         continue;
       }
       const left = node.left!, right = node.right!;

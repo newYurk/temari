@@ -418,8 +418,8 @@ export function planS8Kiku(input: S8KikuInput = {}) {
 }
 export type S8KikuPlan = ReturnType<typeof planS8Kiku>;
 
-/** One complete construction at one resolution factor and constraint sampling. */
-export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpan = 4): S8KikuLevel {
+/** One complete construction at one resolution factor and constraint sampling (probes per span, default the solver's). */
+export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpan = plan.solverOptions?.samplesPerSpan ?? 4): S8KikuLevel {
   const { d, R, r, frames, catches, legs, legPieces, supports, bite, hullCorridor, startCurves } = plan;
   const markingObstacles: SpatialSupport[] = supports.map(s => ({ id: s.id, kind: 'arc', centerMm: [0, 0, 0],
     fromMm: start(s.curve), toMm: end(s.curve), radiusMm: s.radiusMm + d.numericalClearanceMm }));
@@ -625,6 +625,6 @@ export function judgeS8Kiku(plan: S8KikuPlan, levels: S8KikuLevel[], perturbed: 
 export function computeS8Kiku(input: S8KikuInput = {}): S8KikuResult {
   const plan = planS8Kiku(input);
   const levels = plan.factors.map(f => buildS8KikuLevel(plan, f));
-  const perturbed = buildS8KikuLevel(plan, plan.factors.at(-1)!, 8);
+  const perturbed = buildS8KikuLevel(plan, plan.factors.at(-1)!, 2 * (plan.solverOptions?.samplesPerSpan ?? 4));
   return judgeS8Kiku(plan, levels, perturbed);
 }

@@ -4,6 +4,7 @@ import { solveSpatialContact, spatialSplineKnots } from "./spatial-contact";
 import type { SpatialContactInput, SpatialContactResult, SpatialSupport } from "./spatial-contact";
 import type { PointMm } from "./thread-path";
 import s8Inputs from "./fixtures/spatial-contact-s8-inputs.json" with { type: "json" };
+import s8TubeInputs from "./fixtures/spatial-contact-s8-tube-inputs.json" with { type: "json" };
 
 // The default solve skips far support probes, sums bases over local ranges and
 // factors an envelope; referenceEvaluation does none of that. Both must agree
@@ -125,8 +126,39 @@ describe("spatial contact: exact shortcuts against the dense reference evaluatio
     assert.ok(result.reactions.some(r => r.supportId === "arch"));
   });
 
+  it("matches when probes are equidistant from two pieces of one curve support", () => {
+    // Two short parallel rods, farther apart than they are long, and a thread
+    // pulled down into the groove between them in their symmetry plane: every
+    // probe ties exactly. The tree visits the lower rod first, the reference
+    // the upper one; both must keep the same nearest piece. One curve support
+    // touched on two branches is a non-smooth constraint, so the solve stops
+    // unresolved; it does so identically.
+    const rod = (y: number): [PointMm, PointMm, PointMm, PointMm] => [[-.3, y, 0], [-.1, y, 0], [.1, y, 0], [.3, y, 0]];
+    const count = 12, h = 1 / (3 * (count - 3));
+    const controlPointsMm = planar(count, 1, t => [-2 + 4 * t, 0, -1 + 1.8 * Math.sin(Math.PI * t)]);
+    controlPointsMm[1] = [-2 + 4 * h, 0, -1 + 1.8 * Math.PI * h]; controlPointsMm[count - 2] = [2 - 4 * h, 0, -1 + 1.8 * Math.PI * h];
+    const input: SpatialContactInput = { controlPointsMm, threadRadiusMm: .2, body: { centerMm: [0, 0, -100], radiusMm: 1 },
+      supports: [{ id: "groove", kind: "curve", piecesMm: [rod(.35), rod(-.35)], radiusMm: .2 }],
+      options: { maxIterations: 8000, maxOuterIterations: 60, feasibilityToleranceMm: 1e-4, stationarityTolerance: 2e-6, complementarityToleranceMm: 5e-7 } };
+    const result = assertMatchesReference("groove", input, "unresolved");
+    assert.ok(result.controlPointsMm.every(p => Object.is(p[1], 0) || Math.abs(p[1]) < 1e-9), "the tie keeps the symmetry plane");
+  });
+
+  it("matches on frozen Simple 8 kiku window solves with exact tubes", () => {
+    // Stitch stage, factor 1: the upper-tip departure over its approach; earlier thread
+    // is one curve support next to the marking arcs.
+    const inputs = s8TubeInputs as unknown as { name: string; input: SpatialContactInput }[];
+    assert.deepEqual(inputs.map(x => x.name), ["s8-stitch-x1-departure-2-tube"]);
+    for (const { name, input } of inputs) {
+      const result = assertMatchesReference(name, input, "converged");
+      assert.ok(input.supports.some(s => s.kind === "curve"), name);
+      assert.ok(result.reactions.some(r => r.supportId.startsWith("prior-")), name);
+    }
+  });
+
   it("matches on frozen Simple 8 kiku window solves", () => {
-    // Round stage, factor 1: 12 supports with a short arc, and 80 supports with many segments.
+    // Capsule era (before exact tubes). Round stage, factor 1: 12 supports with a
+    // short arc, and 80 supports with many segments.
     const inputs = s8Inputs as unknown as { name: string; input: SpatialContactInput }[];
     assert.deepEqual(inputs.map(x => x.name), ["s8-round-x1-approach-6", "s8-round-x1-departure-6"]);
     for (const { name, input } of inputs) {
