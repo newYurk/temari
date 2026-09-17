@@ -131,7 +131,7 @@ describe('computed lower kagari: full-path and refinement acceptance', () => {
     assert.notEqual(capped.status, 'accepted');
     assert.throws(() => computeLowerKagari({}, { controlCounts: [10] }), RangeError);
     assert.throws(() => computeLowerKagari({}, { controlCounts: [10, 10] }), RangeError);
-    assert.throws(() => computeLowerKagari({}, { controlCounts: [60, 129] }), RangeError);
+    assert.throws(() => computeLowerKagari({}, { controlCounts: [60, 257] }), RangeError);
     assert.throws(() => computeLowerKagari({}, { spansPerBendRadius: 0 }), RangeError);
   });
 });

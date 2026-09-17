@@ -87,7 +87,7 @@ export function solveThickRopeLadder(input: ThickRopeLadderInput): ThickRopeLadd
   const counts = [...(input.controlCounts ?? THICK_ROPE_LADDER.factors.map(f => Math.ceil(minimumSpans * f) + 3))];
   if (counts.length < 2 || counts.length > 4 || counts.some((n, i) => !Number.isInteger(n) || n < 6
     || n > THICK_ROPE_LADDER.maxControls || (i > 0 && n <= counts[i - 1])))
-    throw new RangeError('A thick-rope ladder requires two to four increasing resolutions of at most 128 controls.');
+    throw new RangeError('A thick-rope ladder requires two to four increasing resolutions of at most 256 controls.');
   const resolutions = counts.map((controlCount): ThickRopeResolution => ({ controlCount, resolved: controlCount - 3 >= minimumSpans,
     result: solveSpatialContact({ controlPointsMm: fitSpatialSeed(input.seed, controlCount), threadRadiusMm: input.threadRadiusMm,
       minBendRadiusMm: input.minBendRadiusMm, body: input.body, supports: input.supports, options: input.solverOptions }) }));
