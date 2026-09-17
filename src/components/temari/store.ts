@@ -244,6 +244,12 @@ type TemariState = {
   setStartPin: (local: Vec3) => void;
   setFacingPole: (index: number) => void;
   showExample: () => void;
+  /**
+   * Test shortcut: S8 marking finished and the kiku working pins set at the
+   * pole that faces the viewer, without touching the view. Sewing starts with
+   * «Начать кику»; a flower already sewn at another pole stays.
+   */
+  quickKiku: () => void;
 };
 
 function rememberStudio(state: TemariState) {
@@ -1053,6 +1059,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       facingPole: next,
       viewNonce: state.viewNonce + 1,
       poseDirty: false,
+      // Turning to another pole starts a new flower there; what is sewn stays sewn.
       ...(flipped && state.motif === "kiku"
         ? {
             pins: [],
@@ -1065,6 +1072,7 @@ export const useTemari = create<TemariState>((set, get) => ({
             kagariLaid: 0,
             kagariPlaying: false,
             kagariFocus: null,
+            kagariKept: [...state.kagariKept, ...state.kagariPlan.slice(0, state.kagariLaid)],
           }
         : {}),
     });
@@ -1304,6 +1312,46 @@ export const useTemari = create<TemariState>((set, get) => ({
       startPin: p,
       originNonce: state.originNonce + 1,
     });
+  },
+  quickKiku: () => {
+    const s = get();
+    if (s.mode !== "studio") return;
+    feel.unlock();
+    feel.pin();
+    const facingPole = s.facingPole < polePositions("simple").length ? s.facingPole : 0;
+    const sameBall = s.division === "simple" && s.jiwariOn && s.jiwariPhase === "done" && s.motif === "kiku";
+    const sewnBefore = sameBall ? [...s.kagariKept, ...s.kagariPlan.slice(0, s.kagariLaid)] : [];
+    set({
+      layerDone: true,
+      wrapProgress: 1,
+      wrapStarted: true,
+      wrapSeed: "full",
+      wrapPass: 3,
+      division: "simple",
+      motif: "kiku",
+      craft: "stitch",
+      facingPole,
+      fills: sameBall ? s.fills : emptyFills("simple"),
+      jiwariOn: true,
+      jiwariPhase: "done",
+      jiwariLaid: 5,
+      pins: withKikuMarks({ division: "simple", pins: [], jiwariLaid: 5, jiwariPhase: "done", facingPole }, "kiku"),
+      pinArcs: [],
+      activePin: null,
+      pinNote: null,
+      pinHistory: [],
+      sewn: [],
+      sewnHistory: [],
+      hover: -1,
+      hoverSlot: null,
+      kagariDir: "out",
+      kagariSet: 0,
+      kikuLayers: 1,
+      ...idleKagari(),
+      // The flower at this pole starts again; flowers at other poles stay sewn.
+      kagariKept: sewnBefore.filter((stitch) => stitchPoleIndex(stitch, "simple", "kiku") !== facingPole),
+    });
+    rememberStudio(get());
   },
   showExample: () => {
     feel.unlock();

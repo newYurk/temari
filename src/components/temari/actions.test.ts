@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { CRAFT_ACTIONS, dispatchCommand, getCraftState } from "./actions";
 import { c8Pins, c10Pins } from "./jiwari";
-import { around, kikuWorkingPins, motifStitchPlan, motifSupport, type MotifId } from "./patterns";
+import { around, kikuWorkingPins, motifStitchPlan, motifSupport, stitchPoleIndex, type MotifId } from "./patterns";
 import { useTemari } from "./store";
 
 const initialState = useTemari.getState();
@@ -331,5 +331,94 @@ describe("recipe compatibility in studio actions and state", () => {
     const pins = useTemari.getState().pins;
     dispatchCommand("motif-none");
     assert.deepEqual(useTemari.getState().pins, pins);
+  });
+});
+
+describe("quick kiku: marking and pins at the facing pole in one tap", () => {
+  beforeEach(() => {
+    // A fresh workshop: no grid, sketch motif, C8 remembered from an earlier session.
+    useTemari.setState({
+      ...initialState,
+      mode: "studio",
+      division: "c8",
+      motif: "none",
+      layerDone: true,
+      craft: "pin",
+      jiwariOn: false,
+      jiwariPhase: "off",
+      pins: [{ id: "free", p: [0, 0, 1] }],
+    }, true);
+  });
+  afterEach(() => useTemari.setState(initialState, true));
+
+  for (const pole of [0, 1]) {
+    it(`finishes S8 and sets the working pins at pole ${pole}, ready to sew there`, () => {
+      useTemari.setState({ facingPole: pole });
+      assert.equal(action("quick-kiku").canExecute(getCraftState()), true);
+      dispatchCommand("quick-kiku");
+      const s = useTemari.getState();
+      assert.equal(s.division, "simple");
+      assert.equal(s.jiwariOn && s.jiwariPhase === "done", true);
+      assert.equal(s.motif, "kiku");
+      assert.equal(s.facingPole, pole);
+      assert.deepEqual(s.pins.map((pin) => pin.id).sort(), kikuWorkingPins("simple", pole).map((pin) => pin.id).sort());
+      assert.equal(getCraftState().kikuMarksReady, true);
+      assert.deepEqual(s.kagariPlan, []);
+      assert.equal(s.pinNote, null);
+      // «Начать кику» is available and sews this pole only.
+      assert.equal(action("fill").canExecute(getCraftState()), true);
+      dispatchCommand("fill");
+      finishPlan();
+      const plan = useTemari.getState().kagariPlan;
+      assert.ok(plan.length > 0);
+      assert.ok(plan.every((stitch) => stitchPoleIndex(stitch, "simple", "kiku") === pole));
+    });
+  }
+
+  it("keeps a flower sewn at one pole when the other pole is prepared, and restarts the facing one", () => {
+    dispatchCommand("quick-kiku");
+    dispatchCommand("fill");
+    finishPlan();
+    const north = useTemari.getState().kagariPlan;
+    assert.ok(north.length > 0);
+    useTemari.setState({ facingPole: 1 });
+    dispatchCommand("quick-kiku");
+    let s = useTemari.getState();
+    assert.deepEqual(s.kagariKept, north);
+    assert.deepEqual(s.kagariPlan, []);
+    assert.deepEqual(s.pins.map((pin) => pin.id).sort(), kikuWorkingPins("simple", 1).map((pin) => pin.id).sort());
+    // Pressing again at the same pole drops only that pole's unfinished flower.
+    dispatchCommand("fill");
+    finishPlan();
+    useTemari.getState().quickKiku();
+    s = useTemari.getState();
+    assert.deepEqual(s.kagariKept, north);
+    assert.deepEqual(s.kagariPlan, []);
+  });
+
+  it("keeps the sewn flower when the view is turned to the other pole", () => {
+    dispatchCommand("quick-kiku");
+    dispatchCommand("fill");
+    finishPlan();
+    const north = useTemari.getState().kagariPlan;
+    assert.ok(north.length > 0);
+    useTemari.setState({ poseDirty: false, viewPole: 0 });
+    useTemari.getState().resetView();
+    const s = useTemari.getState();
+    assert.equal(s.facingPole, 1);
+    assert.deepEqual(s.kagariKept, north);
+    assert.deepEqual(s.kagariPlan, []);
+    dispatchCommand("quick-kiku");
+    assert.deepEqual(useTemari.getState().kagariKept, north);
+  });
+
+  it("does nothing outside the workshop", () => {
+    useTemari.setState({ mode: "kata" });
+    assert.equal(action("quick-kiku").canExecute(getCraftState()), false);
+    const before = useTemari.getState();
+    dispatchCommand("quick-kiku");
+    useTemari.getState().quickKiku();
+    assert.equal(useTemari.getState().division, before.division);
+    assert.equal(useTemari.getState().motif, before.motif);
   });
 });

@@ -291,6 +291,13 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     getDisabledReason: () => null,
   },
   {
+    id: "quick-kiku",
+    label: "Кику здесь",
+    cluster: "kagari",
+    canExecute: (s) => s.mode === "studio",
+    getDisabledReason: (s) => (s.mode === "studio" ? null : "Откройте мастерскую"),
+  },
+  {
     id: "example",
     label: "Пример",
     cluster: "correction",
@@ -366,6 +373,9 @@ export function dispatchCommand(actionId: string, payload?: unknown) {
       return;
     case "example":
       s.showExample();
+      return;
+    case "quick-kiku":
+      s.quickKiku();
       return;
     case "layer":
       if (typeof payload === "number") s.setKikuLayers(s.kikuLayers + payload);
