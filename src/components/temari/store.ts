@@ -1503,7 +1503,10 @@ export const useTemari = create<TemariState>((set, get) => ({
       wrapSeed: "full",
       startPin: null,
       hoverSlot: null,
-      selectedColor: 0,
+      // The example is a ball like any other: a pair of threads that reads on
+      // its wrap, not a fixed colour that can land invisible on a red one.
+      selectedColor: kikuThreads(get().wrapColor)[0],
+      kagariColors: kikuThreads(get().wrapColor),
       kagariDir: "out",
       kagariSet: 0,
       kikuLayers: 1,

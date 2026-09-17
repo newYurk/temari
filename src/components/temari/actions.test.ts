@@ -445,6 +445,38 @@ describe("quick kiku: marking and pins at the facing pole in one tap", () => {
     assert.deepEqual([...(bySet.get(1) ?? [])], [3], "set B stays its colour to the equator");
   });
 
+  it("the palette always shows the thread the next stitches will be sewn in", () => {
+    // The hand holds the set being sewn — and once its group is finished, the
+    // next one, because that is the thread the pattern says to pick up.
+    const inHand = () => {
+      const s = useTemari.getState();
+      const laidOut = s.kagariPlan.length > 0 && s.kagariLaid >= s.kagariPlan.length;
+      return s.kagariSet === 0 && laidOut ? 1 : s.kagariSet;
+    };
+    const agrees = (step: string) => {
+      const s = useTemari.getState();
+      if (s.motif !== "kiku") return;
+      assert.equal(s.selectedColor, s.kagariColors[inHand()], `${step}: palette holds the thread in hand`);
+      const next = s.kagariPlan[s.kagariLaid];
+      if (next && next.kind === "arc" && next.set === s.kagariSet) {
+        assert.equal(next.color, s.kagariColors[s.kagariSet], `${step}: the next stitch is that thread`);
+      }
+    };
+    dispatchCommand("quick-kiku"); agrees("«Кику здесь»");
+    useTemari.getState().setColor(3); agrees("colour picked before the first group");
+    dispatchCommand("fill"); agrees("first group started");
+    finishPlan(); agrees("first group finished");
+    useTemari.getState().setColor(4); agrees("colour picked for the second thread");
+    dispatchCommand("motif-kiku"); agrees("«Вторая группа»");
+    finishPlan(); agrees("second group finished");
+    dispatchCommand("kiku-finish"); finishPlan(); agrees("«Дошить»");
+    dispatchCommand("undo"); agrees("«Отменить»");
+    useTemari.setState({ poseDirty: false, viewPole: 0 });
+    useTemari.getState().resetView(); agrees("turned to the other pole");
+    dispatchCommand("quick-kiku"); agrees("«Кику здесь» again");
+    useTemari.getState().showExample(); agrees("«Пример»");
+  });
+
   it("repainting a thread moves no stitch, even mid-row when both sets are in the plan", () => {
     dispatchCommand("quick-kiku");
     dispatchCommand("fill");
