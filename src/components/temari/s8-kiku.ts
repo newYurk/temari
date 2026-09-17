@@ -83,6 +83,8 @@ export type S8KikuInput = Partial<S8KikuDimensions> & {
   handedness?: 1 | -1;
   /** A Simple 8 pole; the default is +Y. */
   center?: PointMm;
+  /** Upper tip where the thread starts (0, 2, 4 or 6); the stage is congruent for every choice. */
+  startTip?: number;
   /** Diagnostic only: a non-canonical ladder can never be accepted. */
   factors?: readonly number[];
   solverOptions?: SpatialContactOptions;
@@ -279,7 +281,9 @@ export function planS8Kiku(input: S8KikuInput = {}) {
     if (input[key] !== undefined) d[key] = input[key]!;
     if (!Number.isFinite(d[key]) || d[key] <= 0) throw new RangeError(`${key} must be finite and positive`);
   }
-  const stage = input.stage ?? 'stitch', handedness = input.handedness ?? 1;
+  const stage = input.stage ?? 'stitch', handedness = input.handedness ?? 1, s0 = input.startTip ?? 0;
+  if (![0, 2, 4, 6].includes(s0)) throw new RangeError('startTip must be an upper tip: 0, 2, 4 or 6.');
+  const tipAt = (k: number) => (s0 + k) % 8;
   const factors = [...(input.factors ?? S8_KIKU_LADDER)];
   const canonical = factors.length === S8_KIKU_LADDER.length && factors.every((f, i) => f === S8_KIKU_LADDER[i]);
   if (stage !== 'stitch' && stage !== 'round') throw new RangeError('Unknown Simple 8 stage.');
@@ -315,17 +319,17 @@ export function planS8Kiku(input: S8KikuInput = {}) {
     frame: { radial: f.m, outward: f.outward, progress: f.progress },
     entry: f.at(d.halfBiteMm, 0, S), exit: f.at(-d.halfBiteMm, 0, S) }));
   const windowLength = (tip: number) => frames[tip].role === 'upper' ? d.upperWindowMm : d.lowerWindowMm;
-  const wrapEntry = frames[0].at(d.wrapHalfBiteMm, d.rowAdvanceMm, S);
+  const wrapEntry = frames[s0].at(d.wrapHalfBiteMm, d.rowAdvanceMm, S);
 
   // Chronology: catches in working order; the leg between consecutive ports.
-  const catches = stage === 'stitch' ? [1, 2] : [1, 2, 3, 4, 5, 6, 7];
+  const catches = (stage === 'stitch' ? [1, 2] : [1, 2, 3, 4, 5, 6, 7]).map(tipAt);
   const legs: { from: number; to: number | 'wrap'; leg: Leg }[] = catches.map((tip, i) => {
-    const from = i ? catches[i - 1] : 0;
+    const from = i ? catches[i - 1] : s0;
     return { from, to: tip, leg: greatCircle(tips[from].exit, tips[tip].entry) };
   });
-  const lastTip = catches.at(-1)!;
+  const lastTip = catches.at(-1)!, openTip = tipAt(3);
   legs.push(stage === 'stitch'
-    ? { from: lastTip, to: 3, leg: greatCircle(tips[lastTip].exit, tips[3].entry) }
+    ? { from: lastTip, to: openTip, leg: greatCircle(tips[lastTip].exit, tips[openTip].entry) }
     : { from: lastTip, to: 'wrap', leg: greatCircle(tips[lastTip].exit, wrapEntry) });
   const legInto = (tip: number) => legs.find(l => l.to === tip)!;
   const legOut = (tip: number) => legs.find(l => l.from === tip)!;
@@ -347,15 +351,15 @@ export function planS8Kiku(input: S8KikuInput = {}) {
     const pieces: Piece[] = [], upperFrom = frames[from].role === 'upper', out = windowLength(from);
     pieces.push({ kind: 'window', window: addWindow(`departure-${from}`, 'departure', from,
       raisedSeed(leg, 0, out, upperFrom ? d.upperDepartureRiseMm : d.lowerDepartureRiseMm, d.departureFallMm, d.departureLiftMm, S, exitTangent(from))) });
-    if (stage === 'stitch' && to === 3) return pieces; // open end of the stitch stage
-    const toTip = to === 'wrap' ? 0 : to, into = windowLength(toTip);
+    if (stage === 'stitch' && to === openTip) return pieces; // open end of the stitch stage
+    const toTip = to === 'wrap' ? s0 : to, into = windowLength(toTip);
     if (!(leg.length - out - into > 1)) throw new RangeError('Leg windows overlap; the leg is too short.');
     pieces.push({ kind: 'arc', curve: { kind: 'arc', from: leg.at(out), to: leg.at(leg.length - into) } });
     const seed = to === 'wrap'
       ? raisedSeed(leg, leg.length - into, leg.length, d.approachRiseMm, d.closingFallMm, d.closingLiftMm, S, undefined, diving(wrapEntry, leg.tangent(leg.length)))
       : raisedSeed(leg, leg.length - into, leg.length, d.approachRiseMm,
         frames[toTip].role === 'upper' ? d.upperApproachFallMm : d.lowerApproachFallMm, d.approachLiftMm, S, undefined, entryTangent(toTip));
-    pieces.push({ kind: 'window', window: addWindow(to === 'wrap' ? 'closing-0' : `approach-${toTip}`, to === 'wrap' ? 'closing' : 'approach', toTip, seed) });
+    pieces.push({ kind: 'window', window: addWindow(to === 'wrap' ? `closing-${s0}` : `approach-${toTip}`, to === 'wrap' ? 'closing' : 'approach', toTip, seed) });
     return pieces;
   });
   for (const w of windows) if (Math.ceil(w.minimumSpans * factors.at(-1)!) + 3 > 256)
@@ -396,7 +400,7 @@ export function planS8Kiku(input: S8KikuInput = {}) {
     return { tip, entryHalfWidthMm: Math.abs(dot(sub(puncture(a, true), f.markMm), f.progress)),
       exitHalfWidthMm: Math.abs(dot(sub(puncture(b, false), f.markMm), f.progress)) };
   });
-  const startDir = exitTangent(0), startExit = tips[0].exit, tailRadius = R - d.tailDepthMm;
+  const startDir = exitTangent(s0), startExit = tips[s0].exit, tailRadius = R - d.tailDepthMm;
   const along0 = legs[0].leg.tangent(0);
   const back = (angle: number) => mul(add(mul(unit(startExit), Math.cos(angle)), mul(along0, -Math.sin(angle))), tailRadius);
   const startJoin = back(d.tailLeadMm / R), startAnchor = back((d.tailLeadMm + d.tailLengthMm) / R);
@@ -407,7 +411,7 @@ export function planS8Kiku(input: S8KikuInput = {}) {
   ];
   const hiddenCurves = [...startCurves.map(c => c.curve), ...catches.flatMap(bite)];
   const hiddenCurvature = boundCurvatureTimesRadius(hiddenCurves, r);
-  return { d, stage, handedness, factors, canonical, R, r, S, center, frames, tips, catches, legs, legPieces, windows, supports,
+  return { d, stage, handedness, startTip: s0, factors, canonical, R, r, S, center, frames, tips, catches, legs, legPieces, windows, supports,
     bite, hullCorridor, bites, startCurves, hiddenCurves, hiddenCurvature, solverOptions: input.solverOptions };
 }
 export type S8KikuPlan = ReturnType<typeof planS8Kiku>;
@@ -475,7 +479,7 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, obstacleToler
   };
 
   const startOp = op('start', 0);
-  const startCorridor = hullCorridor([startCurves[1].curve], mul(unit(plan.tips[0].exit), R), d.tailDepthMm + r + d.corridorMarginMm);
+  const startCorridor = hullCorridor([startCurves[1].curve], mul(unit(plan.tips[plan.startTip].exit), R), d.tailDepthMm + r + d.corridorMarginMm);
   for (const c of startCurves) put(startOp, c.zone, c.curve, c.zone === 'piercing' ? startCorridor : undefined);
   record('start', startCurves.map(c => c.curve));
   legPieces.forEach((pieces, legIndex) => {
@@ -487,7 +491,7 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, obstacleToler
       const ids = windowSpans.get(w.id)!;
       declare(`${w.id}-over-jiwari`, lay, ids, `jiwari-${w.tip}`, 'over');
       if (w.kind === 'departure' && windowSpans.has(`approach-${w.tip}`)) declare(`${w.id}-over-approach`, lay, ids, windowSpans.get(`approach-${w.tip}`)!, 'over');
-      if (w.kind === 'closing') declare('closing-0-over-start', lay, ids, windowSpans.get('departure-0')!, 'over');
+      if (w.kind === 'closing') declare(`${w.id}-over-start`, lay, ids, windowSpans.get(`departure-${plan.startTip}`)!, 'over');
     }
     const tip = legs[legIndex].to;
     if (typeof tip === 'number' && catches.includes(tip)) {

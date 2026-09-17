@@ -75,6 +75,27 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
     }
   });
 
+  it('builds congruent plans from every upper start tip (a quarter turn about the pole)', () => {
+    // Rodrigues rotation by +90 degrees about the pole, independent of the plan's frames.
+    const turn = ([x, y, z]: PointMm): PointMm => [z, y, -x];
+    const a = planS8Kiku({ stage: 'stitch' }), b = planS8Kiku({ stage: 'stitch', startTip: 2 });
+    assert.deepEqual(b.windows.map(w => w.id), ['departure-2', 'approach-3', 'departure-3', 'approach-4', 'departure-4']);
+    const rayTurn = norm(sub(turn(a.tips[0].markMm), a.tips[2].markMm)) < 1e-9 ? turn : ([x, y, z]: PointMm): PointMm => [-z, y, x];
+    for (let i = 0; i < a.windows.length; i++) {
+      const wa = a.windows[i], wb = b.windows[i];
+      near(wa.seedLengthMm, wb.seedLengthMm, 1e-9);
+      wa.seed.forEach((c, k) => {
+        const other = wb.seed[k];
+        for (const t of [0, .3, 1]) assert.ok(norm(sub(rayTurn(evaluateCurve(c, t)), evaluateCurve(other, t))) < 1e-9, `${wa.id} ${k} ${t}`);
+      });
+    }
+    for (const tip of a.catches) a.bite(tip).forEach((c, k) => {
+      const other = b.bite(tip + 2)[k];
+      for (const t of [0, .5, 1]) assert.ok(norm(sub(rayTurn(evaluateCurve(c, t)), evaluateCurve(other, t))) < 1e-9);
+    });
+    assert.throws(() => planS8Kiku({ startTip: 1 }), RangeError);
+  });
+
   it('refuses ladders that cannot show refinement and flags non-canonical ones', () => {
     assert.throws(() => planS8Kiku({ factors: [1.2, 1.201, 1.3] }), RangeError);
     assert.throws(() => planS8Kiku({ factors: [1.5, 4] }), RangeError);
