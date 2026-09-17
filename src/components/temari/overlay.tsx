@@ -149,7 +149,6 @@ function TitleLayer() {
             и начните с кику — узора хризантемы.
           </p>
         </div>
-        <RecenterButton />
       </div>
       <div className="min-h-0 flex-1" aria-hidden />
       <div ref={bottomRef} className="temari-rise temari-rise-3 pointer-events-auto max-w-md pb-[env(safe-area-inset-bottom)]">

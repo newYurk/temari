@@ -39,6 +39,7 @@ const _up = new THREE.Vector3();
 const _axis = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _feed = new THREE.Vector3();
+const _qb = new THREE.Quaternion();
 const _inv = new THREE.Quaternion();
 const _local = new THREE.Vector3();
 const Y_UP = new THREE.Vector3(0, 1, 0);
@@ -445,6 +446,16 @@ export function Ball() {
     mesh.count = poles.length;
     mesh.instanceMatrix.needsUpdate = true;
   }, [dummy, poles]);
+
+  useLayoutEffect(() => {
+    const g = group.current;
+    if (!g || mode !== "title") return;
+    // A finished ball is not looked at from its equator: the title tips the
+    // north flower towards the eye, the way it lies in a hand.
+    _q.setFromAxisAngle(_axis.set(1, 0, 0), 0.78);
+    _q.multiply(_qb.setFromAxisAngle(_feed.set(0, 1, 0), 0.4));
+    g.quaternion.copy(_q);
+  }, [mode]);
 
   useLayoutEffect(() => {
     const g = group.current;
