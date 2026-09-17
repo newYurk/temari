@@ -44,7 +44,7 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import * as feel from "./feel";
-import { c8Pins, c10Pins, jiwariNormals, jiwariVisiblePins, simplePins, type JiwariPhase } from "./jiwari";
+import { c8Pins, c10Pins, contrastThread, jiwariNormals, jiwariVisiblePins, simplePins, type JiwariPhase } from "./jiwari";
 
 export type Mode = "title" | "studio" | "kata";
 
@@ -378,7 +378,8 @@ export const useTemari = create<TemariState>((set, get) => ({
       paletteId: studioDraft.paletteId,
       motif: "none",
       craft: "pin",
-      selectedColor: studioDraft.selectedColor,
+      // A thread that reads on this wrap; tone on tone stays a deliberate choice.
+      selectedColor: contrastThread(get().wrapColor),
       wrapColor: get().wrapColor,
       wrapHex: get().wrapHex,
       fills: hasPaint ? padFills(studioDraft.fills, division) : emptyFills(division),
@@ -1329,7 +1330,8 @@ export const useTemari = create<TemariState>((set, get) => ({
       wrapPass: 3,
       division: "simple",
       motif: "kiku",
-      craft: "stitch",
+      // The pin tool keeps the working pole fixed, so a nudge cannot move the flower.
+      craft: "pin",
       facingPole,
       fills: sameBall ? s.fills : emptyFills("simple"),
       jiwariOn: true,

@@ -349,3 +349,14 @@ export function jiwariPins(division: Division): Pin[] {
 export function jiwariMarkColor(wrapColor: number) {
   return wrapColor === 1 ? 2 : 1;
 }
+
+/**
+ * Thread that reads on this wrap, so the first flower is visible: red -> light,
+ * gold -> dark, light -> red, dark -> light, blue -> light. Never the marking
+ * colour of that wrap, and never the wrap itself. Choosing tone on tone by hand
+ * stays possible.
+ */
+const CONTRAST_THREAD = [2, 3, 0, 2, 2];
+export function contrastThread(wrapColor: number) {
+  return CONTRAST_THREAD[wrapColor] ?? 2;
+}

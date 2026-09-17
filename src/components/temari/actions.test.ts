@@ -412,6 +412,14 @@ describe("quick kiku: marking and pins at the facing pole in one tap", () => {
     assert.deepEqual(useTemari.getState().kagariKept, north);
   });
 
+  it("leaves the pin tool selected so a nudge cannot move the working pole", () => {
+    dispatchCommand("quick-kiku");
+    assert.equal(useTemari.getState().craft, "pin");
+    // Sewing switches the tool itself.
+    dispatchCommand("fill");
+    assert.equal(useTemari.getState().craft, "stitch");
+  });
+
   it("does nothing outside the workshop", () => {
     useTemari.setState({ mode: "kata" });
     assert.equal(action("quick-kiku").canExecute(getCraftState()), false);

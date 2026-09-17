@@ -14,7 +14,8 @@ const SURFACE_CLOSE = 1.16;
 function framingDistance(width: number, height: number, mode: Mode) {
   const halfH = Math.tan(THREE.MathUtils.degToRad(FOV) / 2);
   const halfW = halfH * (width / Math.max(height, 1));
-  const margin = mode === "studio" ? 1.46 : FIT_MARGIN;
+  // The dock no longer lies over the ball, so the workshop can show it larger.
+  const margin = mode === "studio" ? 1.2 : FIT_MARGIN;
   return (BALL_R * margin) / Math.min(halfW, halfH);
 }
 
