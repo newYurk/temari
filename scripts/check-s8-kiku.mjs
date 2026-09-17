@@ -19,12 +19,15 @@ try {
   const view = page.locator('#s8-view');
   for (const stage of stages) {
     await page.locator(`#s8-stage-${stage}`).click();
-    await page.locator(`#s8-view[data-stage="${stage}"][data-status]`).waitFor({ timeout: stage === 'round' ? 1800000 : 600000 });
+    await page.locator(`#s8-view[data-stage="${stage}"][data-status]`).waitFor({ timeout: stage === 'row2' ? 3600000 : stage === 'round' ? 1800000 : 600000 });
     const status = await view.getAttribute('data-status');
+    const statusText = await page.locator('#s8-status').innerText();
+    // A worker or rendering error must surface as itself, not as a missing-level count.
+    if (/не завершён/.test(statusText) || errors.length) throw new Error(`${stage}: ${statusText} ${errors.join(' | ')}`);
     const levels = await page.locator('#s8-levels li').allTextContents();
     const windows = await page.locator('#s8-windows li').allTextContents();
     report[stage] = { status, statusText: await page.locator('#s8-status').innerText(), levels, windows };
-    assert.equal(levels.length, 6, `${stage}: five ladder levels and the probe-density check are reported`);
+    assert.equal(levels.length, stage === 'row2' ? 12 : 6, `${stage}: five ladder levels and the probe-density check per round are reported`);
     // The page must not claim acceptance that the computation did not report.
     if (status === 'accepted') assert.doesNotMatch(report[stage].statusText, /Не принято/);
     else assert.match(report[stage].statusText, /Не принято|не завершён/);

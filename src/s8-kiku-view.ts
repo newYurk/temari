@@ -131,8 +131,11 @@ function show(summary: S8KikuSummary) {
   const maxStep = Math.max(...summary.coupon.operations.map(op => op.step));
   const slider = el<HTMLInputElement>('step');
   slider.max = String(maxStep); slider.value = String(maxStep); text('step-value', String(maxStep));
+  const scope = summary.earlierRounds.length
+    ? `оба круга приняты своими лестницами (по ${summary.levels.length} уровней сетки и контрольному построению); второй круг уточнялся поверх самого мелкого построения первого, каждый уровень проверен как вся нить`
+    : `все ${summary.levels.length} уровней сетки и контрольное построение сходятся, каждое окно подтверждено перезапуском и проходит проверку всей нити`;
   text('status', summary.status === 'accepted'
-    ? `Принято: все ${summary.levels.length} уровней сетки и контрольное построение сходятся, каждое окно подтверждено перезапуском и проходит проверку всей нити; последние уточнения сжимаются. Это модель толстой нити, не равновесие настоящей пряжи.`
+    ? `Принято: ${scope}; последние уточнения сжимаются. Это модель толстой нити, не равновесие настоящей пряжи.`
     : `Не принято (${summary.status === 'rejected' ? 'отказ' : 'не подтверждено'}): ${summary.diagnostics.join(' ')}`);
   const mm = (v: number, digits = 3) => `${v.toFixed(digits).replace('.', ',')} мм`;
   const finest = summary.levels.at(-1)!;
@@ -143,37 +146,51 @@ function show(summary: S8KikuSummary) {
   text('width', `до ${mm(2 * widest, 2)}`);
   const levelItem = (level: S8KikuSummary['levels'][number], label: string) => {
     const item = document.createElement('li');
-    const solved = level.solves.filter(s => s.status === 'converged').length, settled = level.solves.filter(s => s.settled).length;
-    item.textContent = `${label}: окна ${solved}/${level.solves.length} сошлись, перезапуск подтвердил ${settled}/${level.solves.length}, путь — ${level.validation === 'passed' ? 'проверки пройдены' : `${level.validation} (${level.codes.join(', ')})`}${level.undeclared ? `, необъявленных перехлёстов ${level.undeclared}` : ''}, r·κ ≤ ${level.curvature.toFixed(3).replace('.', ',')}, скрытые ≤ ${level.hiddenCurvature.toFixed(3).replace('.', ',')}`;
-    item.dataset.ok = String(solved === level.solves.length && settled === level.solves.length && level.validation === 'passed' && !level.undeclared);
+    // A later-round level solves only its own round; earlier windows come from the finest earlier construction.
+    const own = level.solves.filter(s => s.round >= level.reusedRounds);
+    const solved = own.filter(s => s.status === 'converged').length, settled = own.filter(s => s.settled).length;
+    const reused = level.reusedRounds ? `, первый круг взят с его ×4 (${level.solves.length - own.length} окон)` : '';
+    item.textContent = `${label}: окна ${solved}/${own.length} сошлись, перезапуск подтвердил ${settled}/${own.length}${reused}, путь всей нити — ${level.validation === 'passed' ? 'проверки пройдены' : `${level.validation} (${level.codes.join(', ')})`}${level.undeclared ? `, необъявленных перехлёстов ${level.undeclared}` : ''}, r·κ ≤ ${level.curvature.toFixed(3).replace('.', ',')}, скрытые ≤ ${level.hiddenCurvature.toFixed(3).replace('.', ',')}`;
+    item.dataset.ok = String(solved === own.length && settled === own.length && level.validation === 'passed' && !level.undeclared);
     return item;
   };
-  el('levels').replaceChildren(...summary.levels.map(l => levelItem(l, `×${String(l.factor).replace('.', ',')}`)),
-    levelItem(summary.perturbed, `×${String(summary.perturbed.factor).replace('.', ',')}, пробы вдвое чаще`));
+  // Later rounds refine only themselves on the finest construction of the earlier rounds.
+  const rounds = [...summary.earlierRounds, { levels: summary.levels, perturbed: summary.perturbed }];
+  const prefix = (i: number) => rounds.length > 1 ? `${i + 1}-й круг, ` : '';
+  el('levels').replaceChildren(...rounds.flatMap((round, i) => [
+    ...round.levels.map(l => levelItem(l, `${prefix(i)}×${String(l.factor).replace('.', ',')}`)),
+    levelItem(round.perturbed, `${prefix(i)}×${String(round.perturbed.factor).replace('.', ',')}, пробы вдвое чаще`)]));
   el('windows').replaceChildren(...summary.windows.map(w => {
     const item = document.createElement('li');
     const steps = summary.refinements.filter(r => r.windowId === w.id), last = steps.slice(-2);
     const cond = summary.conditioning.find(r => r.windowId === w.id)!;
     const name = w.kind === 'approach' ? 'приход к точке' : w.kind === 'departure' ? 'уход от точки' : 'возврат поверх начала к точке';
     const fmt = (key: 'lengthDifferenceMm' | 'shapeDifferenceMm', digits: number) => steps.map(r => r[key].toExponential(1).replace('.', ',')).join(' → ');
-    item.textContent = `${name} ${w.tip + 1}: Δдлины ${fmt('lengthDifferenceMm', 1)}; Δформы ${fmt('shapeDifferenceMm', 1)}; к частоте проб ${mm(cond.shapeDifferenceMm, 4)}`;
+    item.textContent = `${name} ${w.tip + 1}${w.row ? `, ${w.row + 1}-й ряд` : ''}: Δдлины ${fmt('lengthDifferenceMm', 1)}; Δформы ${fmt('shapeDifferenceMm', 1)}; к частоте проб ${mm(cond.shapeDifferenceMm, 4)}`;
     item.dataset.ok = String(last.every(r => r.lengthDifferenceMm <= .002 && r.shapeDifferenceMm <= .02) && cond.shapeDifferenceMm <= .02 && cond.lengthDifferenceMm <= .002);
     return item;
   }));
   setView(view);
   draw();
 }
+function computing(next: S8KikuStage) {
+  text('status', next === 'stitch' ? 'Считаем стежок на пяти уровнях сетки и контрольном построении…'
+    : next === 'round' ? 'Считаем круг на пяти уровнях сетки — это занимает заметно больше времени…'
+    : 'Считаем два круга, у каждого своя лестница из пяти уровней, — это десятки минут…');
+  el('status').dataset.status = 'unresolved';
+}
 function compute(next: S8KikuStage) {
   if (results.has(next) || pending.has(next)) return;
-  text('status', next === 'stitch' ? 'Считаем стежок на пяти уровнях сетки и контрольном построении…' : 'Считаем круг на пяти уровнях сетки — это занимает заметно больше времени…');
-  el('status').dataset.status = 'unresolved';
+  computing(next);
   const worker = new Worker(new URL('./s8-kiku.worker.ts', import.meta.url), { type: 'module' });
   pending.set(next, worker);
   worker.onmessage = event => {
     worker.terminate(); pending.delete(next);
     if (event.data.error) { if (current === next) { text('status', `Расчёт не завершён: ${event.data.error}`); stage.dataset.status = 'unresolved'; } return; }
     results.set(next, event.data.summary);
-    if (current === next) show(event.data.summary);
+    if (current !== next) return;
+    try { show(event.data.summary); }
+    catch (error) { text('status', `Расчёт не завершён: отображение: ${error instanceof Error ? error.message : String(error)}`); stage.dataset.status = 'unresolved'; }
   };
   worker.onerror = () => { worker.terminate(); pending.delete(next); if (current === next) { text('status', 'Расчёт не завершён.'); stage.dataset.status = 'unresolved'; } };
   worker.postMessage({ stage: next });
@@ -182,12 +199,24 @@ function setStage(next: S8KikuStage) {
   current = next;
   el('stage-stitch').setAttribute('aria-pressed', String(next === 'stitch'));
   el('stage-round').setAttribute('aria-pressed', String(next === 'round'));
+  el('stage-row2').setAttribute('aria-pressed', String(next === 'row2'));
   delete stage.dataset.status;
   const summary = results.get(next);
-  if (summary) show(summary); else { draw(); compute(next); }
+  if (summary) show(summary);
+  else {
+    // Nothing of another stage stays on screen while this one is computed.
+    for (const id of ['length', 'bend', 'refine', 'width']) text(id, '—');
+    el('levels').replaceChildren(); el('windows').replaceChildren();
+    const slider = el<HTMLInputElement>('step');
+    slider.max = '0'; slider.value = '0'; text('step-value', '0');
+    delete stage.dataset.shownSpans;
+    if (pending.has(next)) computing(next);
+    draw(); compute(next);
+  }
 }
 el('stage-stitch').addEventListener('click', () => setStage('stitch'));
 el('stage-round').addEventListener('click', () => setStage('round'));
+el('stage-row2').addEventListener('click', () => setStage('row2'));
 for (const id of ['flower', 'lower', 'upper', 'side'] as const) el(`view-${id}`).addEventListener('click', () => setView(id));
 el('step').addEventListener('input', () => { text('step-value', el<HTMLInputElement>('step').value); draw(); });
 el('inside').addEventListener('change', render);
