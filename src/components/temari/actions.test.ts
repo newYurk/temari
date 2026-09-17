@@ -479,10 +479,13 @@ describe("quick kiku: marking and pins at the facing pole in one tap", () => {
     // The pole is full: the step is offered no more.
     assert.equal(action("kiku-finish").canExecute(getCraftState()), false);
     assert.match(action("kiku-finish").getDisabledReason(getCraftState()) ?? "", /Экватор/);
+    // Pins are pulled as the work covers them: a finished flower carries none.
+    assert.deepEqual(done.pins, []);
     dispatchCommand("undo");
     const back = useTemari.getState();
     assert.equal(back.kikuLayers, two.kikuLayers);
     assert.deepEqual(back.kagariPlan, two.kagariPlan);
+    assert.deepEqual(back.pins, two.pins, "undo puts the marks back with the rows");
   });
 
   it("turns the working pole to the eye instead of leaving it on the silhouette", () => {

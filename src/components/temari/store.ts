@@ -328,12 +328,14 @@ function idleKagari(): Pick<
 /** What a group of petals is undone back to: the thread as it stood before it. */
 type KagariStep = Pick<
   TemariState,
-  "kagariPlan" | "kagariLaid" | "kagariFocus" | "kagariKept" | "kagariSet" | "kikuLayers" | "craft"
+  "kagariPlan" | "kagariLaid" | "kagariFocus" | "kagariKept" | "kagariSet" | "kikuLayers"
+  | "craft" | "pins"
 >;
 
 function kagariStep(s: TemariState): KagariStep {
   return { kagariPlan: s.kagariPlan, kagariLaid: s.kagariLaid, kagariFocus: s.kagariFocus,
-    kagariKept: s.kagariKept, kagariSet: s.kagariSet, kikuLayers: s.kikuLayers, craft: s.craft };
+    kagariKept: s.kagariKept, kagariSet: s.kagariSet, kikuLayers: s.kikuLayers, craft: s.craft,
+    pins: s.pins };
 }
 
 /**
@@ -1243,7 +1245,18 @@ export const useTemari = create<TemariState>((set, get) => ({
     const next = state.kagariLaid + 1;
     if (next >= state.kagariPlan.length) {
       feel.kikuFill();
-      set({ kagariLaid: state.kagariPlan.length, kagariPlaying: false });
+      // Pins are pulled as the work covers them: none are left in a finished flower.
+      const full = state.motif === "kiku" && state.kagariSet === 1 &&
+        state.kikuLayers >= kikuSpec(state.division, state.kagariSpacing, "fit").capacity;
+      const marks = full ? kikuWorkingPins(state.division, state.facingPole) : [];
+      set({
+        kagariLaid: state.kagariPlan.length,
+        kagariPlaying: false,
+        ...(full
+          ? { pins: state.pins.filter((pin) => !marks.some((m) => pin.id === m.id ||
+              pin.p[0] * m.p[0] + pin.p[1] * m.p[1] + pin.p[2] * m.p[2] > 0.995)) }
+          : {}),
+      });
       return;
     }
     feel.stitch();
