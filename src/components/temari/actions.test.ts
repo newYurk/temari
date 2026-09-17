@@ -440,6 +440,24 @@ describe("quick kiku: marking and pins at the facing pole in one tap", () => {
     assert.equal(action("undo").canExecute(getCraftState()), false);
   });
 
+  it("gives back a flower that a second «Кику здесь» cleared at this pole", () => {
+    dispatchCommand("quick-kiku");
+    dispatchCommand("fill");
+    finishPlan();
+    const sewn = useTemari.getState().kagariPlan;
+    assert.ok(sewn.length > 0);
+    dispatchCommand("quick-kiku");
+    const cleared = useTemari.getState();
+    assert.deepEqual(cleared.kagariPlan, []);
+    assert.deepEqual(cleared.kagariKept, []);
+    // Nothing is lost in silence: the pin tool is selected, and undo still has the thread.
+    assert.equal(cleared.craft, "pin");
+    assert.deepEqual(cleared.pinHistory, []);
+    assert.equal(action("undo").canExecute(getCraftState()), true);
+    dispatchCommand("undo");
+    assert.deepEqual(useTemari.getState().kagariPlan, sewn);
+  });
+
   it("sews every row this pole has room for in one step, undone in one step", () => {
     dispatchCommand("quick-kiku");
     assert.equal(action("kiku-finish").canExecute(getCraftState()), false, "not before the groups");

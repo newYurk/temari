@@ -35,6 +35,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     division: s.division, motif: s.motif, craft: s.craft, pins: s.pins,
     facingPole: s.facingPole, jiwariOn: s.jiwariOn, jiwariPhase: s.jiwariPhase,
     jiwariLaid: s.jiwariLaid, kagariPlan: s.kagariPlan, kagariLaid: s.kagariLaid,
+    kagariKept: s.kagariKept,
     kagariPlaying: s.kagariPlaying, kagariSet: s.kagariSet, kikuLayers: s.kikuLayers,
     kagariDir: s.kagariDir, kagariSpacing: s.kagariSpacing, mode: s.mode,
     layerDone: s.layerDone, history: s.history, sewnHistory: s.sewnHistory,
@@ -42,7 +43,8 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     paletteId: s.paletteId, setColor: s.setColor,
   })));
   const { division, motif, craft, pins, facingPole, jiwariOn, jiwariPhase, jiwariLaid,
-    kagariPlan, kagariLaid, kagariPlaying, kagariSet, kikuLayers, kagariDir, kagariSpacing } = s;
+    kagariPlan, kagariLaid, kagariKept, kagariPlaying, kagariSet, kikuLayers, kagariDir,
+    kagariSpacing } = s;
   const state = useMemo(() => getCraftState(), [s]);
   const [tip, setTip] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>(motif === "none" ? "jiwari" : "kagari");
@@ -73,8 +75,13 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     complete ? "Следующий ряд" : kagariPlan.length ? "Продолжить" : "Начать кику";
 
   let instruction: string;
+  // A pole that already carries a flower: say so instead of asking for marks again.
+  const sewnHere = motif === "kiku" && kagariKept.some((stitch) =>
+    stitchPoleIndex(stitch, division, motif) === facingPole);
   if (motif === "kiku" && !marksReady) {
-    instruction = `Булавки: ${placed} из ${requiredPins.length}. Нажимайте на подсвеченные места шара.`;
+    instruction = sewnHere
+      ? "Здесь цветок уже вышит. Поверните шар к другому полюсу — или поставьте метки, чтобы начать этот заново."
+      : `Булавки: ${placed} из ${requiredPins.length}. Нажимайте на подсвеченные места шара.`;
   } else if (motif === "kiku" && kagariPlan.length) {
     instruction = kagariPhaseHint(motif, division, kagariDir, kagariLaid, kagariPlan.length,
       kagariPlaying, Math.max(0, stitchPoleIndex(kagariPlan[0]!, division, motif)), kagariSet,

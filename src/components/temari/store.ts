@@ -994,16 +994,18 @@ export const useTemari = create<TemariState>((set, get) => ({
     }
     if (state.craft === "pin" || state.motif === "none") {
       const prev = state.pinHistory[state.pinHistory.length - 1];
-      if (!prev) return;
-      set({
-        pins: prev.pins,
-        pinArcs: prev.pinArcs,
-        activePin: prev.activePin,
-        pinNote: null,
-        pinHistory: state.pinHistory.slice(0, -1),
-      });
-      rememberStudio(get());
-      return;
+      // With no pin step left, the thread is next: marks first, then the flower.
+      if (prev) {
+        set({
+          pins: prev.pins,
+          pinArcs: prev.pinArcs,
+          activePin: prev.activePin,
+          pinNote: null,
+          pinHistory: state.pinHistory.slice(0, -1),
+        });
+        rememberStudio(get());
+        return;
+      }
     }
     const group = state.kagariHistory[state.kagariHistory.length - 1];
     if (group) {
@@ -1407,6 +1409,9 @@ export const useTemari = create<TemariState>((set, get) => ({
       ...idleKagari(),
       // The flower at this pole starts again; flowers at other poles stay sewn.
       kagariKept: sewnBefore.filter((stitch) => stitchPoleIndex(stitch, "simple", "kiku") !== facingPole),
+      // Starting over on a pole that already carries a flower must not lose it
+      // silently: «Отменить» puts the thread back the way it was.
+      kagariHistory: sewnBefore.length > 0 ? pushKagari(s) : [],
     });
     rememberStudio(get());
   },

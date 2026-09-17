@@ -50,7 +50,7 @@ export function getCraftState(): TemariCraftState {
     s.mode === "kata"
       ? s.history.length === 0
       : s.craft === "pin" || s.motif === "none"
-        ? s.pinHistory.length === 0
+        ? s.pinHistory.length === 0 && s.kagariHistory.length === 0
         : s.sewnHistory.length === 0 && s.kagariHistory.length === 0;
   return {
     mode: s.mode,
