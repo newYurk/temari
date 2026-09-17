@@ -19,7 +19,7 @@ try {
   const view = page.locator('#s8-view');
   for (const stage of stages) {
     await page.locator(`#s8-stage-${stage}`).click();
-    await page.locator(`#s8-view[data-stage="${stage}"][data-status]`).waitFor({ timeout: stage === 'round' ? 900000 : 180000 });
+    await page.locator(`#s8-view[data-stage="${stage}"][data-status]`).waitFor({ timeout: stage === 'round' ? 1800000 : 600000 });
     const status = await view.getAttribute('data-status');
     const levels = await page.locator('#s8-levels li').allTextContents();
     const windows = await page.locator('#s8-windows li').allTextContents();

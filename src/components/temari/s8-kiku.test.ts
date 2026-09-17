@@ -158,8 +158,9 @@ describe('Simple 8 control kiku: solved windows', () => {
       ? { ...c, from: turn(c.from), to: turn(c.to) }
       : { ...c, controls: c.controls.map(turn) as unknown as typeof c.controls });
     const shape = shapeDifferenceMm(turned, db.result.curves);
-    // Without the restarts the two solves stop 9e-5 mm apart with the canonical
-    // stopping test (1.5e-2 mm with the former looser one); settled ones agree to 2e-7.
+    // Without the restarts the two solves stop 8e-5 mm apart with the canonical
+    // stopping test and exact tubes (1.5e-2 mm with the former looser test and
+    // capsules); settled ones agree to 2e-8.
     assert.ok(shape <= S8_KIKU_DIMENSIONS.settleToleranceMm / 4, `quarter-turn shape difference ${shape}`);
     near(da.result.lengthMm, db.result.lengthMm, S8_KIKU_DIMENSIONS.lengthToleranceMm / 4);
   });
