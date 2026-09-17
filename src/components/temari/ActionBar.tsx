@@ -65,7 +65,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     division: s.division, motif: s.motif, craft: s.craft, pins: s.pins,
     facingPole: s.facingPole, jiwariOn: s.jiwariOn, jiwariPhase: s.jiwariPhase,
     jiwariLaid: s.jiwariLaid, kagariPlan: s.kagariPlan, kagariLaid: s.kagariLaid,
-    kagariKept: s.kagariKept,
+    kagariKept: s.kagariKept, kagariColors: s.kagariColors,
     kagariPlaying: s.kagariPlaying, kagariSet: s.kagariSet, kikuLayers: s.kikuLayers,
     kagariDir: s.kagariDir, kagariSpacing: s.kagariSpacing, mode: s.mode,
     layerDone: s.layerDone, history: s.history, sewnHistory: s.sewnHistory,
@@ -73,8 +73,8 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     paletteId: s.paletteId, setColor: s.setColor,
   })));
   const { division, motif, craft, pins, facingPole, jiwariOn, jiwariPhase, jiwariLaid,
-    kagariPlan, kagariLaid, kagariKept, kagariPlaying, kagariSet, kikuLayers, kagariDir,
-    kagariSpacing } = s;
+    kagariPlan, kagariLaid, kagariKept, kagariColors, kagariPlaying, kagariSet, kikuLayers,
+    kagariDir, kagariSpacing } = s;
   const state = useMemo(() => getCraftState(), [s]);
   const [tip, setTip] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>(motif === "none" ? "jiwari" : "kagari");
@@ -105,6 +105,24 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const sewId = secondGroup ? "motif-kiku" : "fill";
   const sewLabel = kagariPlaying ? "Вышиваем…" : secondGroup ? "Вторая группа" :
     complete ? "Следующий ряд" : kagariPlan.length ? "Продолжить" : "Начать кику";
+
+  // A kiku is sewn with two working threads that alternate by rounds (GT14 asks
+  // for two colours). The palette holds the one in hand; with the first group
+  // finished the hand has already taken the second, as the store does.
+  const groupLaidOut = kagariPlan.length > 0 && kagariLaid >= kagariPlan.length;
+  const inHand: 0 | 1 = kagariSet === 0 && groupLaidOut ? 1 : kagariSet;
+  const sewingThread = motif === "kiku" && (kagariPlan.length > 0 || kagariKept.length > 0);
+  const otherThread = sewingThread ? kagariColors[inHand === 0 ? 1 : 0] : -1;
+  const threadLine = inHand === 0
+    ? "В руке нить первой четвёрки. Цвет меняет её, уже пришитое остаётся."
+    : "В руке нить второй четвёрки. Цвет меняет её, уже пришитое остаётся.";
+  const threadName = (i: number) => {
+    const name = `${COLOR_NAMES[i]} нить`;
+    if (!sewingThread) return name;
+    if (i === kagariColors[inHand]) return `${name} — в руке`;
+    if (i === otherThread) return `${name} — ${inHand === 0 ? "вторая" : "первая"} четвёрка`;
+    return name;
+  };
 
   let instruction: string;
   // A pole that already carries a flower: say so instead of asking for marks again.
@@ -201,7 +219,8 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
               })}
             </div>
             <p className="min-h-9 px-2 py-1.5 text-center text-xs leading-4 text-ink/70">
-              {motif === "kiku" ? "Кику — хризантема. Метки: полюс и треть пути от экватора к нему." :
+              {motif === "kiku" && sewingThread ? threadLine :
+                motif === "kiku" ? "Кику — хризантема. Метки: полюс и треть пути от экватора к нему." :
                 division !== "simple" && jiwariOn ? `Для кику выберите S8 в «Разметке». Рецепта ${division.toUpperCase()} ещё нет.` :
                 "Начните с кику на S8. Эскиз — свободные линии между метками."}
             </p>
@@ -220,10 +239,14 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
               <option value="open">Реже</option><option value="even">Средне</option><option value="tight">Плотнее</option>
             </select> : <span className="mr-1 text-[11px] text-ink/65">Цвет</span>}
             <div className="flex flex-1 items-center gap-0.5 sm:gap-1" aria-label="Цвет нити">
-              {THREAD_COLORS.map((color, i) => <button key={color} type="button" aria-label={`${COLOR_NAMES[i]} нить`}
-                aria-pressed={s.selectedColor === i} title={`${COLOR_NAMES[i]} нить`}
+              {THREAD_COLORS.map((color, i) => <button key={color} type="button" aria-label={threadName(i)}
+                aria-pressed={s.selectedColor === i} title={threadName(i)}
                 onClick={() => s.setColor(i)} className={cn("flex h-10 min-w-0 flex-1 items-center justify-center rounded-lg", focusStyle)}>
-                <span className={cn("size-6 rounded-full ring-1 ring-line", s.selectedColor === i && "ring-2 ring-ink ring-offset-2 ring-offset-linen")}
+                <span className={cn("size-6 rounded-full ring-1 ring-line",
+                  // The thread in hand is ringed; the other working thread keeps a
+                  // quieter mark, so a kiku's pair is readable in one row.
+                  otherThread === i && s.selectedColor !== i && "ring-2 ring-ink/35",
+                  s.selectedColor === i && "ring-2 ring-ink ring-offset-2 ring-offset-linen")}
                   style={{ backgroundColor: color }} />
               </button>)}
             </div>

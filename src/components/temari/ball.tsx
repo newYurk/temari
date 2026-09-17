@@ -873,6 +873,11 @@ export function Ball() {
           pole: st.facingPole,
           set: st.kagariSet,
           layers: st.kikuLayers,
+          // The thread in hand and the pair of working threads, for checks.
+          hand: st.selectedColor,
+          pair: st.kagariColors,
+          planColor: st.kagariPlan[0]?.color ?? null,
+          keptColors: [...new Set(st.kagariKept.map((stitch) => stitch.color))].sort(),
         };
       },
       freezeKagari: (n?: number) => {

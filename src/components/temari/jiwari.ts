@@ -360,3 +360,18 @@ const CONTRAST_THREAD = [2, 3, 0, 2, 2];
 export function contrastThread(wrapColor: number) {
   return CONTRAST_THREAD[wrapColor] ?? 2;
 }
+
+/**
+ * The second working thread of a kiku. The control pattern asks for two:
+ * «Pearl cotton #5 in 2 colors; a 3rd may be used as finish round»
+ * (G. Thompson / TemariKai.com, GT14), and names the sets Color A and Color B.
+ * Which hues is the maker's choice — GT14 does not say — so this is a starting
+ * pair that reads on the wrap, never the wrap itself and never the first thread:
+ * red -> gold, gold -> red, light -> dark, dark -> gold, blue -> gold.
+ */
+const SECOND_THREAD = [1, 0, 3, 1, 1];
+
+/** First and second working threads for a kiku on this wrap. */
+export function kikuThreads(wrapColor: number): [number, number] {
+  return [contrastThread(wrapColor), SECOND_THREAD[wrapColor] ?? 1];
+}

@@ -412,6 +412,39 @@ describe("quick kiku: marking and pins at the facing pole in one tap", () => {
     assert.deepEqual(useTemari.getState().kagariKept, north);
   });
 
+  it("keeps each working thread's colour: painting the second group leaves the first", () => {
+    dispatchCommand("quick-kiku");
+    useTemari.getState().setColor(1);
+    dispatchCommand("fill");
+    finishPlan();
+    const first = useTemari.getState().kagariPlan;
+    assert.ok(first.length > 0);
+    assert.ok(first.every((stitch) => stitch.color === 1), "the first group is sewn in the thread in hand");
+    // A second thread for the second group.
+    useTemari.getState().setColor(3);
+    dispatchCommand("motif-kiku");
+    finishPlan();
+    const both = useTemari.getState();
+    assert.equal(both.kagariSet, 1);
+    assert.ok(both.kagariPlan.every((stitch) => stitch.color === 3), "the second group takes the new thread");
+    assert.ok(both.kagariKept.every((stitch) => stitch.color === 1), "what is sewn keeps its own colour");
+    assert.deepEqual(both.kagariColors, [1, 3]);
+    // Rows added afterwards follow their own set, not the last pick.
+    dispatchCommand("kiku-finish");
+    finishPlan();
+    const done = useTemari.getState();
+    const laid = [...done.kagariKept, ...done.kagariPlan];
+    const bySet = new Map<number, Set<number>>();
+    for (const stitch of laid) {
+      if (stitch.kind !== "arc" || stitch.set == null) continue;
+      const seen = bySet.get(stitch.set) ?? new Set<number>();
+      seen.add(stitch.color);
+      bySet.set(stitch.set, seen);
+    }
+    assert.deepEqual([...(bySet.get(0) ?? [])], [1], "set A stays its colour to the equator");
+    assert.deepEqual([...(bySet.get(1) ?? [])], [3], "set B stays its colour to the equator");
+  });
+
   it("takes a laid group back, one group per «Отменить», down to the bare marks", () => {
     dispatchCommand("quick-kiku");
     const marks = useTemari.getState().pins.length;

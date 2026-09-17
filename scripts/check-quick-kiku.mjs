@@ -25,14 +25,35 @@ try {
     console.log(tag, 'after quick:', JSON.stringify(status), JSON.stringify(k1).slice(0, 160));
     assert.match(status, /Метки готовы/);
     await page.screenshot({ path: out + '/' + tag + '-2-ready-north.png' });
+    // Two working threads, as the control pattern asks for: the palette holds
+    // the one in hand, and what is already sewn keeps its own.
+    const pickColour = async (name) => {
+      await page.getByRole('button', { name: new RegExp('^' + name) }).click();
+      await page.waitForTimeout(150);
+    };
+    await pickColour('Золотая нить');
+    const handA = await page.evaluate(() => window.__temari.kagari());
+    assert.equal(handA.hand, 1, tag + ': the palette holds the thread in hand');
+    assert.equal(handA.pair[0], 1, tag + ': before the first group, the hand holds the first thread');
     await page.getByRole('button', { name: /Начать кику/ }).click();
-    await page.waitForTimeout(2500);
+    await page.waitForFunction(() => !window.__temari.kagari().playing, null, { timeout: 60000 });
     await page.screenshot({ path: out + '/' + tag + '-3-sewing-north.png' });
+    assert.equal((await page.evaluate(() => window.__temari.kagari())).planColor, 1,
+      tag + ': the first group is sewn in that thread');
+    // With the group finished the hand has taken the second thread.
+    await pickColour('Синяя нить');
+    const handB = await page.evaluate(() => window.__temari.kagari());
+    assert.equal(handB.pair[1], 4, tag + ': picking now paints the second thread');
+    assert.equal(handB.pair[0], 1, tag + ': the first thread is untouched');
+    assert.equal(handB.planColor, 1, tag + ': what is laid is not repainted');
+
     // A laid group goes back whole — the first thing a hand reaches for.
     await page.getByRole('button', { name: /Вторая группа/ }).click();
     await page.waitForTimeout(2600);
     const two = await page.evaluate(() => window.__temari.kagari());
     assert.equal(two.set, 1, tag + ': the second group is laid');
+    assert.equal(two.planColor, 4, tag + ': the second group is sewn in the second thread');
+    assert.deepEqual(two.keptColors, [1], tag + ': the first group kept its own thread');
     await page.getByRole('button', { name: /Отменить/ }).click();
     await page.waitForTimeout(500);
     const undone = await page.evaluate(() => window.__temari.kagari());
