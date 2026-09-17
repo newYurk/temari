@@ -32,9 +32,11 @@ export type SpatialContactOptions = {
    */
   maxStepThreadRadii?: number;
   /**
-   * Test oracle only: dense basis sums, every support probe, dense Cholesky and
-   * no reuse of pure results. The default path must match it bit for bit,
-   * iteration counters aside.
+   * Test oracle only: dense basis sums and gradients, every support probe with
+   * direct distances and recomputed slacks, dense Cholesky, and no reuse of the
+   * last continuous check. The default path must match it bit for bit,
+   * iteration counters aside. Code shared by both paths (slack/gradient
+   * formulas, the null-step exit) is not independently checked by this oracle.
    */
   referenceEvaluation?: boolean;
 };
@@ -841,6 +843,8 @@ export function solveSpatialContact(input: SpatialContactInput): SpatialContactR
       spareSlacks = current.slacks; x = trial; current = next;
     }
     for (let i = 0; i < probes.length; i++) probes[i].lambda = Math.max(0, probes[i].lambda - penalty * current.slacks[i]);
+    // Safety net, currently redundant: a far probe can only gain a multiplier from a negative
+    // exact slack, and then the bound below the threshold already forces a full rescan.
     records.forEach((record, index) => { if (record && farLoaded(index, record.near, j => probes[j].lambda)) records[index] = null; });
     let kkt = evaluate(x, 0), penetration = kkt.violations.geometric * unit;
     const bendExcess = kkt.violations.curvature, speedExcess = kkt.violations.speed, length = lengthOf(kkt.controls, integrate);
