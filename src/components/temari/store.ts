@@ -431,6 +431,9 @@ export const useTemari = create<TemariState>((set, get) => ({
   jiwariLaid: 0,
 
   enterStudio: () => {
+    const savedPair = isPair(studioDraft.kagariColors)
+      ? ([clampColor(studioDraft.kagariColors[0]), clampColor(studioDraft.kagariColors[1])] as [number, number])
+      : null;
     feel.unlock();
     const division = studioDraft.division;
     const hasPaint = studioDraft.fills.some((v) => v >= 0);
@@ -441,9 +444,10 @@ export const useTemari = create<TemariState>((set, get) => ({
       motif: "none",
       craft: "pin",
       // A thread that reads on this wrap; tone on tone stays a deliberate choice.
-      selectedColor: contrastThread(get().wrapColor),
+      // A pair kept from the last visit is the maker's, and outlives the default.
+      selectedColor: savedPair ? savedPair[0] : contrastThread(get().wrapColor),
       // Two working threads, as the control pattern asks for; each keeps its set.
-      kagariColors: kikuThreads(get().wrapColor),
+      kagariColors: savedPair ?? kikuThreads(get().wrapColor),
       wrapColor: get().wrapColor,
       wrapHex: get().wrapHex,
       fills: hasPaint ? padFills(studioDraft.fills, division) : emptyFills(division),
@@ -845,22 +849,19 @@ export const useTemari = create<TemariState>((set, get) => ({
       ? (inHand === 1
         ? [state.kagariColors[0], selectedColor]
         : [selectedColor, state.kagariColors[1]])
-      : [selectedColor, selectedColor];
-    // Repainting touches only the thread in hand, and only where it is not laid.
-    if (state.motif === "kiku" && inHand === state.kagariSet &&
-        motifSupport(state.division, state.motif).supported && state.kagariPlan.length > 0) {
-      const fresh = motifStitchPlan(
-        state.division,
-        state.motif,
-        state.kagariDir,
-        state.kagariSpacing,
-        state.facingPole,
-        selectedColor,
-        state.kikuLayers,
-        state.motif === "kiku" ? state.kagariSet : "all",
-      );
+      // Outside a kiku the pick is simply the thread in hand; it becomes the
+      // first working thread when a kiku starts, and the second one is kept.
+      : [selectedColor, state.kagariColors[1]];
+    // Repainting touches only the thread in hand, and only where it is not laid
+    // yet. It changes the colour of those stitches and nothing else: rebuilding
+    // the plan from the recipe used to put one set's stitches at another set's
+    // places once a grown round held both, which moved thread that was about to
+    // be sewn.
+    if (state.motif === "kiku" && state.kagariPlan.length > 0) {
       const plan = state.kagariPlan.map((stitch, i) =>
-        i >= state.kagariLaid ? (fresh[i] ?? stitch) : stitch,
+        i >= state.kagariLaid && (stitch.kind !== "arc" || (stitch.set ?? inHand) === inHand)
+          ? { ...stitch, color: selectedColor }
+          : stitch,
       );
       set({ selectedColor, kagariColors, kagariPlan: plan });
     } else {
@@ -1044,8 +1045,10 @@ export const useTemari = create<TemariState>((set, get) => ({
     }
     const group = state.kagariHistory[state.kagariHistory.length - 1];
     if (group) {
-      // A laid group goes back whole: the needle stops where it entered it.
-      set({ ...group, kagariPlaying: false, kagariHistory: state.kagariHistory.slice(0, -1) });
+      // A laid group goes back whole: the needle stops where it entered it, and
+      // the hand holds the thread of the group it has returned to.
+      set({ ...group, kagariPlaying: false, selectedColor: state.kagariColors[group.kagariSet],
+        kagariHistory: state.kagariHistory.slice(0, -1) });
       rememberStudio(get());
       return;
     }
@@ -1147,6 +1150,8 @@ export const useTemari = create<TemariState>((set, get) => ({
       facingPole: next,
       viewNonce: state.viewNonce + 1,
       poseDirty: false,
+      // A flower there starts with the first working thread again.
+      ...(flipped && state.motif === "kiku" ? { selectedColor: state.kagariColors[0] } : {}),
       // Turning to another pole starts a new flower there; what is sewn stays sewn.
       ...(flipped && state.motif === "kiku"
         ? {
@@ -1443,8 +1448,10 @@ export const useTemari = create<TemariState>((set, get) => ({
       poseDirty: false,
       fills: sameBall ? s.fills : emptyFills("simple"),
       // The same pair of threads carries on around one ball; a new ball starts
-      // with the thread in hand for both sets.
+      // from the pair that reads on its wrap. Either way the hand takes the
+      // first thread, because that is the group this step prepares.
       kagariColors: sameBall ? s.kagariColors : kikuThreads(s.wrapColor),
+      selectedColor: sameBall ? s.kagariColors[0] : kikuThreads(s.wrapColor)[0],
       jiwariOn: true,
       jiwariPhase: "done",
       jiwariLaid: 5,

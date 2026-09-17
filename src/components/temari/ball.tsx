@@ -111,7 +111,7 @@ function ThreadLayer({
             <meshStandardMaterial
               map={yarn}
               bumpMap={bump ?? undefined}
-              bumpScale={bump ? 0.6 : undefined}
+              bumpScale={bump ? 0.42 : undefined}
               color={colors[i]}
               roughness={threadRoughness(kind)}
               metalness={threadMetalness(kind)}

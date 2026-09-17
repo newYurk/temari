@@ -445,6 +445,34 @@ describe("quick kiku: marking and pins at the facing pole in one tap", () => {
     assert.deepEqual([...(bySet.get(1) ?? [])], [3], "set B stays its colour to the equator");
   });
 
+  it("repainting a thread moves no stitch, even mid-row when both sets are in the plan", () => {
+    dispatchCommand("quick-kiku");
+    dispatchCommand("fill");
+    finishPlan();
+    dispatchCommand("motif-kiku");
+    finishPlan();
+    // A grown round holds a row of each set, and the animation stops inside it.
+    dispatchCommand("fill");
+    for (let i = 0; i < 3 && useTemari.getState().kagariPlaying; i++) useTemari.getState().advanceKagari();
+    const before = useTemari.getState();
+    assert.ok(before.kagariLaid > 0 && before.kagariLaid < before.kagariPlan.length, "stopped mid-round");
+    const sets = new Set(before.kagariPlan.map((stitch) => stitch.kind === "arc" ? stitch.set : null));
+    assert.equal(sets.size, 2, "the plan holds both sets");
+    const inHand = before.kagariSet;
+    useTemari.getState().setColor(0);
+    const after = useTemari.getState();
+    assert.equal(after.kagariPlan.length, before.kagariPlan.length);
+    before.kagariPlan.forEach((stitch, i) => {
+      const now = after.kagariPlan[i]!;
+      if (stitch.kind !== "arc" || now.kind !== "arc") return;
+      assert.deepEqual(now.a, stitch.a, `stitch ${i} kept its place`);
+      assert.deepEqual(now.b, stitch.b, `stitch ${i} kept its place`);
+      assert.equal(now.set, stitch.set, `stitch ${i} kept its set`);
+      const repainted = i >= before.kagariLaid && stitch.set === inHand;
+      assert.equal(now.color, repainted ? 0 : stitch.color, `stitch ${i} colour`);
+    });
+  });
+
   it("takes a laid group back, one group per «Отменить», down to the bare marks", () => {
     dispatchCommand("quick-kiku");
     const marks = useTemari.getState().pins.length;

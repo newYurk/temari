@@ -553,11 +553,21 @@ function stackedArcRibbon(
 }
 
 /**
- * Pearl cotton is 2-ply with a visible helix. The pitch is taken as 1.8 of the
- * cord's own diameter — read off photographs of perle #5, not measured, so it
- * sits here as one named number to correct rather than spread through the code.
+ * Pearl cotton is 2-ply with a visible helix; one full turn takes this many of
+ * the cord's own diameters. Two estimates, neither of them a manufacturer's
+ * figure — nobody publishes the twist of coton perlé:
+ *
+ * - measured off macro photographs of DMC perle #5 (Needle 'n Thread): the
+ *   slope of the plies at the centre of the silhouette is 43°, which is a pitch
+ *   of 3.4 diameters, and counting the bands along the cord gives 3.7–3.9;
+ * - calculated from sourced yarn data (5/2 = Ne 5 singles, twist-multiplier
+ *   rules, 7–15 turns per inch for comparable mercerised plied cottons):
+ *   230–350 turns per metre, a pitch of 4–6 diameters, angle 28–38°.
+ *
+ * 3.6 is the photographic reading, which is the one about appearance. The first
+ * value here was 1.8 — an angle of 60°, a hard rope — and the owner said so.
  */
-export const PERLE_TWIST_PITCH = 1.8;
+export const PERLE_TWIST_PITCH = 3.6;
 
 function twistPerUnit(kind: ThreadKind) {
   const pitch = unitFromMm(kindMm(kind)) * PERLE_TWIST_PITCH;
@@ -585,6 +595,15 @@ function makePerleTexture(relief: boolean) {
       const u = x / w;
       const v = y / h;
       // Two plies: the phase runs twice around while the helix advances once.
+      //
+      // Handedness, which is easy to get backwards: the ring angle turns from
+      // the outward axis towards tangent x outward, a right-handed screw along
+      // the thread, so on the geometry's own v this would be a Z twist — but a
+      // texture is sampled with flipY on (three.js default, checked), so the
+      // drawn v is 1 - v and the helix comes out left-handed. That is S, which
+      // is what pearl cotton is: «mercerized, 100% cotton, S-twisted, 2-ply
+      // thread» (needlery.org, Pearl Cotton & Floss). Flipping this sign draws
+      // a Z twist — the wrong thread.
       const phase = 2 * (v - u);
       const across = Math.abs(((phase % 1) + 1.5) % 1 - 0.5) * 2; // 0 at the crown, 1 in the groove
       const round = Math.cos(across * Math.PI * 0.5); // a ply is round, not flat
