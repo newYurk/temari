@@ -251,14 +251,14 @@ export function solveSpatialContact(input: SpatialContactInput): SpatialContactR
     result.status = failed ? "failed" : "unresolved"; result.diagnostics.push({ code, message }); return result;
   };
   const minBend = input.minBendRadiusMm ?? o.bendRadiusFactor * input.threadRadiusMm;
-  if (input.controlPointsMm.length < 6 || input.controlPointsMm.length > 128 || !input.controlPointsMm.every(finite)
+  if (input.controlPointsMm.length < 6 || input.controlPointsMm.length > 256 || !input.controlPointsMm.every(finite)
     || !finite(input.body.centerMm) || !(input.body.radiusMm > 0) || !Number.isFinite(input.body.radiusMm)
     || !(input.threadRadiusMm > 0) || !Number.isFinite(input.threadRadiusMm)
     || Object.values(o).some(x => !Number.isFinite(x) || x <= 0)
     || ![o.maxIterations, o.maxOuterIterations, o.maxConstraintSamples, o.samplesPerSpan].every(Number.isInteger)
     || o.samplesPerSpan > 32 || o.maxIterations > 20000 || o.maxOuterIterations > 100 || o.maxConstraintSamples > 10000
     || o.minRelativeSpeed >= 1
-    || input.supports.length > 64 || new Set(input.supports.map(s => s.id)).size !== input.supports.length) {
+    || input.supports.length > 256 || new Set(input.supports.map(s => s.id)).size !== input.supports.length) {
     return stop("invalid-input", "Invalid spline, dimensions, numerical tolerances or bounded solver limits.", true);
   }
   // Tube regularity: an accepted curve must satisfy r*kappa < 1 with margin.

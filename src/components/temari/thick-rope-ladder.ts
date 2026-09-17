@@ -29,7 +29,7 @@ export type ThickRopeLadder = {
   maxShapeDifferenceMm: number;
 };
 
-export const THICK_ROPE_LADDER = Object.freeze({ factors: [1, 1.5, 2] as readonly number[], maxControls: 128, spansPerBendRadius: 1 });
+export const THICK_ROPE_LADDER = Object.freeze({ factors: [1, 1.5, 2] as readonly number[], maxControls: 256, spansPerBendRadius: 1 });
 
 export function curvesLength(curves: readonly ThreadCurve[]) {
   let total = 0;

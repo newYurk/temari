@@ -233,6 +233,14 @@ dd {
 #spatial-status { font-size:13px; line-height:1.7; }
 #spatial-status[data-status="unresolved"], #spatial-status[data-status="failed"] { color:#8b3e28; }
 #spatial-view canvas { display:block; width:100%; height:100%; }
+#s8-view { position:relative; width:100%; aspect-ratio:1; touch-action:none; cursor:grab; }
+#s8-view canvas { display:block; width:100%; height:100%; }
+#s8-labels { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:hidden; }
+#s8-status { font-size:13px; line-height:1.7; }
+#s8-status[data-status="unresolved"] { color:#8b3e28; }
+.s8-list { margin:10px 0 0; padding-left:18px; font-size:12px; line-height:1.7; color:#625c53; }
+.s8-list li[data-ok="false"] { color:#8b3e28; }
+.swatch.latest { background:#c98a2e; }
 .spatial-scope { max-width:800px; font-size:14px; line-height:1.8; color:#625c53; }
 .spatial-catch .buttons button { background:transparent; color:inherit; }
 .spatial-catch .buttons button[aria-pressed="true"] { background:#3a3630; color:#fff7ed; }
