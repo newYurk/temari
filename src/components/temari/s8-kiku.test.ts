@@ -1,0 +1,115 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { judgeS8Kiku, planS8Kiku, S8_KIKU_DIMENSIONS, S8_KIKU_LADDER, type S8KikuLevel } from './s8-kiku';
+import { evaluateCurve } from './thread-geometry';
+import type { PointMm } from './thread-path';
+
+const dot = (a: PointMm, b: PointMm) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const sub = (a: PointMm, b: PointMm): PointMm => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const norm = (a: PointMm) => Math.hypot(...a);
+const near = (a: number, b: number, tolerance = 1e-9) => assert.ok(Math.abs(a - b) <= tolerance, `${a} != ${b}`);
+
+describe('Simple 8 control kiku: plan (no solves)', () => {
+  it('places GT14 marks on the actual Simple 8 rays and alternates upper and lower tips', () => {
+    const plan = planS8Kiku();
+    const R = 230 / (2 * Math.PI);
+    assert.equal(plan.tips.length, 8);
+    for (const tip of plan.tips) {
+      const expected = tip.index % 2 ? 230 / 4 * 2 / 3 : 5;
+      assert.equal(tip.role, tip.index % 2 ? 'lower' : 'upper');
+      near(tip.distanceMm, expected);
+      // Great-circle distance from the pole.
+      near(R * Math.acos(dot(tip.frame.radial, [0, 1, 0])), expected, 1e-9);
+      near(norm(tip.markMm), R, 1e-9);
+    }
+  });
+
+  it('uses the same needle rule at both tips for both working directions', () => {
+    for (const handedness of [1, -1] as const) {
+      const plan = planS8Kiku({ handedness });
+      for (const tip of plan.tips) {
+        const q = tip.frame.progress;
+        // Enter on +q, leave on -q, where +q points to the next ray in working order.
+        assert.ok(dot(sub(tip.entry, tip.markMm), q) > .55 && dot(sub(tip.exit, tip.markMm), q) < -.55);
+        const next = plan.tips[(tip.index + 1) % 8];
+        assert.ok(dot(sub(next.markMm, tip.markMm), q) > 0);
+        const previous = plan.tips[(tip.index + 7) % 8];
+        assert.ok(dot(sub(previous.markMm, tip.markMm), q) < 0);
+        // Working direction follows the local rays, not a world axis.
+        near(dot(q, tip.frame.radial), 0, 1e-12); near(dot(q, tip.frame.outward), 0, 1e-12);
+      }
+    }
+  });
+
+  it('keeps the prescribed bites inside the bend limit and enters the wrapping at the ports', () => {
+    const plan = planS8Kiku({ stage: 'round' });
+    const limit = S8_KIKU_DIMENSIONS.threadRadiusMm / S8_KIKU_DIMENSIONS.minBendRadiusMm;
+    assert.equal(plan.hiddenCurvature.status, 'certified');
+    assert.ok(plan.hiddenCurvature.upper <= limit, String(plan.hiddenCurvature.upper));
+    const R = plan.R;
+    for (const tip of plan.catches) {
+      const [a, b] = plan.bite(tip), f = plan.tips[tip];
+      // The centre line reaches the ball surface close to the declared port, not a millimetre later.
+      const w = plan.bites.find(x => x.tip === tip)!;
+      assert.ok(w.entryHalfWidthMm > .55 && w.entryHalfWidthMm < .8, JSON.stringify(w));
+      assert.ok(w.exitHalfWidthMm > .55 && w.exitHalfWidthMm < .8, JSON.stringify(w));
+      // One passage under the marking plane, from +q to -q, through the bottom point.
+      assert.ok(dot(evaluateCurve(a, 0), f.frame.progress) > 0 && dot(evaluateCurve(b, 1), f.frame.progress) < 0);
+      near(norm(evaluateCurve(a, 1)), R - S8_KIKU_DIMENSIONS.depthMm, 1e-9);
+    }
+  });
+
+  it('builds disjoint physical marking segments and windows on the legs between ports', () => {
+    for (const stage of ['stitch', 'round'] as const) {
+      const plan = planS8Kiku({ stage });
+      assert.equal(plan.supports.length, 8);
+      assert.deepEqual(plan.windows.map(w => w.id), stage === 'stitch'
+        ? ['departure-0', 'approach-1', 'departure-1', 'approach-2', 'departure-2']
+        : ['departure-0', ...[1, 2, 3, 4, 5, 6, 7].flatMap(t => [`approach-${t}`, `departure-${t}`]), 'closing-0']);
+      for (const w of plan.windows) {
+        assert.equal(w.minimumSpans, Math.ceil(w.seedLengthMm / S8_KIKU_DIMENSIONS.minBendRadiusMm));
+        assert.ok(Math.ceil(w.minimumSpans * S8_KIKU_LADDER.at(-1)!) + 3 <= 256);
+      }
+      assert.deepEqual(plan.factors, [...S8_KIKU_LADDER]);
+      assert.equal(plan.canonical, true);
+    }
+  });
+
+  it('refuses ladders that cannot show refinement and flags non-canonical ones', () => {
+    assert.throws(() => planS8Kiku({ factors: [1.2, 1.201, 1.3] }), RangeError);
+    assert.throws(() => planS8Kiku({ factors: [1.5, 4] }), RangeError);
+    assert.throws(() => planS8Kiku({ factors: [1, 1.5, 2, 3, 4, 6, 8] }), RangeError);
+    assert.equal(planS8Kiku({ factors: [1, 2, 4] }).canonical, false);
+    assert.throws(() => planS8Kiku({ minBendRadiusMm: .2 }), RangeError);
+    assert.throws(() => planS8Kiku({ rowAdvanceMm: .4 }), RangeError);
+    assert.throws(() => planS8Kiku({ center: [1, 0, 0] }), RangeError);
+  });
+
+  it('never accepts a non-canonical ladder or a non-contracting refinement', () => {
+    const plan = planS8Kiku({ factors: [1, 2, 4] });
+    // Synthetic levels: identical perfect constructions with chosen window differences.
+    const curve = plan.windows[0].seed;
+    const level = (factor: number, shift: number): S8KikuLevel => ({
+      factor, obstacleToleranceMm: plan.d.obstacleToleranceMm, coupon: {} as S8KikuLevel['coupon'], diagnostics: [], undeclaredCrossings: [],
+      validation: { status: 'passed', diagnostics: [], toleranceMm: .001, lengthMm: { total: 0, surface: 0, piercing: 0, buried: 0 }, maxCurvatureTimesRadius: 0, minSupportGapMm: 1, minSelfGapMm: 1 },
+      curvature: { status: 'certified', lower: .5, upper: .5, minSpeedBound: 1, argmax: { curve: 0, t: 0 }, witnesses: [], leaves: 1 },
+      hiddenCurvature: plan.hiddenCurvature, lengthMm: 1,
+      solves: plan.windows.map(w => ({ windowId: w.id, controlCount: Math.ceil(w.minimumSpans * factor) + 3, obstacles: 0,
+        result: { status: 'converged' as const, controlPointsMm: [], lengthMm: 10 + shift * .01, reactions: [], diagnostics: [],
+          metrics: {} as never, curves: curve.map(c => c.kind === 'arc' ? c : { kind: 'bezier' as const, controls: c.controls.map(p => [p[0] + shift, p[1], p[2]] as PointMm) as never }) } })),
+    });
+    const converging = judgeS8Kiku(plan, [level(1, 0), level(2, .01), level(4, .0101)], level(4, .0101));
+    assert.notEqual(converging.status, 'accepted');
+    assert.ok(converging.diagnostics.some(d => d.includes('Non-canonical')));
+    const canonical = planS8Kiku();
+    // Last two refinements 0.015 then 0.014 mm: within tolerance but not contracting.
+    const levels = [0, .04, .07, .085, .099].map((shift, i) => ({ ...level(S8_KIKU_LADDER[i], shift), factor: S8_KIKU_LADDER[i] }));
+    const judged = judgeS8Kiku(canonical, levels as S8KikuLevel[], levels[4] as S8KikuLevel);
+    assert.equal(judged.status, 'unresolved');
+    assert.ok(judged.diagnostics.some(d => d.includes('do not contract')), judged.diagnostics.join('\n'));
+    // Contracting to below a quarter of the tolerance is accepted by the rule.
+    const good = [0, .04, .07, .08, .0801].map((shift, i) => ({ ...level(S8_KIKU_LADDER[i], shift), factor: S8_KIKU_LADDER[i] })) as S8KikuLevel[];
+    const accepted = judgeS8Kiku(canonical, good, good[4]);
+    assert.ok(!accepted.diagnostics.some(d => d.includes('stabilised') || d.includes('contract')), accepted.diagnostics.join('\n'));
+  });
+});

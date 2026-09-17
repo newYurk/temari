@@ -132,30 +132,32 @@ function show(summary: S8KikuSummary) {
   const slider = el<HTMLInputElement>('step');
   slider.max = String(maxStep); slider.value = String(maxStep); text('step-value', String(maxStep));
   text('status', summary.status === 'accepted'
-    ? `Принято: все ${summary.levels.length} уровня сетки сходятся и проходят проверку всей нити. Это модель толстой нити, не равновесие настоящей пряжи.`
+    ? `Принято: все ${summary.levels.length} уровней сетки и контрольное построение сходятся и проходят проверку всей нити; последние уточнения сжимаются. Это модель толстой нити, не равновесие настоящей пряжи.`
     : `Не принято (${summary.status === 'rejected' ? 'отказ' : 'не подтверждено'}): ${summary.diagnostics.join(' ')}`);
   const mm = (v: number, digits = 3) => `${v.toFixed(digits).replace('.', ',')} мм`;
   const finest = summary.levels.at(-1)!;
   text('length', mm(finest.lengthMm, 2));
   text('bend', `${finest.curvature.toFixed(3).replace('.', ',')} (предел ${summary.metrics.curvatureLimit.toFixed(2).replace('.', ',')} + 0,02)`);
   text('refine', `длина ${mm(summary.metrics.lengthDifferenceMm, 4)}, форма ${mm(summary.metrics.maxShapeDifferenceMm, 3)}`);
-  const list = el('levels');
-  list.replaceChildren(...summary.levels.map(level => {
+  const widest = Math.max(...summary.bites.flatMap(b => [b.entryHalfWidthMm, b.exitHalfWidthMm]));
+  text('width', `до ${mm(2 * widest, 2)}`);
+  const levelItem = (level: S8KikuSummary['levels'][number], label: string) => {
     const item = document.createElement('li');
     const solved = level.solves.filter(s => s.status === 'converged').length;
-    item.textContent = `×${String(level.factor).replace('.', ',')}: окна ${solved}/${level.solves.length} сошлись, путь — ${level.validation === 'passed' ? 'проверки пройдены' : `${level.validation} (${level.codes.join(', ')})`}, r·κ ≤ ${level.curvature.toFixed(3).replace('.', ',')}, скрытые ≤ ${level.hiddenCurvature.toFixed(3).replace('.', ',')}`;
+    item.textContent = `${label}: окна ${solved}/${level.solves.length} сошлись, путь — ${level.validation === 'passed' ? 'проверки пройдены' : `${level.validation} (${level.codes.join(', ')})`}${level.undeclared ? `, необъявленных перехлёстов ${level.undeclared}` : ''}, r·κ ≤ ${level.curvature.toFixed(3).replace('.', ',')}, скрытые ≤ ${level.hiddenCurvature.toFixed(3).replace('.', ',')}`;
+    item.dataset.ok = String(solved === level.solves.length && level.validation === 'passed' && !level.undeclared);
     return item;
-  }));
-  const worst = new Map<string, { length: number; shape: number }>();
-  for (const r of summary.refinements) {
-    const w = worst.get(r.windowId) ?? { length: 0, shape: 0 };
-    worst.set(r.windowId, { length: Math.max(w.length, r.lengthDifferenceMm), shape: Math.max(w.shape, r.shapeDifferenceMm) });
-  }
+  };
+  el('levels').replaceChildren(...summary.levels.map(l => levelItem(l, `×${String(l.factor).replace('.', ',')}`)),
+    levelItem(summary.perturbed, `×${String(summary.perturbed.factor).replace('.', ',')}, покрытие вдвое точнее`));
   el('windows').replaceChildren(...summary.windows.map(w => {
-    const item = document.createElement('li'), d = worst.get(w.id)!;
+    const item = document.createElement('li');
+    const steps = summary.refinements.filter(r => r.windowId === w.id), last = steps.slice(-2);
+    const cond = summary.conditioning.find(r => r.windowId === w.id)!;
     const name = w.kind === 'approach' ? 'приход к' : w.kind === 'departure' ? 'уход от' : 'возврат поверх начала к';
-    item.textContent = `${name} точке ${w.tip + 1}: ${w.minimumSpans}+ пролётов; Δдлины ${mm(d.length, 4)}, Δформы ${mm(d.shape, 3)}`;
-    item.dataset.ok = String(d.length <= .002 && d.shape <= .02);
+    const fmt = (key: 'lengthDifferenceMm' | 'shapeDifferenceMm', digits: number) => steps.map(r => r[key].toExponential(1).replace('.', ',')).join(' → ');
+    item.textContent = `${name} точке ${w.tip + 1}: Δдлины ${fmt('lengthDifferenceMm', 1)}; Δформы ${fmt('shapeDifferenceMm', 1)}; к покрытию ${mm(cond.shapeDifferenceMm, 4)}`;
+    item.dataset.ok = String(last.every(r => r.lengthDifferenceMm <= .002 && r.shapeDifferenceMm <= .02) && cond.shapeDifferenceMm <= .02 && cond.lengthDifferenceMm <= .002);
     return item;
   }));
   setView(view);
@@ -163,7 +165,7 @@ function show(summary: S8KikuSummary) {
 }
 function compute(next: S8KikuStage) {
   if (results.has(next) || pending.has(next)) return;
-  text('status', next === 'stitch' ? 'Считаем стежок на трёх уровнях сетки…' : 'Считаем круг на трёх уровнях сетки — это занимает больше времени…');
+  text('status', next === 'stitch' ? 'Считаем стежок на пяти уровнях сетки и контрольном построении…' : 'Считаем круг на пяти уровнях сетки — это занимает заметно больше времени…');
   el('status').dataset.status = 'unresolved';
   const worker = new Worker(new URL('./s8-kiku.worker.ts', import.meta.url), { type: 'module' });
   pending.set(next, worker);
