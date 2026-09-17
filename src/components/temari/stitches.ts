@@ -166,7 +166,7 @@ function arcRibbon(a: THREE.Vector3, b: THREE.Vector3, width: number) {
  * cut the pearl at the outer point or the inner stitch. A complete
  * chidori round *returns* to the start mark — that is a park, not a weld.
  */
-function arcPath(
+export function arcPath(
   stitch: Extract<Stitch, { kind: "arc" }>,
   kind: ThreadKind,
 ): THREE.Vector3[] {
