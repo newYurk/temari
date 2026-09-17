@@ -9,6 +9,7 @@ import type { C8ThreadCoupon, ThreadCurve, ThreadSpan } from "./components/temar
 import "./lab.css";
 import "./contact-benchmark";
 import "./spatial-catch";
+import "./s8-kiku-view";
 
 const dot = (a: MarkingVector, b: MarkingVector) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
 const cross = (a: MarkingVector, b: MarkingVector): MarkingVector =>

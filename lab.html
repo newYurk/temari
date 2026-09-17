@@ -9,7 +9,7 @@
   </head>
   <body>
     <main>
-      <nav><a href="./">← Темари</a><a href="#spatial-catch">Подхват на шаре ↓</a><a href="#contact-benchmark">Плоский контакт ↓</a><a href="./design.html#status">Состояние модели</a></nav>
+      <nav><a href="./">← Темари</a><a href="#spatial-catch">Подхват на шаре ↓</a><a href="#s8-kiku">Simple 8 ↓</a><a href="#contact-benchmark">Плоский контакт ↓</a><a href="./design.html#status">Состояние модели</a></nav>
       <header>
         <p class="eyebrow">Мастерская · сверяем стежок с ремеслом</p>
         <h1>Нижний подхват.<br />С маленьким перехлёстом.</h1>
@@ -66,6 +66,60 @@
           Модель — толстая нить: кратчайший путь без изгибной жёсткости, но с радиусом изгиба оси не меньше 0,25 мм
           (инженерное допущение, не измерение пряжи). Форма настоящей пряжи, трение и удержание прокола пока не рассчитаны.
           Исправление изолировано здесь; перенос в полный S8/C8 ещё предстоит.</p>
+      </section>
+      <section id="s8-kiku" class="spatial-catch s8-kiku" aria-labelledby="s8-title">
+        <p class="eyebrow">Контрольная кику Simple 8 · размещение GT14 · в работе</p>
+        <h2 id="s8-title">Подхват на настоящей разметке</h2>
+        <p class="intro">Тот же обратный подхват перенесён на Simple 8: верхние точки в 5 мм от полюса,
+          нижние — на трети пути от экватора к полюсу. У нижней точки ветви сходятся под углом около 14°,
+          у верхней — около 97°, поэтому перехлёсты выглядят по-разному. Видимая нить у каждого прокола
+          рассчитывается моделью толстой нити, дальше она лежит по дуге большого круга.</p>
+        <div class="spatial-workbench">
+          <div>
+            <div id="s8-view" aria-label="Кику Simple 8 у полюса">
+              <svg id="s8-labels" viewBox="0 0 600 600" aria-hidden="true"></svg>
+            </div>
+            <p class="gesture-note">Потяните, чтобы повернуть. Цифры — номера лучей разметки.</p>
+            <div class="buttons view-tools"><button id="s8-view-flower" type="button" aria-pressed="true">Цветок сверху</button>
+              <button id="s8-view-lower" type="button" aria-pressed="false">Нижняя точка</button>
+              <button id="s8-view-upper" type="button" aria-pressed="false">Верхняя точка</button>
+              <button id="s8-view-side" type="button" aria-pressed="false">Сбоку</button></div>
+          </div>
+          <div class="controls">
+            <div class="badge">Инженерный образец · не мастерская</div>
+            <h3>Этап</h3>
+            <div class="buttons"><button id="s8-stage-stitch" type="button" aria-pressed="true">Один стежок</button>
+              <button id="s8-stage-round" type="button" aria-pressed="false">Первый круг</button></div>
+            <label>Показать до шага <output id="s8-step-value">0</output>
+              <input id="s8-step" type="range" min="0" max="3" step="1" value="3" /></label>
+            <p class="caption"><span class="legend-item"><span class="swatch outer"></span>Видимая нить</span>
+              <span class="legend-item"><span class="swatch latest"></span>Последний шаг</span>
+              <span class="legend-item"><span class="swatch hidden-thread"></span>Скрытый проход</span>
+              <span class="legend-item"><span class="swatch inner"></span>Разметочная опора</span></p>
+            <label class="check"><input id="s8-inside" type="checkbox" />Показать внутри основы</label>
+            <label class="check"><input id="s8-marks" type="checkbox" checked />Номера лучей</label>
+            <p id="s8-status" role="status">Расчёт начнётся при открытии этого примера.</p>
+            <dl>
+              <div><dt>Длина нити модели</dt><dd id="s8-length">—</dd></div>
+              <div><dt>Радиус × кривизна</dt><dd id="s8-bend">—</dd></div>
+              <div><dt>Последние уточнения</dt><dd id="s8-refine">—</dd></div>
+              <div><dt>Ширина стежка по проколам</dt><dd id="s8-width">—</dd></div>
+            </dl>
+            <details><summary>Уровни сетки и окна</summary>
+              <ul id="s8-levels" class="s8-list"></ul>
+              <ul id="s8-windows" class="s8-list"></ul>
+            </details>
+          </div>
+        </div>
+        <p class="spatial-scope">Размещение меток — из
+          <a href="https://www.temarikai.com/PatternsPages/Simple/GT14.html">GT14</a>; ход иглы у обеих точек —
+          <a href="https://www.temarikai.com/HowToPages/ToolKit/chidorikagari.html">Toolkit, chidori kagari</a> (фото 3 и 4),
+          порядок круга — <a href="https://www.temarikai.com/HowToPages/ToolKit/uwagakechidori.html">Toolkit, uwagake</a>.
+          Глубина подхвата 1,2 мм, расстояние между проколами 1,2 мм, угол входа нити 45°, длина окон и начальные подъёмы — инженерные значения.
+          Сетка уточняется по заранее заданной лестнице из пяти уровней; принимаются только сходящиеся и сжимающиеся последние уточнения,
+          а самый мелкий уровень дополнительно пересчитывается с вдвое более частыми пробами. Уже уложенная нить служит препятствием в виде точной гладкой трубки, а не цепочки капсул.
+          Первый круг заканчивается открытым концом у входа первого верхнего стежка второго круга: по Toolkit нить
+          переносят через начало до последнего стежка круга. Следующий ряд с охватом пучка ещё не построен.</p>
       </section>
       <section class="legacy-warning" id="legacy-c8">
         <h2>Прежний образец C8: нижний ход требует замены</h2>
