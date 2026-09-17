@@ -63,6 +63,14 @@ export const S8_KIKU_DIMENSIONS = Object.freeze({
   lengthToleranceMm: 0.002,
   shapeToleranceMm: 0.02,
   curvatureToleranceRKappa: 0.02,
+  /**
+   * Fixed-point check of each window: a converged solve is restarted from its
+   * own result until a restart moves it by at most this much (well below
+   * shapeTolerance/4), so the ladder compares discrete minima rather than
+   * wherever the stopping test fired in a flat contact valley.
+   */
+  settleToleranceMm: 0.0001,
+  maxSettleRestarts: 4,
   /** Asymptotic refinement: the last difference contracts by this ratio or is below tolerance/4. */
   contraction: 0.75,
 });
@@ -111,7 +119,8 @@ export type S8KikuLevel = {
   factor: number;
   obstacleToleranceMm: number;
   coupon: C8ThreadCoupon;
-  solves: { windowId: string; controlCount: number; result: SpatialContactResult; obstacles: number }[];
+  /** restarts: warm restarts used; settleMoveMm: the last restart's shape change (NaN if none ran). */
+  solves: { windowId: string; controlCount: number; result: SpatialContactResult; obstacles: number; restarts: number; settleMoveMm: number }[];
   validation: PathValidation;
   /** Surface crossings present in projection but not declared (must be empty). */
   undeclaredCrossings: string[];
@@ -279,7 +288,9 @@ export function planS8Kiku(input: S8KikuInput = {}) {
   const d: S8KikuDimensions = { ...S8_KIKU_DIMENSIONS };
   for (const key of Object.keys(d) as (keyof S8KikuDimensions)[]) {
     if (input[key] !== undefined) d[key] = input[key]!;
-    if (!Number.isFinite(d[key]) || d[key] <= 0) throw new RangeError(`${key} must be finite and positive`);
+    if (key === 'maxSettleRestarts') {
+      if (!Number.isInteger(d[key]) || d[key] < 0 || d[key] > 16) throw new RangeError('maxSettleRestarts must be an integer from 0 to 16');
+    } else if (!Number.isFinite(d[key]) || d[key] <= 0) throw new RangeError(`${key} must be finite and positive`);
   }
   const stage = input.stage ?? 'stitch', handedness = input.handedness ?? 1, s0 = input.startTip ?? 0;
   if (![0, 2, 4, 6].includes(s0)) throw new RangeError('startTip must be an upper tip: 0, 2, 4 or 6.');
@@ -426,8 +437,12 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, obstacleToler
   const groups: { id: string; curves: ThreadCurve[]; startMm: V; endMm: V }[] = [];
   const windowSpans = new Map<string, string[]>();
   const solves: S8KikuLevel['solves'] = [], diagnostics: string[] = [];
-  const solverOptions: SpatialContactOptions = { maxIterations: 8000, maxOuterIterations: 60, feasibilityToleranceMm: .0005,
-    complementarityToleranceMm: .000005, curvatureTolerance: d.curvatureToleranceRKappa, ...plan.solverOptions };
+  // Upper-tip departures rest on their approach in a soft valley (stiffness
+  // about 0.36 T/mm under a 0.9 T wrap load), so a looser penetration or
+  // stationarity test moves the finest window by 2e-3 mm; these stop within
+  // 1.4e-4 mm of the strictest setting tried (spec/s8-control-kiku.md).
+  const solverOptions: SpatialContactOptions = { maxIterations: 8000, maxOuterIterations: 60, feasibilityToleranceMm: .0001,
+    stationarityTolerance: 2e-6, complementarityToleranceMm: 5e-7, curvatureTolerance: d.curvatureToleranceRKappa, ...plan.solverOptions };
   const op = (kind: ThreadOperationKind, step: number, markIndex?: number) => {
     const o: ThreadOperation = { id: `s8-op-${operations.length + 1}-${kind}`, order: operations.length, step, kind, spanIds: [],
       ...(markIndex === undefined ? {} : { markId: `mark-${markIndex + 1}` }),
@@ -454,17 +469,27 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, obstacleToler
       for (const c of cover) if (near(c, route, d.obstacleSearchMm)) obstacles.push(c);
     }
     const controlCount = Math.ceil(w.minimumSpans * factor) + 3;
-    let result: SpatialContactResult;
+    let result: SpatialContactResult, restarts = 0, settleMoveMm = NaN;
     if (obstacles.length > d.maxObstacles) {
       diagnostics.push(`${w.id}: ${obstacles.length} obstacles exceed the budget of ${d.maxObstacles}.`);
       result = { status: 'failed', controlPointsMm: [], curves: [], lengthMm: NaN, reactions: [], diagnostics: [{ code: 'obstacle-budget', message: 'Too many obstacles.' }],
         metrics: {} as SpatialContactResult['metrics'] };
     } else {
-      result = solveSpatialContact({ controlPointsMm: fitSpatialSeed(w.seed, controlCount), threadRadiusMm: r,
+      const solve = (controlPointsMm: PointMm[]) => solveSpatialContact({ controlPointsMm, threadRadiusMm: r,
         minBendRadiusMm: d.minBendRadiusMm, body: { centerMm: [0, 0, 0], radiusMm: R + d.numericalClearanceMm },
         supports: obstacles, options: solverOptions });
+      result = solve(fitSpatialSeed(w.seed, controlCount));
+      while (result.status === 'converged' && restarts < d.maxSettleRestarts) {
+        const next = solve(result.controlPointsMm);
+        restarts++;
+        settleMoveMm = next.curves.length ? shapeDifferenceMm(result.curves, next.curves) : Infinity;
+        result = next;
+        if (settleMoveMm <= d.settleToleranceMm) break;
+      }
+      if (result.status === 'converged' && d.maxSettleRestarts > 0 && !(settleMoveMm <= d.settleToleranceMm))
+        diagnostics.push(`${w.id}: no fixed point after ${restarts} restarts (last move ${settleMoveMm.toExponential(2)} mm).`);
     }
-    solves.push({ windowId: w.id, controlCount, result, obstacles: obstacles.length });
+    solves.push({ windowId: w.id, controlCount, result, obstacles: obstacles.length, restarts, settleMoveMm });
     if (!result.curves.length) diagnostics.push(`${w.id}: the solver returned no curve (${result.diagnostics.map(x => x.code).join(', ')}).`);
     windowSpans.set(w.id, result.curves.map(curve => put(o, 'surface', curve)));
     record(w.id, result.curves);
@@ -556,6 +581,7 @@ export function judgeS8Kiku(plan: S8KikuPlan, levels: S8KikuLevel[], perturbed: 
   const { d } = plan, limit = plan.r / d.minBendRadiusMm, diagnostics: string[] = [];
   let rejected = false;
   if (!plan.canonical) diagnostics.push(`Non-canonical ladder ${plan.factors.join('/')} is diagnostic only.`);
+  if (d.maxSettleRestarts === 0) diagnostics.push('Windows were not checked for a fixed point: diagnostic only.');
   for (const level of [...levels, perturbed]) {
     const tag = level === perturbed ? `x${level.factor} (cover ${level.obstacleToleranceMm} mm)` : `x${level.factor}`;
     diagnostics.push(...level.diagnostics.map(x => `${tag} ${x}`));

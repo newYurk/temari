@@ -132,7 +132,7 @@ function show(summary: S8KikuSummary) {
   const slider = el<HTMLInputElement>('step');
   slider.max = String(maxStep); slider.value = String(maxStep); text('step-value', String(maxStep));
   text('status', summary.status === 'accepted'
-    ? `Принято: все ${summary.levels.length} уровней сетки и контрольное построение сходятся и проходят проверку всей нити; последние уточнения сжимаются. Это модель толстой нити, не равновесие настоящей пряжи.`
+    ? `Принято: все ${summary.levels.length} уровней сетки и контрольное построение сходятся, каждое окно подтверждено перезапуском и проходит проверку всей нити; последние уточнения сжимаются. Это модель толстой нити, не равновесие настоящей пряжи.`
     : `Не принято (${summary.status === 'rejected' ? 'отказ' : 'не подтверждено'}): ${summary.diagnostics.join(' ')}`);
   const mm = (v: number, digits = 3) => `${v.toFixed(digits).replace('.', ',')} мм`;
   const finest = summary.levels.at(-1)!;
@@ -143,9 +143,9 @@ function show(summary: S8KikuSummary) {
   text('width', `до ${mm(2 * widest, 2)}`);
   const levelItem = (level: S8KikuSummary['levels'][number], label: string) => {
     const item = document.createElement('li');
-    const solved = level.solves.filter(s => s.status === 'converged').length;
-    item.textContent = `${label}: окна ${solved}/${level.solves.length} сошлись, путь — ${level.validation === 'passed' ? 'проверки пройдены' : `${level.validation} (${level.codes.join(', ')})`}${level.undeclared ? `, необъявленных перехлёстов ${level.undeclared}` : ''}, r·κ ≤ ${level.curvature.toFixed(3).replace('.', ',')}, скрытые ≤ ${level.hiddenCurvature.toFixed(3).replace('.', ',')}`;
-    item.dataset.ok = String(solved === level.solves.length && level.validation === 'passed' && !level.undeclared);
+    const solved = level.solves.filter(s => s.status === 'converged').length, settled = level.solves.filter(s => s.settled).length;
+    item.textContent = `${label}: окна ${solved}/${level.solves.length} сошлись, перезапуск подтвердил ${settled}/${level.solves.length}, путь — ${level.validation === 'passed' ? 'проверки пройдены' : `${level.validation} (${level.codes.join(', ')})`}${level.undeclared ? `, необъявленных перехлёстов ${level.undeclared}` : ''}, r·κ ≤ ${level.curvature.toFixed(3).replace('.', ',')}, скрытые ≤ ${level.hiddenCurvature.toFixed(3).replace('.', ',')}`;
+    item.dataset.ok = String(solved === level.solves.length && settled === level.solves.length && level.validation === 'passed' && !level.undeclared);
     return item;
   };
   el('levels').replaceChildren(...summary.levels.map(l => levelItem(l, `×${String(l.factor).replace('.', ',')}`)),

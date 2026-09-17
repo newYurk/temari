@@ -1,11 +1,12 @@
-import { computeS8Kiku, type S8KikuLevel, type S8KikuStage } from './components/temari/s8-kiku';
+import { computeS8Kiku, S8_KIKU_DIMENSIONS, type S8KikuLevel, type S8KikuStage } from './components/temari/s8-kiku';
 
 export type S8KikuSummary = ReturnType<typeof summarise>;
 
 const levelSummary = (l: S8KikuLevel) => ({ factor: l.factor, obstacleToleranceMm: l.obstacleToleranceMm, validation: l.validation.status,
   codes: [...new Set(l.validation.diagnostics.map(d => d.code))], undeclared: l.undeclaredCrossings.length,
   curvature: l.curvature.upper, hiddenCurvature: l.hiddenCurvature.upper, lengthMm: l.lengthMm,
-  solves: l.solves.map(s => ({ windowId: s.windowId, controlCount: s.controlCount, status: s.result.status, lengthMm: s.result.lengthMm })) });
+  solves: l.solves.map(s => ({ windowId: s.windowId, controlCount: s.controlCount, status: s.result.status, lengthMm: s.result.lengthMm,
+    settled: s.settleMoveMm <= S8_KIKU_DIMENSIONS.settleToleranceMm })) });
 
 function summarise(stage: S8KikuStage) {
   const r = computeS8Kiku({ stage });

@@ -1,7 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { judgeS8Kiku, planS8Kiku, S8_KIKU_DIMENSIONS, S8_KIKU_LADDER, type S8KikuLevel } from './s8-kiku';
+import { buildS8KikuLevel, judgeS8Kiku, planS8Kiku, S8_KIKU_DIMENSIONS, S8_KIKU_LADDER, type S8KikuLevel } from './s8-kiku';
+import { shapeDifferenceMm } from './thick-rope-ladder';
 import { evaluateCurve } from './thread-geometry';
+import type { ThreadCurve } from './thread-path';
 import type { PointMm } from './thread-path';
 
 const dot = (a: PointMm, b: PointMm) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -115,7 +117,7 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
       validation: { status: 'passed', diagnostics: [], toleranceMm: .001, lengthMm: { total: 0, surface: 0, piercing: 0, buried: 0 }, maxCurvatureTimesRadius: 0, minSupportGapMm: 1, minSelfGapMm: 1 },
       curvature: { status: 'certified', lower: .5, upper: .5, minSpeedBound: 1, argmax: { curve: 0, t: 0 }, witnesses: [], leaves: 1 },
       hiddenCurvature: plan.hiddenCurvature, lengthMm: 1,
-      solves: plan.windows.map(w => ({ windowId: w.id, controlCount: Math.ceil(w.minimumSpans * factor) + 3, obstacles: 0,
+      solves: plan.windows.map(w => ({ windowId: w.id, controlCount: Math.ceil(w.minimumSpans * factor) + 3, obstacles: 0, restarts: 1, settleMoveMm: 0,
         result: { status: 'converged' as const, controlPointsMm: [], lengthMm: 10 + shift * .01, reactions: [], diagnostics: [],
           metrics: {} as never, curves: curve.map(c => c.kind === 'arc' ? c : { kind: 'bezier' as const, controls: c.controls.map(p => [p[0] + shift, p[1], p[2]] as PointMm) as never }) } })),
     });
@@ -132,5 +134,33 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
     const good = [0, .04, .07, .08, .0801].map((shift, i) => ({ ...level(S8_KIKU_LADDER[i], shift), factor: S8_KIKU_LADDER[i] })) as S8KikuLevel[];
     const accepted = judgeS8Kiku(canonical, good, good[4]);
     assert.ok(!accepted.diagnostics.some(d => d.includes('stabilised') || d.includes('contract')), accepted.diagnostics.join('\n'));
+  });
+});
+
+describe('Simple 8 control kiku: solved windows', () => {
+  it('solves the upper-tip departure covariantly under a quarter turn about the pole', () => {
+    // The worst-conditioned window: the departure rides over its own approach
+    // right behind the upper tip. Settled solves are fixed points, so the
+    // stitch started at tip 2 is the stitch started at tip 0 turned by 90 degrees.
+    const turn = ([x, y, z]: PointMm): PointMm => [z, y, -x];
+    const a = planS8Kiku({ stage: 'stitch' }), b = planS8Kiku({ stage: 'stitch', startTip: 2 });
+    assert.ok(norm(sub(turn(a.tips[0].markMm), a.tips[2].markMm)) < 1e-9);
+    // x3: the discrete minimum there is unique (x2 has two KKT points).
+    const factor = S8_KIKU_LADDER[3];
+    const la = buildS8KikuLevel(a, factor), lb = buildS8KikuLevel(b, factor);
+    const solved = (level: S8KikuLevel, id: string) => level.solves.find(s => s.windowId === id)!;
+    const da = solved(la, 'departure-2'), db = solved(lb, 'departure-4');
+    for (const s of [da, db]) {
+      assert.equal(s.result.status, 'converged');
+      assert.ok(s.settleMoveMm <= S8_KIKU_DIMENSIONS.settleToleranceMm, String(s.settleMoveMm));
+    }
+    const turned = da.result.curves.map((c): ThreadCurve => c.kind === 'arc'
+      ? { ...c, from: turn(c.from), to: turn(c.to) }
+      : { ...c, controls: c.controls.map(turn) as unknown as typeof c.controls });
+    const shape = shapeDifferenceMm(turned, db.result.curves);
+    // Without the restarts the two solves stop 9e-5 mm apart with the canonical
+    // stopping test (1.5e-2 mm with the former looser one); settled ones agree to 2e-7.
+    assert.ok(shape <= S8_KIKU_DIMENSIONS.settleToleranceMm / 4, `quarter-turn shape difference ${shape}`);
+    near(da.result.lengthMm, db.result.lengthMm, S8_KIKU_DIMENSIONS.lengthToleranceMm / 4);
   });
 });
