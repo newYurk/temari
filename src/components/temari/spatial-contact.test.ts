@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { closestSpatialSupport, sampleSpatialSpline, solveSpatialContact, spatialSplineBasis,
   spatialSplineKnots, splineToBezier, SPATIAL_CONTACT_DEFAULTS } from "./spatial-contact";
 import type { SpatialContactInput, SpatialSupport } from "./spatial-contact";
-import { evaluateCurve } from "./thread-geometry";
+import { evaluateCurve, sampleCurve } from "./thread-geometry";
 import type { PointMm } from "./thread-path";
+import { shapeDifferenceMm } from "./thick-rope-ladder";
 
 const near = (a: number, b: number, tolerance = 1e-9) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
 const pointNear = (a: PointMm, b: PointMm, tolerance = 1e-9) => a.forEach((v, k) => near(v, b[k], tolerance));
@@ -19,6 +20,37 @@ function sphereSeed(count = 8): SpatialContactInput {
   controls[0] = [-1, 0, 0]; controls[1] = [-1, handle, 0];
   controls[count - 2] = [1, handle, 0]; controls[count - 1] = [1, 0, 0];
   return { controlPointsMm: controls, threadRadiusMm: .2, body: { centerMm: [0, 0, 0], radiusMm: .8 }, supports: [] };
+}
+
+type Cubic = [PointMm, PointMm, PointMm, PointMm];
+const lerp = (a: PointMm, b: PointMm, t: number): PointMm => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+/** De Casteljau halves: the same polynomial, twice as many pieces. */
+const halve = (c: Cubic): Cubic[] => {
+  const ab = lerp(c[0], c[1], .5), bc = lerp(c[1], c[2], .5), cd = lerp(c[2], c[3], .5), abc = lerp(ab, bc, .5), bcd = lerp(bc, cd, .5), m = lerp(abc, bcd, .5);
+  return [[c[0], ab, abc, m], [m, bcd, cd, c[3]]];
+};
+/** A parabolic arch in the plane x = 0, highest at y = 0 (a quadratic raised to a cubic). */
+const ARCH: Cubic = (() => { const q0: PointMm = [0, -1.5, .35], q1: PointMm = [0, 0, 1.25], q2: PointMm = [0, 1.5, .35]; return [q0, lerp(q0, q1, 2 / 3), lerp(q2, q1, 2 / 3), q2]; })();
+const archPieces = (count: number) => { let out = [ARCH]; while (out.length < count) out = out.flatMap(halve); return out; };
+/** A thread pulled over the arch off its crest: the crossing slides in a soft valley, as at an upper kiku tip. */
+function archSeed(supports: SpatialSupport[]): SpatialContactInput {
+  const count = 24, knots = spatialSplineKnots(count);
+  return { controlPointsMm: Array.from({ length: count }, (_, i) => {
+    const t = (knots[i + 1] + knots[i + 2] + knots[i + 3]) / 3;
+    return [-2 + 4 * t, .3, 1.3 * Math.sin(Math.PI * t)] as PointMm;
+  }), threadRadiusMm: .2, body: { centerMm: [0, 0, -100], radiusMm: 1 }, supports,
+  options: { maxIterations: 8000, maxOuterIterations: 60, feasibilityToleranceMm: 1e-4, stationarityTolerance: 2e-6, complementarityToleranceMm: 5e-7 } };
+}
+/** Solve, then restart from the result until a restart no longer moves it (as the Simple 8 ladder does). */
+function settledSolve(input: SpatialContactInput) {
+  let result = solveSpatialContact(input);
+  for (let k = 0; k < 4 && result.status === "converged"; k++) {
+    const next = solveSpatialContact({ ...input, controlPointsMm: result.controlPointsMm });
+    const move = shapeDifferenceMm(result.curves, next.curves);
+    result = next;
+    if (move <= 1e-6) break;
+  }
+  return result;
 }
 
 describe("spatial contact: bounded spline stationary reference", () => {
@@ -78,10 +110,41 @@ describe("spatial contact: bounded spline stationary reference", () => {
     pointNear(closestSpatialSupport([5, 0, 7.3], translated).pointMm, [3 + Math.SQRT1_2, -2 + Math.SQRT1_2, 7]);
   });
 
+  it("finds the nearest point of a curve support exactly, also near a centre of curvature", () => {
+    // Two contiguous pieces of a unit-circle quarter (centre at the origin), a
+    // detached S-shaped piece, and query points everywhere, including next to
+    // the centre, where several local minima compete.
+    const k = 4 / 3 * Math.tan(Math.PI / 16);
+    const arc = (a: number, b: number): Cubic => [[Math.cos(a), Math.sin(a), 0], [Math.cos(a) - k * Math.sin(a), Math.sin(a) + k * Math.cos(a), 0],
+      [Math.cos(b) + k * Math.sin(b), Math.sin(b) - k * Math.cos(b), 0], [Math.cos(b), Math.sin(b), 0]];
+    const pieces: Cubic[] = [arc(0, Math.PI / 4), arc(Math.PI / 4, Math.PI / 2), [[2, -1, .5], [3, 1, -.5], [1, 1, 1], [2.5, 2, 0]]];
+    const support: SpatialSupport = { id: "curve", kind: "curve", piecesMm: pieces, radiusMm: .2 };
+    const dense = pieces.flatMap(c => Array.from({ length: 20001 }, (_, i) => evaluateCurve({ kind: "bezier", controls: c }, i / 20000)));
+    let seed = 7;
+    const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const points: PointMm[] = [[0, 0, 0], [.02, .01, 0], [.01, .02, .3], [1.9, .6, .2], [5, 5, 5]];
+    for (let i = 0; i < 60; i++) points.push([4 * random() - 1, 4 * random() - 1.5, 2 * random() - 1]);
+    for (const p of points) {
+      const closest = closestSpatialSupport(p, support);
+      const sampled = Math.min(...dense.map(q => Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2])));
+      assert.ok(closest.distanceMm <= sampled + 1e-12, `${p}: ${closest.distanceMm} > ${sampled}`);
+      // 20000 intervals of a piece up to 3.6 mm long miss the minimum by less than 1e-7.
+      near(closest.distanceMm, sampled, 1e-7);
+      near(Math.hypot(...p.map((v, axis) => v - closest.pointMm[axis])), closest.distanceMm, 1e-12);
+      // parameter = (piece + t) / pieces; a piece end shares its value with the next piece's start.
+      const u = closest.parameter * pieces.length, i = Math.min(pieces.length - 1, Math.floor(u));
+      const at = (j: number, t: number) => j >= 0 && Math.hypot(...evaluateCurve({ kind: "bezier", controls: pieces[j] }, t).map((v, axis) => v - closest.pointMm[axis])) < 1e-12;
+      assert.ok(at(i, u - i) || at(i - 1, 1), `${p}: ${closest.parameter}`);
+    }
+    // At the centre every arc point is at distance 1 (up to the cubic's radial error); the first piece's start wins ties.
+    near(closestSpatialSupport([0, 0, 0], support).distanceMm, 1, 3e-5);
+  });
+
   it("matches finite differences of the obstacle distance gradient at interior and cap contacts", () => {
     const supports: SpatialSupport[] = [
       { id: "arc", kind: "arc", centerMm: [0, 0, 0], fromMm: [1, 0, 0], toMm: [0, 1, 0], radiusMm: .2 },
       { id: "line", kind: "segment", fromMm: [0, 0, -1], toMm: [0, 0, 1], radiusMm: .2 },
+      { id: "curve", kind: "curve", piecesMm: [[[1, 0, 0], [1, 1, .5], [0, 1, -.5], [-.3, 1.2, 0]]], radiusMm: .2 },
     ];
     for (const support of supports) for (const point of [[2, 2, .3], [-1, 1, 2]] as PointMm[]) {
       const closest = closestSpatialSupport(point, support), h = 1e-6;
@@ -92,6 +155,33 @@ describe("spatial contact: bounded spline stationary reference", () => {
         near(derivative, closest.normal[k], 2e-8);
       }
     }
+  });
+
+  it("treats a curve support as one smooth obstacle, whatever its piece count, unlike a capsule cover", () => {
+    const curve = (count: number) => settledSolve(archSeed([{ id: "arch", kind: "curve", piecesMm: archPieces(count), radiusMm: .2 }]));
+    const one = curve(1), two = curve(2), eight = curve(8);
+    for (const r of [one, two, eight]) {
+      assert.equal(r.status, "converged", JSON.stringify(r.diagnostics));
+      assert.ok(r.reactions.some(x => x.supportId === "arch"));
+      assert.ok(r.metrics.maxPenetrationMm <= 1e-4);
+    }
+    // The same polynomial split into more pieces is the same obstacle.
+    assert.ok(shapeDifferenceMm(one.curves, two.curves) < 1e-9 && shapeDifferenceMm(one.curves, eight.curves) < 1e-9);
+    near(one.lengthMm, eight.lengthMm, 1e-9);
+    // A chord cover of the same arch is a polygon on a nearly neutral crest: its
+    // tolerance moves the crossing far more than it moves the length.
+    const chords = (tolerance: number): SpatialSupport[] => {
+      const points = sampleCurve({ kind: "bezier", controls: ARCH }, tolerance / 4).points;
+      const step = Math.max(1, Math.floor(Math.sqrt(4 * tolerance / 1.6) / (Math.hypot(...points[1].map((v, i) => v - points[0][i])) || 1)));
+      const out: SpatialSupport[] = [];
+      for (let i = 0; i < points.length - 1; i += step)
+        out.push({ id: `c${i}`, kind: "segment", fromMm: points[i], toMm: points[Math.min(points.length - 1, i + step)], radiusMm: .2 + tolerance });
+      return out;
+    };
+    const cover = settledSolve(archSeed(chords(2e-4)));
+    assert.equal(cover.status, "converged");
+    assert.ok(Math.abs(cover.lengthMm - one.lengthMm) < 5e-4);
+    assert.ok(shapeDifferenceMm(cover.curves, one.curves) > 1e-3, String(shapeDifferenceMm(cover.curves, one.curves)));
   });
 
   it("removes a free bow with fixed ports and oriented tangents but free positive handle lengths", () => {
@@ -307,5 +397,9 @@ describe("spatial contact: bounded spline stationary reference", () => {
     }
     const antipodal: SpatialSupport = { id: "ambiguous", kind: "arc", centerMm: [0, 0, 0], fromMm: [1, 0, 0], toMm: [-1, 0, 0], radiusMm: .1 };
     assert.equal(solveSpatialContact({ ...straight, supports: [antipodal] }).diagnostics[0].code, "invalid-support");
+    const piece: [PointMm, PointMm, PointMm, PointMm] = [[0, 0, 1], [0, 1, 1], [0, 2, 1], [0, 3, 1]];
+    for (const piecesMm of [[], [[...piece.slice(0, 3)]], [[piece[0], piece[1], piece[2], [0, NaN, 1]]], Array(4097).fill(piece)])
+      assert.equal(solveSpatialContact({ ...straight, supports: [{ id: "bad-curve", kind: "curve", piecesMm: piecesMm as never, radiusMm: .2 }] })
+        .diagnostics[0].code, "invalid-support");
   });
 });

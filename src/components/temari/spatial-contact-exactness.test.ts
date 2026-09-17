@@ -104,6 +104,27 @@ describe("spatial contact: exact shortcuts against the dense reference evaluatio
     assert.ok(touched.has("post-1") && touched.has("post1") && [...touched].some(id => id.startsWith("arc-")), JSON.stringify([...touched]));
   });
 
+  it("matches with a curve support, where the reference visits every piece", () => {
+    // A lifted thread pulled over a smooth arched earlier thread of 16 pieces and a finite post.
+    const lerp = (a: PointMm, b: PointMm, t: number): PointMm => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    const arch = (a: number, b: number): [PointMm, PointMm, PointMm, PointMm] => {
+      const at = (t: number): PointMm => [.1 * Math.sin(3 * t), -1.5 + 3 * t, .35 + 1.8 * t * (1 - t)];
+      const d = (t: number): PointMm => [.3 * Math.cos(3 * t), 3, 1.8 - 3.6 * t];
+      const h = (b - a) / 3;
+      return [at(a), lerp(at(a), [at(a)[0] + d(a)[0], at(a)[1] + d(a)[1], at(a)[2] + d(a)[2]], h), lerp(at(b), [at(b)[0] - d(b)[0], at(b)[1] - d(b)[1], at(b)[2] - d(b)[2]], h), at(b)];
+    };
+    const piecesMm = Array.from({ length: 16 }, (_, i) => arch(i / 16, (i + 1) / 16));
+    const count = 24, h = 1 / (3 * (count - 3));
+    const controlPointsMm = planar(count, 1, t => [-2 + 4 * t, .3, 1.3 * Math.sin(Math.PI * t)]);
+    controlPointsMm[1] = [-2 + 4 * h, .3, 1.3 * Math.PI * h]; controlPointsMm[count - 2] = [2 - 4 * h, .3, 1.3 * Math.PI * h];
+    const input: SpatialContactInput = { controlPointsMm, threadRadiusMm: .2, body: { centerMm: [0, 0, -100], radiusMm: 1 },
+      supports: [{ id: "arch", kind: "curve", piecesMm, radiusMm: .2 },
+        { id: "post", kind: "segment", fromMm: [1.2, -1, -1], toMm: [1.2, 1, -1], radiusMm: .2 }],
+      options: { maxIterations: 8000, maxOuterIterations: 60, feasibilityToleranceMm: 1e-4, stationarityTolerance: 2e-6, complementarityToleranceMm: 5e-7 } };
+    const result = assertMatchesReference("arch", input, "converged");
+    assert.ok(result.reactions.some(r => r.supportId === "arch"));
+  });
+
   it("matches on frozen Simple 8 kiku window solves", () => {
     // Round stage, factor 1: 12 supports with a short arc, and 80 supports with many segments.
     const inputs = s8Inputs as unknown as { name: string; input: SpatialContactInput }[];

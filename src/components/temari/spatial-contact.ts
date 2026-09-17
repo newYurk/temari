@@ -3,11 +3,19 @@ import { boundCurvatureTimesRadius } from "./curvature-bound";
 import type { PointMm, ThreadCurve } from "./thread-path";
 
 export type SpatialPointMm = PointMm;
+export type SpatialCubicMm = readonly [SpatialPointMm, SpatialPointMm, SpatialPointMm, SpatialPointMm];
 export type SpatialSupport = {
   id: string; kind: "arc"; centerMm: SpatialPointMm;
   fromMm: SpatialPointMm; toMm: SpatialPointMm; radiusMm: number;
 } | {
   id: string; kind: "segment"; fromMm: SpatialPointMm; toMm: SpatialPointMm; radiusMm: number;
+} | {
+  /**
+   * Centre line of earlier thread given by its own cubic Bezier pieces (they
+   * need not be contiguous), inflated by radiusMm. The distance is exact, so a
+   * smooth earlier thread stays smooth: no chord cover, no cover tolerance.
+   */
+  id: string; kind: "curve"; piecesMm: readonly SpatialCubicMm[]; radiusMm: number;
 };
 export type SpatialContactOptions = {
   feasibilityToleranceMm?: number;
@@ -262,7 +270,167 @@ function arcFrame(support: Extract<SpatialSupport, { kind: "arc" }>): ArcFrame {
   return { radius, e1, e2, angle, ends: [arcPoint(support.centerMm, e1, e2, radius, 0), arcPoint(support.centerMm, e1, e2, radius, angle)] };
 }
 
+/** Per-support data computed once per solve: an arc frame or a curve tree. */
+type Prepared = ArcFrame | CurveTree;
 const unitOrZero = (delta: PointMm, distance: number): PointMm => distance ? mul(delta, 1 / distance) : [0, 0, 0];
+
+type Cubic = SpatialCubicMm;
+const cubicPoint = (c: Cubic, t: number): PointMm => {
+  const s = 1 - t, a = s * s * s, b = 3 * s * s * t, d = 3 * s * t * t, e = t * t * t;
+  return [a * c[0][0] + b * c[1][0] + d * c[2][0] + e * c[3][0],
+    a * c[0][1] + b * c[1][1] + d * c[2][1] + e * c[3][1],
+    a * c[0][2] + b * c[1][2] + d * c[2][2] + e * c[3][2]];
+};
+/** C(3,i) C(2,j) / C(5,i+j): Bernstein product of a cubic and a quadratic. */
+const PRODUCT = [[1, .4, .1], [.6, .6, .3], [.3, .6, .6], [.1, .4, 1]];
+const CUBIC_DEPTH = 40;
+/** Work space of closestOnCubic (never re-entered): coefficient blocks and the interval stack. */
+const cubicPool = new Float64Array(6 * (CUBIC_DEPTH + 2)), cubicStack = new Float64Array(2 * (CUBIC_DEPTH + 2));
+/** Result of the last closestOnCubic call. */
+let cubicT = 0, cubicDistance = 0;
+
+/**
+ * Nearest point of one cubic Bezier piece; sets cubicT and cubicDistance. The
+ * candidates are both ends and every zero of g(t) = (B(t) - p) . B'(t), the
+ * derivative of |B - p|^2 / 2 (degree 5). Zeros are isolated by de Casteljau
+ * subdivision of g's Bernstein coefficients: no sign change (zero counts as
+ * positive) means no zero, one change means exactly one, found by bracketed
+ * bisection. Intervals are visited left to right, and the first nearest
+ * candidate in increasing t wins.
+ */
+function closestOnCubic(point: PointMm, c: Cubic) {
+  const px = point[0], py = point[1], pz = point[2];
+  const x0 = c[0][0], y0 = c[0][1], z0 = c[0][2], x1 = c[1][0], y1 = c[1][1], z1 = c[1][2];
+  const x2 = c[2][0], y2 = c[2][1], z2 = c[2][2], x3 = c[3][0], y3 = c[3][1], z3 = c[3][2];
+  const ax = x0 - px, ay = y0 - py, az = z0 - pz, bx = x1 - px, by = y1 - py, bz = z1 - pz;
+  const cx = x2 - px, cy = y2 - py, cz = z2 - pz, ex = x3 - px, ey = y3 - py, ez = z3 - pz;
+  const ux = 3 * (x1 - x0), uy = 3 * (y1 - y0), uz = 3 * (z1 - z0), vx = 3 * (x2 - x1), vy = 3 * (y2 - y1), vz = 3 * (z2 - z1);
+  const wx = 3 * (x3 - x2), wy = 3 * (y3 - y2), wz = 3 * (z3 - z2);
+  // Coefficient k sums PRODUCT[i][j] (q_i . d_j) over i + j = k, in increasing i (as a dense double loop would).
+  const p00 = ax * ux + ay * uy + az * uz, p01 = ax * vx + ay * vy + az * vz, p02 = ax * wx + ay * wy + az * wz;
+  const p10 = bx * ux + by * uy + bz * uz, p11 = bx * vx + by * vy + bz * vz, p12 = bx * wx + by * wy + bz * wz;
+  const p20 = cx * ux + cy * uy + cz * uz, p21 = cx * vx + cy * vy + cz * vz, p22 = cx * wx + cy * wy + cz * wz;
+  const p30 = ex * ux + ey * uy + ez * uz, p31 = ex * vx + ey * vy + ez * vz, p32 = ex * wx + ey * wy + ez * wz;
+  cubicPool[0] = 0 + PRODUCT[0][0] * p00;
+  cubicPool[1] = 0 + PRODUCT[0][1] * p01 + PRODUCT[1][0] * p10;
+  cubicPool[2] = 0 + PRODUCT[0][2] * p02 + PRODUCT[1][1] * p11 + PRODUCT[2][0] * p20;
+  cubicPool[3] = 0 + PRODUCT[1][2] * p12 + PRODUCT[2][1] * p21 + PRODUCT[3][0] * p30;
+  cubicPool[4] = 0 + PRODUCT[2][2] * p22 + PRODUCT[3][1] * p31;
+  cubicPool[5] = 0 + PRODUCT[3][2] * p32;
+  cubicT = 0; cubicDistance = Math.hypot(ax, ay, az);
+  const distanceAt = (t: number) => {
+    const s = 1 - t, a = s * s * s, b = 3 * s * s * t, d = 3 * s * t * t, e = t * t * t;
+    return Math.hypot(a * x0 + b * x1 + d * x2 + e * x3 - px, a * y0 + b * y1 + d * y2 + e * y3 - py, a * z0 + b * z1 + d * z2 + e * z3 - pz);
+  };
+  const g = (t: number) => {
+    const s = 1 - t, a = s * s * s, b = 3 * s * s * t, d = 3 * s * t * t, e = t * t * t, u = 3 * s * s, v = 6 * s * t, w = 3 * t * t;
+    return (a * x0 + b * x1 + d * x2 + e * x3 - px) * (u * (x1 - x0) + v * (x2 - x1) + w * (x3 - x2))
+      + (a * y0 + b * y1 + d * y2 + e * y3 - py) * (u * (y1 - y0) + v * (y2 - y1) + w * (y3 - y2))
+      + (a * z0 + b * z1 + d * z2 + e * z3 - pz) * (u * (z1 - z0) + v * (z2 - z1) + w * (z3 - z2));
+  };
+  const consider = (t: number) => { const distance = distanceAt(t); if (distance < cubicDistance) { cubicT = t; cubicDistance = distance; } };
+  // Stack entry n: interval cubicStack[2n..2n+1], coefficients cubicPool[6n..6n+5], depth = n's level.
+  const depths: number[] = [0];
+  cubicStack[0] = 0; cubicStack[1] = 1;
+  while (depths.length) {
+    const n = depths.length - 1, depth = depths.pop()!, base = 6 * n, a = cubicStack[2 * n], b = cubicStack[2 * n + 1];
+    let changes = 0;
+    for (let i = 1; i < 6; i++) if ((cubicPool[base + i - 1] < 0) !== (cubicPool[base + i] < 0)) changes++;
+    if (!changes) continue;
+    if (changes === 1) {
+      let lo = a, hi = b;
+      const negativeAtLo = cubicPool[base] < 0;
+      for (let k = 0; k < 60 && hi - lo > 1e-15; k++) {
+        const m = (lo + hi) / 2;
+        if ((g(m) < 0) === negativeAtLo) lo = m; else hi = m;
+      }
+      consider((lo + hi) / 2);
+      continue;
+    }
+    if (depth >= CUBIC_DEPTH) { consider((a + b) / 2); continue; }
+    // Split in place: entry n becomes the right half, entry n+1 the left half (visited first).
+    const left = base + 6;
+    for (let level = 0; level < 6; level++) {
+      cubicPool[left + level] = cubicPool[base];
+      for (let i = 0; i < 5 - level; i++) cubicPool[base + i] = (cubicPool[base + i] + cubicPool[base + i + 1]) / 2;
+    }
+    // cubicPool[base..base+5] now holds the right half's coefficients.
+    const m = (a + b) / 2;
+    cubicStack[2 * n] = m; cubicStack[2 * n + 1] = b; depths.push(depth + 1);
+    cubicStack[2 * n + 2] = a; cubicStack[2 * n + 3] = m; depths.push(depth + 1);
+  }
+  const end = Math.hypot(ex, ey, ez);
+  if (end < cubicDistance) { cubicT = 1; cubicDistance = end; }
+}
+
+/** Bounding-box tree over the pieces of a curve support (control boxes contain the pieces). */
+type CurveTree = { lo: PointMm; hi: PointMm; piece: number; left: CurveTree | null; right: CurveTree | null;
+  /** Leaves: the chord and the largest distance of the inner controls from it (the piece lies within). */
+  from?: PointMm; to?: PointMm; bulge?: number };
+function curveTree(pieces: readonly Cubic[]): CurveTree {
+  const box = (indices: number[]) => {
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const i of indices) for (const p of pieces[i]) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], p[k]); hi[k] = Math.max(hi[k], p[k]); }
+    return { lo: lo as unknown as PointMm, hi: hi as unknown as PointMm };
+  };
+  const build = (indices: number[]): CurveTree => {
+    const { lo, hi } = box(indices);
+    if (indices.length === 1) {
+      const c = pieces[indices[0]], chord = (p: PointMm) => segmentDistance(p, c[0], c[3]);
+      return { lo, hi, piece: indices[0], left: null, right: null, from: c[0], to: c[3], bulge: Math.max(chord(c[1]), chord(c[2])) };
+    }
+    const extent = [0, 1, 2].map(k => hi[k] - lo[k]), axis = extent.indexOf(Math.max(...extent));
+    const centre = (i: number) => (pieces[i][0][axis] + pieces[i][3][axis]) / 2;
+    const sorted = [...indices].sort((a, b) => centre(a) - centre(b) || a - b), half = sorted.length >> 1;
+    return { lo, hi, piece: -1, left: build(sorted.slice(0, half)), right: build(sorted.slice(half)) };
+  };
+  return build(pieces.map((_, i) => i));
+}
+const segmentDistance = (p: PointMm, a: PointMm, b: PointMm) => {
+  const v0 = b[0] - a[0], v1 = b[1] - a[1], v2 = b[2] - a[2], vv = v0 * v0 + v1 * v1 + v2 * v2;
+  const t = vv ? clamp(((p[0] - a[0]) * v0 + (p[1] - a[1]) * v1 + (p[2] - a[2]) * v2) / vv) : 0;
+  return Math.hypot(p[0] - (a[0] + v0 * t), p[1] - (a[1] + v1 * t), p[2] - (a[2] + v2 * t));
+};
+const boxDistance = (p: PointMm, lo: PointMm, hi: PointMm) =>
+  Math.hypot(Math.max(0, lo[0] - p[0], p[0] - hi[0]), Math.max(0, lo[1] - p[1], p[1] - hi[1]), Math.max(0, lo[2] - p[2], p[2] - hi[2]));
+
+const treeStack: CurveTree[] = [];
+/**
+ * Nearest point of a curve support: the least (distance, parameter) over its
+ * pieces, parameter = (piece + t) / pieces (a piece end and the next piece's
+ * start share a value). Without a tree every piece is visited (reference);
+ * the tree only skips pieces whose box, or chord distance less the bulge of
+ * the control polygon, is strictly farther than the best distance so far. The
+ * piece lies within that distance of its chord (convex hull), so a skipped
+ * piece is strictly farther, up to rounding in exact ties at a shared end
+ * point, where both pieces give the same point and distance.
+ */
+function closestOnCurve(point: PointMm, support: Extract<SpatialSupport, { kind: "curve" }>, tree?: CurveTree) {
+  const pieces = support.piecesMm, count = pieces.length;
+  let distance = Infinity, parameter = Infinity, piece = 0, t = 0;
+  const consider = (index: number) => {
+    closestOnCubic(point, pieces[index]);
+    const at = (index + cubicT) / count;
+    if (cubicDistance < distance || (cubicDistance === distance && at < parameter)) { distance = cubicDistance; parameter = at; piece = index; t = cubicT; }
+  };
+  if (!tree) for (let i = 0; i < count; i++) consider(i);
+  else {
+    treeStack.length = 0; treeStack.push(tree);
+    while (treeStack.length) {
+      const node = treeStack.pop()!;
+      if (boxDistance(point, node.lo, node.hi) > distance) continue;
+      if (node.piece >= 0) {
+        if (segmentDistance(point, node.from!, node.to!) - node.bulge! <= distance) consider(node.piece);
+        continue;
+      }
+      const left = node.left!, right = node.right!;
+      if (boxDistance(point, left.lo, left.hi) <= boxDistance(point, right.lo, right.hi)) treeStack.push(right, left);
+      else treeStack.push(left, right);
+    }
+  }
+  const c = pieces[piece];
+  return { q: t === 0 ? c[0] : t === 1 ? c[3] : cubicPoint(c, t), distance, parameter };
+}
 
 /** Exact distance to the FINITE support centreline, including its end caps. */
 export function closestSpatialSupport(point: PointMm, support: SpatialSupport): { pointMm: PointMm; distanceMm: number; normal: PointMm; parameter: number } {
@@ -275,15 +443,18 @@ export function closestSpatialSupport(point: PointMm, support: SpatialSupport): 
  * computed in advance (same arithmetic). With a shared frame, pointMm may be the
  * frame's own end point.
  */
-function closestOnSupport(point: PointMm, support: SpatialSupport, frame?: ArcFrame): { pointMm: PointMm; distanceMm: number; delta: PointMm; parameter: number } {
+function closestOnSupport(point: PointMm, support: SpatialSupport, prepared?: Prepared): { pointMm: PointMm; distanceMm: number; delta: PointMm; parameter: number } {
   let q: PointMm, parameter: number, delta: PointMm, distanceMm: number;
-  if (support.kind === "segment") {
+  if (support.kind === "curve") {
+    const best = closestOnCurve(point, support, prepared as CurveTree | undefined);
+    q = best.q; parameter = best.parameter; delta = sub(point, q); distanceMm = norm(delta);
+  } else if (support.kind === "segment") {
     const v = sub(support.toMm, support.fromMm), vv = dot3(v, v);
     parameter = vv ? clamp(dot3(sub(point, support.fromMm), v) / vv) : 0;
     q = add(support.fromMm, mul(v, parameter));
     delta = sub(point, q); distanceMm = norm(delta);
   } else {
-    const { radius, e1, e2, angle, ends } = frame ?? arcFrame(support);
+    const { radius, e1, e2, angle, ends } = (prepared as ArcFrame | undefined) ?? arcFrame(support);
     const p = sub(point, support.centerMm), phi = Math.atan2(dot3(p, e2), dot3(p, e1));
     const candidates = phi >= 0 && phi <= angle ? [ends[1], arcPoint(support.centerMm, e1, e2, radius, phi)] : [ends[1]];
     // Start, end, interior: the first nearest candidate wins.
@@ -298,15 +469,17 @@ function closestOnSupport(point: PointMm, support: SpatialSupport, frame?: ArcFr
   return { pointMm: q, distanceMm, delta, parameter };
 }
 
-/** closestOnSupport(point, support, frame).distanceMm with the same arithmetic, without allocating. */
-function supportDistance(point: PointMm, support: SpatialSupport, frame?: ArcFrame): number {
+/** closestOnSupport(point, support, prepared).distanceMm with the same arithmetic, without allocating (except for curves). */
+function supportDistance(point: PointMm, support: SpatialSupport, prepared?: Prepared): number {
+  // Equal to norm(point - q) of closestOnSupport: the same sums, negated components.
+  if (support.kind === "curve") return closestOnCurve(point, support, prepared as CurveTree | undefined).distance;
   if (support.kind === "segment") {
     const from = support.fromMm, to = support.toMm;
     const v0 = to[0] - from[0], v1 = to[1] - from[1], v2 = to[2] - from[2], vv = v0 * v0 + v1 * v1 + v2 * v2;
     const t = vv ? clamp(((point[0] - from[0]) * v0 + (point[1] - from[1]) * v1 + (point[2] - from[2]) * v2) / vv) : 0;
     return Math.hypot(point[0] - (from[0] + v0 * t), point[1] - (from[1] + v1 * t), point[2] - (from[2] + v2 * t));
   }
-  const { radius, e1, e2, angle, ends } = frame ?? arcFrame(support), c = support.centerMm;
+  const { radius, e1, e2, angle, ends } = (prepared as ArcFrame | undefined) ?? arcFrame(support), c = support.centerMm;
   const p0 = point[0] - c[0], p1 = point[1] - c[1], p2 = point[2] - c[2];
   const phi = Math.atan2(p0 * e2[0] + p1 * e2[1] + p2 * e2[2], p0 * e1[0] + p1 * e1[1] + p2 * e1[2]);
   const start = ends[0].q, end = ends[1].q;
@@ -385,8 +558,11 @@ export function solveSpatialContact(input: SpatialContactInput): SpatialContactR
     || norm(sub(input.controlPointsMm.at(-1)!, input.controlPointsMm.at(-2)!)) === 0)
     return stop("invalid-port", "Fixed end handles must define nonzero endpoint tangents.", true);
   for (const s of input.supports) {
-    if (typeof s.id !== "string" || !s.id || s.id === "body" || !finite(s.fromMm) || !finite(s.toMm) || !(s.radiusMm > 0) || !Number.isFinite(s.radiusMm)
-      || (s.kind !== "arc" && s.kind !== "segment")) return stop("invalid-support", "Supports require finite named geometry and positive radius.", true);
+    const geometry = s.kind === "curve"
+      ? Array.isArray(s.piecesMm) && s.piecesMm.length > 0 && s.piecesMm.length <= 4096 && s.piecesMm.every(c => Array.isArray(c) && c.length === 4 && c.every(finite))
+      : (s.kind === "arc" || s.kind === "segment") && finite(s.fromMm) && finite(s.toMm);
+    if (typeof s.id !== "string" || !s.id || s.id === "body" || !geometry || !(s.radiusMm > 0) || !Number.isFinite(s.radiusMm))
+      return stop("invalid-support", "Supports require finite named geometry (at most 4096 curve pieces) and positive radius.", true);
     if (s.kind === "arc") {
       if (!finite(s.centerMm)) return stop("invalid-support", "A finite circular arc requires its centre.", true);
       const a = sub(s.fromMm, s.centerMm), b = sub(s.toMm, s.centerMm), ra = norm(a), rb = norm(b);
@@ -403,7 +579,8 @@ export function solveSpatialContact(input: SpatialContactInput): SpatialContactR
   const body = { centerMm: scalePoint(input.body.centerMm), radiusMm: input.body.radiusMm / unit };
   const supports: SpatialSupport[] = input.supports.map(s => s.kind === "arc"
     ? { ...s, centerMm: scalePoint(s.centerMm), fromMm: scalePoint(s.fromMm), toMm: scalePoint(s.toMm), radiusMm: s.radiusMm / unit }
-    : { ...s, fromMm: scalePoint(s.fromMm), toMm: scalePoint(s.toMm), radiusMm: s.radiusMm / unit });
+    : s.kind === "segment" ? { ...s, fromMm: scalePoint(s.fromMm), toMm: scalePoint(s.toMm), radiusMm: s.radiusMm / unit }
+    : { ...s, piecesMm: s.piecesMm.map(c => c.map(scalePoint) as unknown as Cubic), radiusMm: s.radiusMm / unit });
   const startHandle = sub(controls[1], controls[0]), endHandle = sub(controls[m - 1], controls[m - 2]);
   const tangentStart = mul(startHandle, 1 / norm(startHandle)), tangentEnd = mul(endHandle, 1 / norm(endHandle));
   // Variables: interior controls, then the two positive handle lengths.
@@ -538,13 +715,14 @@ export function solveSpatialContact(input: SpatialContactInput): SpatialContactR
   if (!(referenceLength > 0)) return stop("invalid-input", "The seed spline has no length.", true);
 
   const supportCount = supports.length, block = supportCount + 3;
-  const frames = supports.map(s => s.kind === "arc" && !reference ? arcFrame(s) : undefined);
+  const frames: (Prepared | undefined)[] = supports.map(s => reference ? undefined : s.kind === "arc" ? arcFrame(s) : s.kind === "curve" ? curveTree(s.piecesMm) : undefined);
   /**
    * Far-support skip (never in the reference). A record keeps the exact support
    * slacks of one parameter at ref: every support outside near had slack
    * >= farMin > gapWindow + skin and a zero multiplier. The computed distance is
    * 1-Lipschitz up to rounding and, for arcs, up to the frame's defect from an
-   * orthonormal one (arcs with a defect above 1e-12 always stay near); at the
+   * orthonormal one (arcs with a defect above 1e-12 always stay near); a curve
+   * distance is the least exact piece distance (bisected zeros); at the
    * coordinate scale used in threshold that error is far below
    * threshold - gapWindow. So while farMin - |q - ref| > threshold at the new
    * point q, every far slack exceeds gapWindow: the far probes are not evaluated
@@ -557,10 +735,11 @@ export function solveSpatialContact(input: SpatialContactInput): SpatialContactR
    * records whose far probes became loaded are dropped.
    */
   const records: (FarRecord | null)[] = [], gapWindow = o.feasibilityToleranceMm / unit, skin = 2;
-  const skippable = frames.map(f => !reference && (!f
+  const skippable = frames.map(f => !reference && (!f || !("e1" in f)
     || Math.abs(norm(f.e1) - 1) + Math.abs(norm(f.e2) - 1) + 2 * Math.abs(dot3(f.e1, f.e2)) <= 1e-12));
-  const supportScale = Math.max(0, ...supports.map(s => norm(s.fromMm) + norm(s.toMm) + 1 + s.radiusMm
-    + (s.kind === "arc" ? norm(s.centerMm) + norm(sub(s.fromMm, s.centerMm)) : 0)));
+  const supportScale = Math.max(0, ...supports.map(s => s.kind === "curve"
+    ? 2 * Math.max(...s.piecesMm.flatMap(c => c.map(norm))) + 1 + s.radiusMm
+    : norm(s.fromMm) + norm(s.toMm) + 1 + s.radiusMm + (s.kind === "arc" ? norm(s.centerMm) + norm(sub(s.fromMm, s.centerMm)) : 0)));
   /** Whether a support probe of the parameter outside near has a nonzero weight. */
   const farLoaded = (index: number, near: readonly number[], weight: (j: number) => number) => {
     for (let k = 0, n = 0; k < supportCount; k++) {
@@ -752,18 +931,39 @@ export function solveSpatialContact(input: SpatialContactInput): SpatialContactR
     return stop("invalid-port", "A fixed geometric port penetrates an obstacle.", true);
 
   const checkTolerance = o.feasibilityToleranceMm / 32 / unit;
-  const targets = supports.map(s => s.kind === "segment"
-    ? { points: [s.fromMm, s.toMm], error: 0 }
-    : (() => {
+  /**
+   * Certified polylines of each support: one chain for a segment or an arc, one
+   * chain per piece for a curve (pieces need not be contiguous), with a common
+   * sampling error bound and, for curves, the box of each chain.
+   */
+  type Chain = { points: PointMm[]; lo: PointMm; hi: PointMm };
+  const chainOf = (points: PointMm[]): Chain => {
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const p of points) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], p[k]); hi[k] = Math.max(hi[k], p[k]); }
+    return { points, lo: lo as unknown as PointMm, hi: hi as unknown as PointMm };
+  };
+  const targets = supports.map(s => {
+    if (s.kind === "segment") return { chains: [chainOf([s.fromMm, s.toMm])], error: 0 };
+    if (s.kind === "arc") {
       const sample = sampleCurve({ kind: "arc", from: sub(s.fromMm, s.centerMm), to: sub(s.toMm, s.centerMm) }, checkTolerance);
-      return { points: sample.points.map(p => add(p, s.centerMm)), error: sample.errorBoundMm };
-    })());
+      return { chains: [chainOf(sample.points.map(p => add(p, s.centerMm)))], error: sample.errorBoundMm };
+    }
+    const samples = s.piecesMm.map(c => sampleCurve({ kind: "bezier", controls: c }, checkTolerance));
+    return { chains: samples.map(x => chainOf(x.points)), error: Math.max(...samples.map(x => x.errorBoundMm)) };
+  });
   function continuousCheck(c: PointMm[]) {
     let lower = Infinity;
     const witnesses: number[] = [];
     const curves = splineToBezier(c);
     curves.forEach((curve, span) => {
-      const sample = sampleCurve(curve, checkTolerance);
+      const sample = sampleCurve(curve, checkTolerance), piece = chainOf(sample.points);
+      // Chains of curve supports whose box cannot matter for this whole piece. The
+      // per-segment test below would skip each of their segments (their box gaps are
+      // no smaller and lower only decreases), so the result is unchanged.
+      const skip = targets.map((target, k) => supports[k].kind !== "curve" ? null : target.chains.map(chain => {
+        const bound = boxGap(piece.lo, piece.hi, chain.lo, chain.hi) - (sample.errorBoundMm + target.error + supports[k].radiusMm + 1);
+        return bound > lower && bound * unit >= -o.feasibilityToleranceMm * .75;
+      }));
       for (let j = 1; j < sample.points.length; j++) {
         const a = sample.points[j - 1], b = sample.points[j];
         const check = (value: number, t: number) => {
@@ -775,14 +975,17 @@ export function solveSpatialContact(input: SpatialContactInput): SpatialContactR
         check(bodyDistance.distanceMm - sample.errorBoundMm - body.radiusMm - 1, bodyDistance.s);
         targets.forEach((target, k) => {
           const offset = sample.errorBoundMm + target.error + supports[k].radiusMm + 1;
-          for (let v = 1; v < target.points.length; v++) {
-            // A pair whose box distance already exceeds the running minimum and
-            // cannot be a violation witness does not change either result.
-            const bound = boxGap(a, b, target.points[v - 1], target.points[v]) - offset;
-            if (bound > lower && bound * unit >= -o.feasibilityToleranceMm * .75) continue;
-            const closest = closestSegmentApproach(a, b, target.points[v - 1], target.points[v]);
-            check(closest.distanceMm - offset, closest.s);
-          }
+          target.chains.forEach(({ points }, c) => {
+            if (skip[k]?.[c]) return;
+            for (let v = 1; v < points.length; v++) {
+              // A pair whose box distance already exceeds the running minimum and
+              // cannot be a violation witness does not change either result.
+              const bound = boxGap(a, b, points[v - 1], points[v]) - offset;
+              if (bound > lower && bound * unit >= -o.feasibilityToleranceMm * .75) continue;
+              const closest = closestSegmentApproach(a, b, points[v - 1], points[v]);
+              check(closest.distanceMm - offset, closest.s);
+            }
+          });
         });
       }
     });
