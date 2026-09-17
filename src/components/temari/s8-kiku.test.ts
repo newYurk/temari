@@ -84,6 +84,8 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
     assert.deepEqual(plan.windows.map(w => w.id), ['departure-0', ...round.flatMap(t => [`approach-${t}`, `departure-${t}`]), 'closing-0',
       'departure-0-r2', ...round.flatMap(t => [`approach-${t}-r2`, `departure-${t}-r2`]), 'closing-0-r2']);
     assert.deepEqual(plan.windows.map(w => w.row), [...Array(15).fill(0), ...Array(16).fill(1), 2]);
+    // Each window belongs to the round in which it is laid: closing-0 finishes round 1, closing-0-r2 round 2.
+    assert.deepEqual(plan.windows.map(w => w.round), [...Array(16).fill(0), ...Array(16).fill(1)]);
     // The first round is unchanged by the second one.
     const round1 = planS8Kiku({ stage: 'round' });
     round1.windows.forEach((w, i) => assert.deepEqual(plan.windows[i].seed, w.seed));
@@ -144,7 +146,7 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
     // Synthetic levels: identical perfect constructions with chosen window differences.
     const curve = plan.windows[0].seed;
     const level = (factor: number, shift: number): S8KikuLevel => ({
-      factor, samplesPerSpan: 4, coupon: {} as S8KikuLevel['coupon'], diagnostics: [], undeclaredCrossings: [],
+      factor, samplesPerSpan: 4, reusedRounds: 0, coupon: {} as S8KikuLevel['coupon'], diagnostics: [], undeclaredCrossings: [],
       validation: { status: 'passed', diagnostics: [], toleranceMm: .001, lengthMm: { total: 0, surface: 0, piercing: 0, buried: 0 }, maxCurvatureTimesRadius: 0, minSupportGapMm: 1, minSelfGapMm: 1 },
       curvature: { status: 'certified', lower: .5, upper: .5, minSpeedBound: 1, argmax: { curve: 0, t: 0 }, witnesses: [], leaves: 1 },
       hiddenCurvature: plan.hiddenCurvature, lengthMm: 1,
@@ -165,10 +167,38 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
     const good = [0, .04, .07, .08, .0801].map((shift, i) => ({ ...level(S8_KIKU_LADDER[i], shift), factor: S8_KIKU_LADDER[i] })) as S8KikuLevel[];
     const accepted = judgeS8Kiku(canonical, good, good[4]);
     assert.ok(!accepted.diagnostics.some(d => d.includes('stabilised') || d.includes('contract')), accepted.diagnostics.join('\n'));
+    // Only the selected windows are judged for refinement; the levels are still checked whole.
+    const onlyFirst = judgeS8Kiku(canonical, levels as S8KikuLevel[], levels[4] as S8KikuLevel, w => w.id === 'departure-0');
+    assert.deepEqual([...new Set(onlyFirst.refinements.map(r => r.windowId))], ['departure-0']);
+    assert.ok(onlyFirst.diagnostics.every(d => !d.includes('contract') || d.startsWith('departure-0:')), onlyFirst.diagnostics.join('\n'));
+    const none = judgeS8Kiku(canonical, levels as S8KikuLevel[], levels[4] as S8KikuLevel, () => false);
+    assert.equal(none.refinements.length, 0);
+    assert.equal(none.status, 'accepted');
   });
 });
 
 describe('Simple 8 control kiku: solved windows', () => {
+  it('refines only the last round on the finest construction of the earlier one', () => {
+    // Rule 1 for later rounds, at the cheapest level: round 1 is taken whole from its
+    // own construction; round 2 is solved over it and the complete thread is checked.
+    const first = buildS8KikuLevel(planS8Kiku({ stage: 'round' }), 1);
+    const plan = planS8Kiku({ stage: 'row2' });
+    const level = buildS8KikuLevel(plan, 1, 4, first);
+    assert.equal(level.reusedRounds, 1);
+    for (const w of plan.windows) {
+      const s = level.solves.find(x => x.windowId === w.id)!;
+      if (w.round === 0) assert.equal(s, first.solves.find(x => x.windowId === w.id), `${w.id} is reused as is`);
+      else assert.equal(s.result.status, 'converged', w.id);
+    }
+    assert.equal(level.validation.status, 'passed', JSON.stringify(level.validation.diagnostics.slice(0, 3)));
+    assert.deepEqual(level.undeclaredCrossings, []);
+    assert.ok(level.curvature.status === 'certified' && level.curvature.upper < 1);
+    // The earlier round's spans are the very curves of its construction.
+    const firstSpans = first.coupon.spans.filter(s => s.zone === 'surface').map(s => s.curve);
+    assert.deepEqual(level.coupon.spans.filter(s => s.zone === 'surface').slice(0, firstSpans.length).map(s => s.curve), firstSpans);
+    assert.throws(() => buildS8KikuLevel(plan, 1, 4, { ...first, solves: first.solves.slice(1) }), RangeError);
+  });
+
   it('solves the upper-tip departure covariantly under a quarter turn about the pole', () => {
     // The worst-conditioned window: the departure rides over its own approach
     // right behind the upper tip. Settled solves are fixed points, so the

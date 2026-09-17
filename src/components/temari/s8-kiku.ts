@@ -124,6 +124,8 @@ export type S8Window = {
   tip: number;
   /** Uwagake row of the stitch the window belongs to (a closing window: the row it enters). */
   row: number;
+  /** Round in which the window is laid (the row of the stitch its leg leaves); a closing window finishes its round. */
+  round: number;
   seed: ThreadCurve[];
   seedLengthMm: number;
   minimumSpans: number;
@@ -132,6 +134,8 @@ export type S8KikuLevel = {
   factor: number;
   /** Constraint probes per spline span (4; the conditioning rebuild doubles it). */
   samplesPerSpan: number;
+  /** Windows of rounds below this number were taken from the earlier-round construction. */
+  reusedRounds: number;
   coupon: C8ThreadCoupon;
   /** restarts: warm restarts used; settleMoveMm: the last restart's shape change (NaN if none ran). */
   solves: { windowId: string; controlCount: number; result: SpatialContactResult; obstacles: number; restarts: number; settleMoveMm: number }[];
@@ -165,6 +169,11 @@ export type S8KikuResult = {
   /** Finest level; diagnostic even when not accepted. */
   coupon: C8ThreadCoupon;
   diagnostics: string[];
+  /**
+   * Earlier rounds, each accepted or not by its own ladder. The levels above
+   * refine only the last round and reuse the finest level of these (rule 1).
+   */
+  earlierRounds?: S8KikuResult[];
 };
 
 type V = PointMm;
@@ -367,9 +376,9 @@ export function planS8Kiku(input: S8KikuInput = {}) {
   const windowId = (kind: S8Window['kind'], c: S8Catch) => kind === 'closing'
     ? (c.row === 1 ? `closing-${c.tip}` : `closing-${c.tip}-r${c.row}`)
     : (c.row ? `${kind}-${c.tip}-r${c.row + 1}` : `${kind}-${c.tip}`);
-  const addWindow = (kind: S8Window['kind'], c: S8Catch, seed: ThreadCurve[]) => {
+  const addWindow = (kind: S8Window['kind'], c: S8Catch, round: number, seed: ThreadCurve[]) => {
     const seedLengthMm = curvesLength(seed);
-    const w: S8Window = { id: windowId(kind, c), kind, tip: c.tip, row: c.row, seed, seedLengthMm, minimumSpans: Math.ceil(seedLengthMm / d.minBendRadiusMm) };
+    const w: S8Window = { id: windowId(kind, c), kind, tip: c.tip, row: c.row, round, seed, seedLengthMm, minimumSpans: Math.ceil(seedLengthMm / d.minBendRadiusMm) };
     windows.push(w);
     return w;
   };
@@ -378,7 +387,7 @@ export function planS8Kiku(input: S8KikuInput = {}) {
   type Piece = { kind: 'window'; window: S8Window } | { kind: 'arc'; curve: ThreadCurve };
   const legPieces = legs.map(({ from, to, open, leg }) => {
     const pieces: Piece[] = [], upperFrom = frames[from.tip].role === 'upper', out = windowLength(from.tip);
-    pieces.push({ kind: 'window', window: addWindow('departure', from, raisedSeed(leg, 0, out,
+    pieces.push({ kind: 'window', window: addWindow('departure', from, from.row, raisedSeed(leg, 0, out,
       upperFrom ? d.upperDepartureRiseMm : d.lowerDepartureRiseMm, d.departureFallMm, d.departureLiftMm + rowLift(from.row), S, exitTangent(from))) });
     if (stage === 'stitch' && open) return pieces; // open end of the stitch stage
     const into = windowLength(to.tip);
@@ -390,7 +399,7 @@ export function planS8Kiku(input: S8KikuInput = {}) {
       ? raisedSeed(leg, leg.length - into, leg.length, d.approachRiseMm, d.closingFallMm, d.closingLiftMm + rowLift(to.row - 1), S, undefined, diving(port(to, 1), leg.tangent(leg.length)))
       : raisedSeed(leg, leg.length - into, leg.length, d.approachRiseMm,
         frames[to.tip].role === 'upper' ? d.upperApproachFallMm : d.lowerApproachFallMm, d.approachLiftMm + rowLift(to.row), S, undefined, entryTangent(to));
-    pieces.push({ kind: 'window', window: addWindow(closing ? 'closing' : 'approach', to, seed) });
+    pieces.push({ kind: 'window', window: addWindow(closing ? 'closing' : 'approach', to, from.row, seed) });
     return pieces;
   });
   for (const w of windows) if (Math.ceil(w.minimumSpans * factors.at(-1)!) + 3 > 256)
@@ -447,8 +456,15 @@ export function planS8Kiku(input: S8KikuInput = {}) {
 }
 export type S8KikuPlan = ReturnType<typeof planS8Kiku>;
 
-/** One complete construction at one resolution factor and constraint sampling (probes per span, default the solver's). */
-export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpan = plan.solverOptions?.samplesPerSpan ?? 4): S8KikuLevel {
+/**
+ * One complete construction at one resolution factor and constraint sampling
+ * (probes per span, default the solver's). With `earlier`, windows laid in an
+ * earlier round are not solved again: their solves (curves, metrics) are taken
+ * from that level, the finest construction of the earlier round, and only the
+ * last round is solved at this factor. Everything else - bites, arcs, obstacles,
+ * crossings and the complete-path check - is built as usual.
+ */
+export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpan = plan.solverOptions?.samplesPerSpan ?? 4, earlier?: S8KikuLevel): S8KikuLevel {
   const { d, R, r, legs, legPieces, supports, bite, markOf, hullCorridor, startCurves } = plan;
   const s0 = plan.startTip;
   const markingObstacles: SpatialSupport[] = supports.map(s => ({ id: s.id, kind: 'arc', centerMm: [0, 0, 0],
@@ -479,7 +495,17 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpa
     return id;
   };
   const record = (id: string, curves: ThreadCurve[]) => { if (curves.length) groups.push({ id, curves, startMm: start(curves[0]), endMm: end(curves.at(-1)!) }); };
+  const lastRound = plan.rows - 1;
   const solveWindow = (o: ThreadOperation, w: S8Window) => {
+    if (earlier && w.round < lastRound) {
+      const reused = earlier.solves.find(x => x.windowId === w.id);
+      if (!reused) throw new RangeError(`${w.id}: the earlier-round level has no solve for this window.`);
+      solves.push(reused);
+      if (!reused.result.curves.length) diagnostics.push(`${w.id}: the earlier round has no curve for this window.`);
+      windowSpans.set(w.id, reused.result.curves.map(curve => put(o, 'surface', curve)));
+      record(w.id, reused.result.curves);
+      return;
+    }
     const route = polyline(w.seed), from = start(w.seed[0]);
     const obstacles = [...markingObstacles];
     for (const g of groups) {
@@ -596,14 +622,14 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpa
       undeclaredCrossings.push(`${x.certain ? 'crossing' : 'near-crossing'} ${x.a} / ${x.b}`);
     }
   } catch (error) { undeclaredCrossings = [`projection check unresolved: ${String(error)}`]; }
-  return { factor, samplesPerSpan, coupon, solves, undeclaredCrossings, diagnostics,
+  return { factor, samplesPerSpan, reusedRounds: earlier ? lastRound : 0, coupon, solves, undeclaredCrossings, diagnostics,
     validation: validateThreadCoupon(coupon, d.validationToleranceMm),
     curvature: boundCurvatureTimesRadius(working, r),
     hiddenCurvature: plan.hiddenCurvature, lengthMm: curvesLength(working) };
 }
 
-function compare(plan: S8KikuPlan, a: S8KikuLevel, b: S8KikuLevel): S8KikuRefinement[] {
-  return plan.windows.map(w => {
+function compare(windows: readonly S8Window[], a: S8KikuLevel, b: S8KikuLevel): S8KikuRefinement[] {
+  return windows.map(w => {
     const x = a.solves.find(s => s.windowId === w.id)!, y = b.solves.find(s => s.windowId === w.id)!;
     const valid = x.result.curves.length && y.result.curves.length;
     return { windowId: w.id, from: x.controlCount, to: y.controlCount,
@@ -613,7 +639,12 @@ function compare(plan: S8KikuPlan, a: S8KikuLevel, b: S8KikuLevel): S8KikuRefine
 }
 
 /** Decision rule, fixed independently of any particular result. */
-export function judgeS8Kiku(plan: S8KikuPlan, levels: S8KikuLevel[], perturbed: S8KikuLevel): S8KikuResult {
+/**
+ * Rules 1-5 over the levels. `judged` selects the windows whose refinement and
+ * sampling sensitivity are judged (default: all); every level is still checked
+ * as a complete construction.
+ */
+export function judgeS8Kiku(plan: S8KikuPlan, levels: S8KikuLevel[], perturbed: S8KikuLevel, judged: (w: S8Window) => boolean = () => true): S8KikuResult {
   const { d } = plan, limit = plan.r / d.minBendRadiusMm, diagnostics: string[] = [];
   let rejected = false;
   if (!plan.canonical) diagnostics.push(`Non-canonical ladder ${plan.factors.join('/')} is diagnostic only.`);
@@ -637,10 +668,11 @@ export function judgeS8Kiku(plan: S8KikuPlan, levels: S8KikuLevel[], perturbed: 
     diagnostics.push(`A prescribed hidden span bends tighter than the rope model allows (${plan.hiddenCurvature.upper.toFixed(3)} > ${limit}).`);
     rejected = true;
   }
-  const refinements = levels.slice(1).flatMap((level, i) => compare(plan, levels[i], level));
-  const conditioning = compare(plan, levels.at(-1)!, perturbed);
+  const windows = plan.windows.filter(judged);
+  const refinements = levels.slice(1).flatMap((level, i) => compare(windows, levels[i], level));
+  const conditioning = compare(windows, levels.at(-1)!, perturbed);
   const perWindow = (list: S8KikuRefinement[], id: string) => list.filter(x => x.windowId === id);
-  for (const w of plan.windows) {
+  for (const w of windows) {
     const steps = perWindow(refinements, w.id), last = steps.slice(-S8_KIKU_ASYMPTOTIC_REFINEMENTS);
     for (const [metric, tolerance] of [['lengthDifferenceMm', d.lengthToleranceMm], ['shapeDifferenceMm', d.shapeToleranceMm]] as const) {
       if (last.some(x => !(x[metric] <= tolerance)))
@@ -670,8 +702,25 @@ export function judgeS8Kiku(plan: S8KikuPlan, levels: S8KikuLevel[], perturbed: 
  * twice as many constraint probes.
  */
 export function computeS8Kiku(input: S8KikuInput = {}): S8KikuResult {
-  const plan = planS8Kiku(input);
-  const levels = plan.factors.map(f => buildS8KikuLevel(plan, f));
-  const perturbed = buildS8KikuLevel(plan, plan.factors.at(-1)!, 2 * (plan.solverOptions?.samplesPerSpan ?? 4));
-  return judgeS8Kiku(plan, levels, perturbed);
+  const plan = planS8Kiku(input), probes = plan.solverOptions?.samplesPerSpan ?? 4;
+  if (plan.rows === 1) {
+    const levels = plan.factors.map(f => buildS8KikuLevel(plan, f));
+    return judgeS8Kiku(plan, levels, buildS8KikuLevel(plan, plan.factors.at(-1)!, 2 * probes));
+  }
+  // Rule 1 for later rounds: an earlier round is laid thread, accepted by its own
+  // ladder; the ladder of the last round refines only that round, on the finest
+  // construction of the earlier one. The first round is the 'round' stage exactly.
+  const first = computeS8Kiku({ ...input, stage: 'round' });
+  const base = first.levels.at(-1)!, lastRound = plan.rows - 1;
+  const levels = plan.factors.map(f => buildS8KikuLevel(plan, f, probes, base));
+  const perturbed = buildS8KikuLevel(plan, plan.factors.at(-1)!, 2 * probes, base);
+  const last = judgeS8Kiku(plan, levels, perturbed, w => w.round === lastRound);
+  const status = first.status === 'rejected' || last.status === 'rejected' ? 'rejected'
+    : first.status === 'accepted' && last.status === 'accepted' ? 'accepted' : 'unresolved';
+  return { ...last, status,
+    refinements: [...first.refinements, ...last.refinements], conditioning: [...first.conditioning, ...last.conditioning],
+    metrics: { ...last.metrics, lengthDifferenceMm: Math.max(first.metrics.lengthDifferenceMm, last.metrics.lengthDifferenceMm),
+      maxShapeDifferenceMm: Math.max(first.metrics.maxShapeDifferenceMm, last.metrics.maxShapeDifferenceMm) },
+    diagnostics: [...first.diagnostics.map(x => `Round 1: ${x}`), ...last.diagnostics.map(x => `Round ${lastRound + 1}: ${x}`)],
+    earlierRounds: [first] };
 }

@@ -148,8 +148,12 @@ function show(summary: S8KikuSummary) {
     item.dataset.ok = String(solved === level.solves.length && settled === level.solves.length && level.validation === 'passed' && !level.undeclared);
     return item;
   };
-  el('levels').replaceChildren(...summary.levels.map(l => levelItem(l, `×${String(l.factor).replace('.', ',')}`)),
-    levelItem(summary.perturbed, `×${String(summary.perturbed.factor).replace('.', ',')}, пробы вдвое чаще`));
+  // Later rounds refine only themselves on the finest construction of the earlier rounds.
+  const rounds = [...summary.earlierRounds, { levels: summary.levels, perturbed: summary.perturbed }];
+  const prefix = (i: number) => rounds.length > 1 ? `${i + 1}-й круг, ` : '';
+  el('levels').replaceChildren(...rounds.flatMap((round, i) => [
+    ...round.levels.map(l => levelItem(l, `${prefix(i)}×${String(l.factor).replace('.', ',')}`)),
+    levelItem(round.perturbed, `${prefix(i)}×${String(round.perturbed.factor).replace('.', ',')}, пробы вдвое чаще`)]));
   el('windows').replaceChildren(...summary.windows.map(w => {
     const item = document.createElement('li');
     const steps = summary.refinements.filter(r => r.windowId === w.id), last = steps.slice(-2);
