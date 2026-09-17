@@ -143,9 +143,12 @@ function show(summary: S8KikuSummary) {
   text('width', `до ${mm(2 * widest, 2)}`);
   const levelItem = (level: S8KikuSummary['levels'][number], label: string) => {
     const item = document.createElement('li');
-    const solved = level.solves.filter(s => s.status === 'converged').length, settled = level.solves.filter(s => s.settled).length;
-    item.textContent = `${label}: окна ${solved}/${level.solves.length} сошлись, перезапуск подтвердил ${settled}/${level.solves.length}, путь — ${level.validation === 'passed' ? 'проверки пройдены' : `${level.validation} (${level.codes.join(', ')})`}${level.undeclared ? `, необъявленных перехлёстов ${level.undeclared}` : ''}, r·κ ≤ ${level.curvature.toFixed(3).replace('.', ',')}, скрытые ≤ ${level.hiddenCurvature.toFixed(3).replace('.', ',')}`;
-    item.dataset.ok = String(solved === level.solves.length && settled === level.solves.length && level.validation === 'passed' && !level.undeclared);
+    // A later-round level solves only its own round; earlier windows come from the finest earlier construction.
+    const own = level.solves.filter(s => s.round >= level.reusedRounds);
+    const solved = own.filter(s => s.status === 'converged').length, settled = own.filter(s => s.settled).length;
+    const reused = level.reusedRounds ? `, первый круг взят с его ×4 (${level.solves.length - own.length} окон)` : '';
+    item.textContent = `${label}: окна ${solved}/${own.length} сошлись, перезапуск подтвердил ${settled}/${own.length}${reused}, путь всей нити — ${level.validation === 'passed' ? 'проверки пройдены' : `${level.validation} (${level.codes.join(', ')})`}${level.undeclared ? `, необъявленных перехлёстов ${level.undeclared}` : ''}, r·κ ≤ ${level.curvature.toFixed(3).replace('.', ',')}, скрытые ≤ ${level.hiddenCurvature.toFixed(3).replace('.', ',')}`;
+    item.dataset.ok = String(solved === own.length && settled === own.length && level.validation === 'passed' && !level.undeclared);
     return item;
   };
   // Later rounds refine only themselves on the finest construction of the earlier rounds.
@@ -191,7 +194,13 @@ function setStage(next: S8KikuStage) {
   el('stage-row2').setAttribute('aria-pressed', String(next === 'row2'));
   delete stage.dataset.status;
   const summary = results.get(next);
-  if (summary) show(summary); else { draw(); compute(next); }
+  if (summary) show(summary);
+  else {
+    // Nothing of another stage stays on screen while this one is computed.
+    for (const id of ['length', 'bend', 'refine', 'width']) text(id, '—');
+    el('levels').replaceChildren(); el('windows').replaceChildren();
+    draw(); compute(next);
+  }
 }
 el('stage-stitch').addEventListener('click', () => setStage('stitch'));
 el('stage-round').addEventListener('click', () => setStage('round'));

@@ -80,6 +80,13 @@ export const S8_KIKU_DIMENSIONS = Object.freeze({
   /** Asymptotic refinement: the last difference contracts by this ratio or is below tolerance/4. */
   contraction: 0.75,
 });
+/**
+ * Settings that define acceptance or the numerical solve. Overriding any of
+ * them (or passing solverOptions) makes a computation diagnostic only; the
+ * other dimensions define the modelled kiku itself.
+ */
+export const S8_KIKU_ACCEPTANCE_KEYS = Object.freeze(['numericalClearanceMm', 'obstacleSearchMm', 'maxObstacles', 'validationToleranceMm',
+  'lengthToleranceMm', 'shapeToleranceMm', 'curvatureToleranceRKappa', 'settleToleranceMm', 'maxSettleRestarts', 'contraction'] as const);
 /** Canonical resolution ladder in spline spans per minimum bend radius; fixed before any result. */
 export const S8_KIKU_LADDER: readonly number[] = Object.freeze([1, 1.5, 2, 3, 4]);
 /** The acceptance decision uses the last two refinements of the canonical ladder. */
@@ -245,9 +252,10 @@ function tubes(id: string, curves: readonly ThreadCurve[], radius: number, route
  * Surface crossings in the central projection onto the tangent plane at the
  * pole (valid for material in the pole's open hemisphere). Returns pairs that
  * certainly cross or cannot be separated from a crossing, excluding
- * neighbouring pieces of one thread.
+ * neighbouring pieces of one thread. With includeHidden, piercing and buried
+ * spans are projected too (a hidden passage under surface material).
  */
-function projectedCrossings(coupon: C8ThreadCoupon, pole: V, tolerance: number) {
+function projectedCrossings(coupon: C8ThreadCoupon, pole: V, tolerance: number, includeHidden = false) {
   const e1 = unit(Math.abs(pole[0]) < .9 ? cross(pole, [1, 0, 0]) : cross(pole, [0, 1, 0])), e2 = cross(pole, e1);
   type Seg = { a: [number, number]; b: [number, number]; error: number };
   const project = (curve: ThreadCurve) => {
@@ -269,7 +277,10 @@ function projectedCrossings(coupon: C8ThreadCoupon, pole: V, tolerance: number) 
     return b;
   };
   const items = [
-    ...coupon.spans.map((span, index) => ({ id: span.id, index, surface: span.zone === 'surface', segs: span.zone === 'surface' ? project(span.curve) : [] })),
+    ...coupon.spans.map((span, index) => {
+      const used = includeHidden || span.zone === 'surface';
+      return { id: span.id, index, surface: used, segs: used ? project(span.curve) : [] };
+    }),
     ...coupon.supports.map(support => ({ id: support.id, index: -1, surface: true, segs: project(support.curve) })),
   ].filter(item => item.surface).map(item => ({ ...item, box: box(item.segs) }));
   const orient = (a: [number, number], b: [number, number], c: [number, number]) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
@@ -311,6 +322,8 @@ export function planS8Kiku(input: S8KikuInput = {}) {
   const tipAt = (k: number) => (s0 + k) % 8;
   const factors = [...(input.factors ?? S8_KIKU_LADDER)];
   const canonical = factors.length === S8_KIKU_LADDER.length && factors.every((f, i) => f === S8_KIKU_LADDER[i]);
+  const overridden = [...S8_KIKU_ACCEPTANCE_KEYS.filter(k => d[k] !== S8_KIKU_DIMENSIONS[k]),
+    ...(input.solverOptions && Object.keys(input.solverOptions).length ? ['solverOptions'] : [])];
   if (stage !== 'stitch' && stage !== 'round' && stage !== 'row2') throw new RangeError('Unknown Simple 8 stage.');
   if (handedness !== 1 && handedness !== -1) throw new RangeError('handedness must be +1 or -1');
   if (factors.length < 3 || factors.length > 6 || factors.some((f, i) => !(f >= 1) || (i > 0 && f < factors[i - 1] * 1.25)))
@@ -406,8 +419,9 @@ export function planS8Kiku(input: S8KikuInput = {}) {
     throw new RangeError(`${w.id}: the finest level exceeds the solver's control budget.`);
 
   // Physical marking segments around each tip, disjoint near the pole.
+  // The same segments for every stage, so an earlier round is solved against the same marking.
   const supports: MarkingSupport[] = frames.map(f => {
-    const reach = windowLength(f.index) + d.supportMarginMm + (rows > 1 ? rowAlong(f.index, rows) : 0);
+    const reach = windowLength(f.index) + d.supportMarginMm;
     const inner = f.role === 'upper' ? Math.min(reach, f.distanceMm - d.poleGapMm) : reach;
     return { id: `jiwari-${f.index}`, circleId: f.circleId, radiusMm: d.markingRadiusMm,
       curve: { kind: 'arc', from: f.at(0, -inner, R + d.markingRadiusMm), to: f.at(0, reach, R + d.markingRadiusMm) } };
@@ -449,9 +463,12 @@ export function planS8Kiku(input: S8KikuInput = {}) {
     { zone: 'piercing', curve: bezier(startJoin, add(startJoin, mul(toward(startJoin, startExit), d.tailLeadMm / 3)),
       sub(startExit, mul(startDir, d.tailLeadMm / 3)), startExit) },
   ];
+  // Every stitch (and the open end) must pass under its own marking segment.
+  for (const c of [...catches, openEnd]) if (!(rowAlong(c.tip, c.row) <= windowLength(c.tip)))
+    throw new RangeError(`Stitch at tip ${c.tip}, row ${c.row} lies beyond its marking segment.`);
   const hiddenCurves = [...startCurves.map(c => c.curve), ...catches.flatMap(bite)];
   const hiddenCurvature = boundCurvatureTimesRadius(hiddenCurves, r);
-  return { d, stage, handedness, startTip: s0, factors, canonical, R, r, S, center, frames, tips, rows, catches, openEnd, legs, legPieces, windows, supports,
+  return { d, stage, handedness, startTip: s0, factors, canonical, overridden, R, r, S, center, frames, tips, rows, catches, openEnd, legs, legPieces, windows, supports,
     bite, markOf, hullCorridor, bites, startCurves, hiddenCurves, hiddenCurvature, solverOptions: input.solverOptions };
 }
 export type S8KikuPlan = ReturnType<typeof planS8Kiku>;
@@ -473,6 +490,7 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpa
   // Earlier material grouped as it was laid: whole windows, whole bites, arcs.
   const groups: { id: string; curves: ThreadCurve[]; startMm: V; endMm: V }[] = [];
   const windowSpans = new Map<string, string[]>();
+  const biteSpans: { name: string; round: number; op: ThreadOperation; ids: string[] }[] = [];
   const solves: S8KikuLevel['solves'] = [], diagnostics: string[] = [];
   // Upper-tip departures rest on their approach in a soft valley (stiffness
   // about 0.36 T/mm under a 0.9 T wrap load), so a looser penetration or
@@ -569,6 +587,7 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpa
       const corridor = hullCorridor(curves, to.row ? mul(unit(markOf(to)), R) : mul(plan.frames[to.tip].m, R), d.depthMm + r + d.corridorMarginMm);
       const ids = curves.map(curve => put(c, 'piercing', curve, corridor));
       declare(`${name}-under-jiwari`, c, ids, `jiwari-${to.tip}`, 'under');
+      biteSpans.push({ name, round: to.row, op: c, ids });
       record(name, curves);
     }
   });
@@ -598,6 +617,21 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpa
     });
     const projected = projectedCrossings(coupon, plan.center, d.validationToleranceMm);
     if (plan.rows > 1) {
+      // Uwagake: a later row's stitch is taken under the whole bundle. A hidden passage that
+      // meets an earlier round's window in projection is declared under it. The projection test
+      // cannot separate a crossing at a sample or span joint from a touch, so both are declared;
+      // the validator then requires exactly one transverse crossing on the declared side and
+      // fails the level otherwise.
+      const roundOf = new Map(plan.windows.map(w => [w.id, w.round]));
+      const biteOf = new Map(biteSpans.flatMap(b => b.ids.map(id => [id, b] as const)));
+      const under = new Map<string, { bite: typeof biteSpans[number]; window: string }>();
+      for (const x of projectedCrossings(coupon, plan.center, d.validationToleranceMm, true)) {
+        for (const [p, q] of [[x.a, x.b], [x.b, x.a]]) {
+          const b = biteOf.get(p), w = windowOf.get(q);
+          if (b && b.round > 0 && w && roundOf.get(w)! < b.round) under.set(`${b.name}|${w}`, { bite: b, window: w });
+        }
+      }
+      for (const { bite: b, window: w } of under.values()) declare(`${b.name}-under-${w}`, b.op, b.ids, windowSpans.get(w)!, 'under');
       // Uwagake: a later row is laid over an earlier one. Surface crossings between computed
       // windows of different rows are declared in that order; the validator checks the side.
       const rowOf = new Map(plan.windows.map(w => [w.id, w.row])), order = new Map(plan.windows.map((w, i) => [w.id, i]));
@@ -638,9 +672,8 @@ function compare(windows: readonly S8Window[], a: S8KikuLevel, b: S8KikuLevel): 
   });
 }
 
-/** Decision rule, fixed independently of any particular result. */
 /**
- * Rules 1-5 over the levels. `judged` selects the windows whose refinement and
+ * Decision rule, fixed independently of any particular result: rules 1-5 over the levels. `judged` selects the windows whose refinement and
  * sampling sensitivity are judged (default: all); every level is still checked
  * as a complete construction.
  */
@@ -649,10 +682,13 @@ export function judgeS8Kiku(plan: S8KikuPlan, levels: S8KikuLevel[], perturbed: 
   let rejected = false;
   if (!plan.canonical) diagnostics.push(`Non-canonical ladder ${plan.factors.join('/')} is diagnostic only.`);
   if (d.maxSettleRestarts === 0) diagnostics.push('Windows were not checked for a fixed point: diagnostic only.');
+  if (plan.overridden.length) diagnostics.push(`Non-default acceptance or solver settings (${plan.overridden.join(', ')}): diagnostic only.`);
+  const judgedIds = new Set(plan.windows.filter(judged).map(w => w.id));
   for (const level of [...levels, perturbed]) {
     const tag = level === perturbed ? `x${level.factor} (${level.samplesPerSpan} probes per span)` : `x${level.factor}`;
     diagnostics.push(...level.diagnostics.map(x => `${tag} ${x}`));
-    for (const s of level.solves) if (s.result.status !== 'converged') {
+    // Windows outside the judged set are reused from an earlier round and reported there.
+    for (const s of level.solves) if (judgedIds.has(s.windowId) && s.result.status !== 'converged') {
       diagnostics.push(`${tag} ${s.windowId}: numerical solve ${s.result.status}.`);
       if (s.result.status === 'failed') rejected = true;
     }
@@ -714,13 +750,21 @@ export function computeS8Kiku(input: S8KikuInput = {}): S8KikuResult {
   const base = first.levels.at(-1)!, lastRound = plan.rows - 1;
   const levels = plan.factors.map(f => buildS8KikuLevel(plan, f, probes, base));
   const perturbed = buildS8KikuLevel(plan, plan.factors.at(-1)!, 2 * probes, base);
-  const last = judgeS8Kiku(plan, levels, perturbed, w => w.round === lastRound);
+  return combineS8Rounds(first, judgeS8Kiku(plan, levels, perturbed, w => w.round === lastRound));
+}
+
+/**
+ * A stage of two rounds: accepted only when both are, rejected when either is.
+ * Refinement and sampling results and metrics cover both rounds; the levels are
+ * those of the last round (complete threads over the finest first round).
+ */
+export function combineS8Rounds(first: S8KikuResult, last: S8KikuResult): S8KikuResult {
   const status = first.status === 'rejected' || last.status === 'rejected' ? 'rejected'
     : first.status === 'accepted' && last.status === 'accepted' ? 'accepted' : 'unresolved';
   return { ...last, status,
     refinements: [...first.refinements, ...last.refinements], conditioning: [...first.conditioning, ...last.conditioning],
     metrics: { ...last.metrics, lengthDifferenceMm: Math.max(first.metrics.lengthDifferenceMm, last.metrics.lengthDifferenceMm),
       maxShapeDifferenceMm: Math.max(first.metrics.maxShapeDifferenceMm, last.metrics.maxShapeDifferenceMm) },
-    diagnostics: [...first.diagnostics.map(x => `Round 1: ${x}`), ...last.diagnostics.map(x => `Round ${lastRound + 1}: ${x}`)],
+    diagnostics: [...first.diagnostics.map(x => `Round 1: ${x}`), ...last.diagnostics.map(x => `Round 2 (complete thread): ${x}`)],
     earlierRounds: [first] };
 }
