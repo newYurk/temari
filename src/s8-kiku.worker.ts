@@ -13,7 +13,7 @@ function summarise(stage: S8KikuStage) {
   // Only the finest construction is drawn; every level is reported.
   return {
     stage: r.stage, status: r.status, diagnostics: r.diagnostics, metrics: r.metrics, tips: r.tips, factors: r.factors, bites: r.bites,
-    windows: r.windows.map(({ id, kind, tip, seedLengthMm, minimumSpans }) => ({ id, kind, tip, seedLengthMm, minimumSpans })),
+    windows: r.windows.map(({ id, kind, tip, row, seedLengthMm, minimumSpans }) => ({ id, kind, tip, row, seedLengthMm, minimumSpans })),
     refinements: r.refinements, conditioning: r.conditioning, coupon: r.coupon,
     levels: r.levels.map(levelSummary), perturbed: levelSummary(r.perturbed),
   };

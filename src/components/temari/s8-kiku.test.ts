@@ -49,10 +49,10 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
     assert.equal(plan.hiddenCurvature.status, 'certified');
     assert.ok(plan.hiddenCurvature.upper <= limit, String(plan.hiddenCurvature.upper));
     const R = plan.R;
-    for (const tip of plan.catches) {
-      const [a, b] = plan.bite(tip), f = plan.tips[tip];
+    for (const c of plan.catches) {
+      const [a, b] = plan.bite(c), f = plan.tips[c.tip];
       // The centre line reaches the ball surface close to the declared port, not a millimetre later.
-      const w = plan.bites.find(x => x.tip === tip)!;
+      const w = plan.bites.find(x => x.tip === c.tip && x.row === c.row)!;
       assert.ok(w.entryHalfWidthMm > .55 && w.entryHalfWidthMm < .8, JSON.stringify(w));
       assert.ok(w.exitHalfWidthMm > .55 && w.exitHalfWidthMm < .8, JSON.stringify(w));
       // One passage under the marking plane, from +q to -q, through the bottom point.
@@ -77,6 +77,37 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
     }
   });
 
+  it('plans the second uwagake row: wider upper stitches, lower stitches farther out, rows in order', () => {
+    const plan = planS8Kiku({ stage: 'row2' }), d = S8_KIKU_DIMENSIONS, round = [1, 2, 3, 4, 5, 6, 7];
+    assert.deepEqual(plan.catches, [...round.map(tip => ({ tip, row: 0 })), { tip: 0, row: 1 }, ...round.map(tip => ({ tip, row: 1 }))]);
+    assert.deepEqual(plan.openEnd, { tip: 0, row: 2 });
+    assert.deepEqual(plan.windows.map(w => w.id), ['departure-0', ...round.flatMap(t => [`approach-${t}`, `departure-${t}`]), 'closing-0',
+      'departure-0-r2', ...round.flatMap(t => [`approach-${t}-r2`, `departure-${t}-r2`]), 'closing-0-r2']);
+    assert.deepEqual(plan.windows.map(w => w.row), [...Array(15).fill(0), ...Array(16).fill(1), 2]);
+    // The first round is unchanged by the second one.
+    const round1 = planS8Kiku({ stage: 'round' });
+    round1.windows.forEach((w, i) => assert.deepEqual(plan.windows[i].seed, w.seed));
+    const R = plan.R, geodesic = (a: PointMm, b: PointMm) => R * Math.atan2(norm([a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]), dot(a, b));
+    for (const c of plan.catches.filter(x => x.row === 1)) {
+      const upper = plan.tips[c.tip].role === 'upper', w = plan.bites.find(x => x.tip === c.tip && x.row === 1)!;
+      // Upper: one thread width lower and wide enough for the bundle; lower: farther out along the same ray.
+      // The frame offsets in the tangent plane at the mark: arc length R atan(advance / R).
+      near(geodesic(plan.markOf(c), plan.tips[c.tip].markMm), R * Math.atan((upper ? d.rowAdvanceMm : d.lowerRowAdvanceMm) / R), 1e-9);
+      const [lo, hi] = upper ? [.95, 1.25] : [.55, .8];
+      assert.ok(w.entryHalfWidthMm > lo && w.entryHalfWidthMm < hi && w.exitHalfWidthMm > lo && w.exitHalfWidthMm < hi, JSON.stringify(w));
+      // The hidden passages of the two rows at one tip keep a full thread diameter apart
+      // (the start tip has no first-round stitch: the thread starts there).
+      if (c.tip === plan.startTip) continue;
+      const samples = (curves: ReturnType<typeof plan.bite>) => curves.flatMap(curve => Array.from({ length: 101 }, (_, i) => evaluateCurve(curve, i / 100)));
+      const a = samples(plan.bite({ tip: c.tip, row: 0 })), b = samples(plan.bite(c));
+      const gap = Math.min(...a.flatMap(p => b.map(q => norm(sub(p, q)))));
+      assert.ok(gap > 2 * d.threadRadiusMm, `tip ${c.tip}: ${gap}`);
+    }
+    assert.equal(plan.hiddenCurvature.status, 'certified');
+    assert.ok(plan.hiddenCurvature.upper <= d.threadRadiusMm / d.minBendRadiusMm);
+    assert.throws(() => planS8Kiku({ stage: 'row2', lowerRowAdvanceMm: .4 }), RangeError);
+  });
+
   it('builds congruent plans from every upper start tip (a quarter turn about the pole)', () => {
     // Rodrigues rotation by +90 degrees about the pole, independent of the plan's frames.
     const turn = ([x, y, z]: PointMm): PointMm => [z, y, -x];
@@ -91,8 +122,8 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
         for (const t of [0, .3, 1]) assert.ok(norm(sub(rayTurn(evaluateCurve(c, t)), evaluateCurve(other, t))) < 1e-9, `${wa.id} ${k} ${t}`);
       });
     }
-    for (const tip of a.catches) a.bite(tip).forEach((c, k) => {
-      const other = b.bite(tip + 2)[k];
+    for (const catchA of a.catches) a.bite(catchA).forEach((c, k) => {
+      const other = b.bite({ tip: (catchA.tip + 2) % 8, row: catchA.row })[k];
       for (const t of [0, .5, 1]) assert.ok(norm(sub(rayTurn(evaluateCurve(c, t)), evaluateCurve(other, t))) < 1e-9);
     });
     assert.throws(() => planS8Kiku({ startTip: 1 }), RangeError);

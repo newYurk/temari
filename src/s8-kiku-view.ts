@@ -156,7 +156,7 @@ function show(summary: S8KikuSummary) {
     const cond = summary.conditioning.find(r => r.windowId === w.id)!;
     const name = w.kind === 'approach' ? 'приход к точке' : w.kind === 'departure' ? 'уход от точки' : 'возврат поверх начала к точке';
     const fmt = (key: 'lengthDifferenceMm' | 'shapeDifferenceMm', digits: number) => steps.map(r => r[key].toExponential(1).replace('.', ',')).join(' → ');
-    item.textContent = `${name} ${w.tip + 1}: Δдлины ${fmt('lengthDifferenceMm', 1)}; Δформы ${fmt('shapeDifferenceMm', 1)}; к частоте проб ${mm(cond.shapeDifferenceMm, 4)}`;
+    item.textContent = `${name} ${w.tip + 1}${w.row ? `, ${w.row + 1}-й ряд` : ''}: Δдлины ${fmt('lengthDifferenceMm', 1)}; Δформы ${fmt('shapeDifferenceMm', 1)}; к частоте проб ${mm(cond.shapeDifferenceMm, 4)}`;
     item.dataset.ok = String(last.every(r => r.lengthDifferenceMm <= .002 && r.shapeDifferenceMm <= .02) && cond.shapeDifferenceMm <= .02 && cond.lengthDifferenceMm <= .002);
     return item;
   }));
@@ -165,7 +165,9 @@ function show(summary: S8KikuSummary) {
 }
 function compute(next: S8KikuStage) {
   if (results.has(next) || pending.has(next)) return;
-  text('status', next === 'stitch' ? 'Считаем стежок на пяти уровнях сетки и контрольном построении…' : 'Считаем круг на пяти уровнях сетки — это занимает заметно больше времени…');
+  text('status', next === 'stitch' ? 'Считаем стежок на пяти уровнях сетки и контрольном построении…'
+    : next === 'round' ? 'Считаем круг на пяти уровнях сетки — это занимает заметно больше времени…'
+    : 'Считаем два круга на пяти уровнях сетки — это десятки минут…');
   el('status').dataset.status = 'unresolved';
   const worker = new Worker(new URL('./s8-kiku.worker.ts', import.meta.url), { type: 'module' });
   pending.set(next, worker);
@@ -182,12 +184,14 @@ function setStage(next: S8KikuStage) {
   current = next;
   el('stage-stitch').setAttribute('aria-pressed', String(next === 'stitch'));
   el('stage-round').setAttribute('aria-pressed', String(next === 'round'));
+  el('stage-row2').setAttribute('aria-pressed', String(next === 'row2'));
   delete stage.dataset.status;
   const summary = results.get(next);
   if (summary) show(summary); else { draw(); compute(next); }
 }
 el('stage-stitch').addEventListener('click', () => setStage('stitch'));
 el('stage-round').addEventListener('click', () => setStage('round'));
+el('stage-row2').addEventListener('click', () => setStage('row2'));
 for (const id of ['flower', 'lower', 'upper', 'side'] as const) el(`view-${id}`).addEventListener('click', () => setView(id));
 el('step').addEventListener('input', () => { text('step-value', el<HTMLInputElement>('step').value); draw(); });
 el('inside').addEventListener('change', render);
