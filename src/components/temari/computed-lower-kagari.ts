@@ -1,7 +1,7 @@
 import { boundCurvatureTimesRadius, type CurvatureBound } from './curvature-bound';
 import { createLowerKagariFixture, type LowerKagariFixture, type LowerKagariInput } from './lower-kagari';
-import { splineToBezier, type SpatialContactOptions, type SpatialContactResult, type SpatialSupport } from './spatial-contact';
-import { sampleCurve, validateThreadCoupon } from './thread-geometry';
+import { splineToBezier, type SpatialContactOptions, type SpatialContactResult, type SpatialCubicMm, type SpatialSupport } from './spatial-contact';
+import { validateThreadCoupon } from './thread-geometry';
 import { solveThickRopeLadder, THICK_ROPE_LADDER, type ThickRopeRefinement } from './thick-rope-ladder';
 import type { C8ThreadCoupon, PathValidation, PointMm, ThreadCurve, ThreadSpan } from './thread-path';
 
@@ -14,7 +14,9 @@ export type ComputedLowerKagariOptions = {
   /** Resolution rule: spline spans per minimum bend radius of seed length. */
   spansPerBendRadius?: number;
   numericalClearanceMm?: number;
-  obstacleToleranceMm?: number;
+  /** Fixed-point check of every resolution (as in the Simple 8 ladder); 0 restarts is diagnostic only. */
+  settleToleranceMm?: number;
+  maxSettleRestarts?: number;
   validationToleranceMm?: number;
   lengthToleranceMm?: number;
   shapeToleranceMm?: number;
@@ -28,6 +30,8 @@ export type LowerKagariResolution = {
   validation: PathValidation;
   /** Independent certified r*kappa bound over the complete working thread. */
   curvature: CurvatureBound;
+  restarts: number;
+  settleMoveMm: number;
 };
 export type LowerKagariRefinement = ThickRopeRefinement;
 export type ComputedLowerKagari = {
@@ -38,7 +42,7 @@ export type ComputedLowerKagari = {
   result: SpatialContactResult;
   obstacles: SpatialSupport[];
   checks: { seed: PathValidation; candidate: PathValidation; resolutions: LowerKagariResolution[]; refinements: LowerKagariRefinement[] };
-  metrics: { numericalClearanceMm: number; obstacleToleranceMm: number;
+  metrics: { numericalClearanceMm: number;
     seedLengthMm: number; minBendRadiusMm: number; minimumSpans: number;
     /** Largest successive difference over the whole ladder. */
     lengthDifferenceMm: number;
@@ -51,22 +55,19 @@ export type ComputedLowerKagari = {
 const DEFAULTS = Object.freeze({
   spansPerBendRadius: THICK_ROPE_LADDER.spansPerBendRadius,
   numericalClearanceMm: .003,
-  obstacleToleranceMm: .0005,
+  settleToleranceMm: .0001,
+  maxSettleRestarts: 4,
   validationToleranceMm: .001,
   lengthToleranceMm: .002,
   shapeToleranceMm: .02,
 });
 
-function obstaclesFor(fixture: LowerKagariFixture, margin: number, tolerance: number): SpatialSupport[] {
+/** Fixed material as exact tubes: arcs about the ball centre, Bezier pieces as curve supports (no cover). */
+function obstaclesFor(fixture: LowerKagariFixture, margin: number): SpatialSupport[] {
   const obstacles: SpatialSupport[] = [];
   const append = (id: string, curve: ThreadCurve, radius: number) => {
-    if (curve.kind === 'arc') {
-      obstacles.push({ id, kind: 'arc', centerMm: [0, 0, 0], fromMm: curve.from, toMm: curve.to, radiusMm: radius + margin });
-    } else {
-      const sample = sampleCurve(curve, tolerance);
-      for (let i = 1; i < sample.points.length; i++) obstacles.push({ id: `${id}-capsule-${i}`, kind: 'segment',
-        fromMm: sample.points[i - 1], toMm: sample.points[i], radiusMm: radius + margin + sample.errorBoundMm });
-    }
+    if (curve.kind === 'arc') obstacles.push({ id, kind: 'arc', centerMm: [0, 0, 0], fromMm: curve.from, toMm: curve.to, radiusMm: radius + margin });
+    else obstacles.push({ id, kind: 'curve', piecesMm: [curve.controls as SpatialCubicMm], radiusMm: radius + margin });
   };
   fixture.incoming.forEach((curve, i) => append(`incoming-${i + 1}`, curve, fixture.threadRadiusMm));
   append(fixture.markingSupport.id, fixture.markingSupport.curve, fixture.markingSupport.radiusMm);
@@ -106,17 +107,21 @@ function assemble(fixture: LowerKagariFixture, result: SpatialContactResult, con
  */
 export function computeLowerKagari(input: LowerKagariInput = {}, options: ComputedLowerKagariOptions = {}): ComputedLowerKagari {
   const o = { ...DEFAULTS, ...options };
-  if ([o.numericalClearanceMm, o.obstacleToleranceMm, o.validationToleranceMm, o.lengthToleranceMm, o.shapeToleranceMm, o.spansPerBendRadius]
+  if ([o.numericalClearanceMm, o.settleToleranceMm, o.validationToleranceMm, o.lengthToleranceMm, o.shapeToleranceMm, o.spansPerBendRadius]
     .some(value => !(value > 0) || !Number.isFinite(value))) throw new RangeError('Computed backbite requires positive numerical tolerances.');
+  if (!Number.isInteger(o.maxSettleRestarts) || o.maxSettleRestarts < 0 || o.maxSettleRestarts > 16)
+    throw new RangeError('maxSettleRestarts must be an integer from 0 to 16.');
   const fixture = createLowerKagariFixture(input);
   const bend = fixture.dimensions.minBendRadiusMm;
-  const obstacles = obstaclesFor(fixture, o.numericalClearanceMm, o.obstacleToleranceMm);
+  const obstacles = obstaclesFor(fixture, o.numericalClearanceMm);
   const seed = validateThreadCoupon(fixture.coupon, o.validationToleranceMm);
   const ladder = solveThickRopeLadder({ seed: fixture.looseOutgoing, threadRadiusMm: fixture.threadRadiusMm, minBendRadiusMm: bend,
     body: { centerMm: [0, 0, 0], radiusMm: fixture.bodyRadiusMm + o.numericalClearanceMm }, supports: obstacles,
     controlCounts: o.controlCounts, spansPerBendRadius: o.spansPerBendRadius,
-    solverOptions: { maxIterations: 8000, maxOuterIterations: 60, feasibilityToleranceMm: .0005,
-      complementarityToleranceMm: .000005, ...o.solverOptions } });
+    settle: { toleranceMm: o.settleToleranceMm, maxRestarts: o.maxSettleRestarts },
+    // The Simple 8 stopping test: a looser one can stop anywhere in a flat contact valley.
+    solverOptions: { maxIterations: 8000, maxOuterIterations: 60, feasibilityToleranceMm: .0001, stationarityTolerance: 2e-6,
+      complementarityToleranceMm: 5e-7, ...o.solverOptions } });
   const { seedLengthMm, minimumSpans, refinements, lengthDifferenceMm, maxShapeDifferenceMm } = ladder;
   const coupons = ladder.resolutions.map(r => assemble(fixture, r.result, r.controlCount, o.numericalClearanceMm));
   const resolutions: LowerKagariResolution[] = ladder.resolutions.map((r, i) => ({ ...r,
@@ -124,9 +129,12 @@ export function computeLowerKagari(input: LowerKagariInput = {}, options: Comput
     curvature: boundCurvatureTimesRadius(coupons[i].spans.map(span => span.curve), coupons[i].threadRadiusMm) }));
   const last = resolutions.at(-1)!, diagnostics: string[] = [];
   if (seed.status !== 'passed') diagnostics.push('The engineering seed does not pass the complete path validator.');
+  if (o.maxSettleRestarts === 0) diagnostics.push('Resolutions were not checked for a fixed point: diagnostic only.');
   for (const check of resolutions) {
     if (!check.resolved) diagnostics.push(`${check.controlCount} controls: under-resolved, a span is longer than the minimum bend radius.`);
     if (check.result.status !== 'converged') diagnostics.push(`${check.controlCount} controls: numerical solve ${check.result.status}.`);
+    else if (o.maxSettleRestarts > 0 && !(check.settleMoveMm <= o.settleToleranceMm))
+      diagnostics.push(`${check.controlCount} controls: no fixed point after ${check.restarts} restarts (last move ${check.settleMoveMm.toExponential(2)} mm).`);
     if (check.validation.status !== 'passed') diagnostics.push(`${check.controlCount} controls: complete path ${check.validation.status}: ${[...new Set(check.validation.diagnostics.map(d => d.code))].join(', ')}.`);
     if (check.curvature.status !== 'certified') diagnostics.push(`${check.controlCount} controls: curvature bound unresolved.`);
     else if (!(check.curvature.upper < 1)) diagnostics.push(`${check.controlCount} controls: certified r*kappa bound ${check.curvature.upper.toFixed(4)} is not below 1.`);
@@ -137,7 +145,7 @@ export function computeLowerKagari(input: LowerKagariInput = {}, options: Comput
     || (c.curvature.status === 'certified' && !(c.curvature.upper < 1)));
   return { status: rejected ? 'rejected' : diagnostics.length ? 'unresolved' : 'accepted', fixture, coupon: coupons.at(-1)!, result: last.result, obstacles,
     checks: { seed, candidate: last.validation, resolutions, refinements },
-    metrics: { numericalClearanceMm: o.numericalClearanceMm, obstacleToleranceMm: o.obstacleToleranceMm,
+    metrics: { numericalClearanceMm: o.numericalClearanceMm,
       seedLengthMm, minBendRadiusMm: bend, minimumSpans,
       lengthDifferenceMm, maxShapeDifferenceMm, lengthToleranceMm: o.lengthToleranceMm, shapeToleranceMm: o.shapeToleranceMm }, diagnostics };
 }

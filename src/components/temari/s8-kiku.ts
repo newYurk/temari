@@ -3,7 +3,7 @@ import { jiwariNormals } from './jiwari';
 import { localMarkingRays, pointOnMarkingRayMm, type MarkingCircle } from './local-marking';
 import { solveSpatialContact, type SpatialContactOptions, type SpatialContactResult, type SpatialCubicMm, type SpatialSupport } from './spatial-contact';
 import { fitSpatialSeed } from './spatial-spline-seed';
-import { curvesLength, shapeDifferenceMm } from './thick-rope-ladder';
+import { curvesLength, settleSolve, shapeDifferenceMm } from './thick-rope-ladder';
 import { closestSegmentApproach, evaluateCurve, sampleCurve, validateThreadCoupon } from './thread-geometry';
 import type {
   C8ThreadCoupon, MarkingSupport, PathValidation, PiercingCorridor, PointMm, ThreadCrossing, ThreadCurve,
@@ -467,16 +467,10 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpa
       const solve = (controlPointsMm: PointMm[]) => solveSpatialContact({ controlPointsMm, threadRadiusMm: r,
         minBendRadiusMm: d.minBendRadiusMm, body: { centerMm: [0, 0, 0], radiusMm: R + d.numericalClearanceMm },
         supports: obstacles, options: solverOptions });
-      result = solve(fitSpatialSeed(w.seed, controlCount));
-      while (result.status === 'converged' && restarts < d.maxSettleRestarts) {
-        const next = solve(result.controlPointsMm);
-        restarts++;
-        settleMoveMm = next.curves.length ? shapeDifferenceMm(result.curves, next.curves) : Infinity;
-        result = next;
-        if (settleMoveMm <= d.settleToleranceMm) break;
-      }
-      if (result.status === 'converged' && d.maxSettleRestarts > 0 && !(settleMoveMm <= d.settleToleranceMm))
-        diagnostics.push(`${w.id}: no fixed point after ${restarts} restarts (last move ${settleMoveMm.toExponential(2)} mm).`);
+      const settled = settleSolve(solve, fitSpatialSeed(w.seed, controlCount), d.settleToleranceMm, d.maxSettleRestarts);
+      ({ result, restarts } = settled);
+      settleMoveMm = settled.moveMm;
+      if (!settled.settled) diagnostics.push(`${w.id}: no fixed point after ${restarts} restarts (last move ${settleMoveMm.toExponential(2)} mm).`);
     }
     solves.push({ windowId: w.id, controlCount, result, obstacles: obstacles.length, restarts, settleMoveMm });
     if (!result.curves.length) diagnostics.push(`${w.id}: the solver returned no curve (${result.diagnostics.map(x => x.code).join(', ')}).`);

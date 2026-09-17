@@ -20,6 +20,7 @@ describe('computed lower kagari: full-path and refinement acceptance', () => {
     for (const check of result.checks.resolutions) {
       assert.ok(check.resolved);
       assert.equal(check.result.status, 'converged');
+      assert.ok(check.restarts >= 1 && check.settleMoveMm <= 1e-4, `${check.restarts} ${check.settleMoveMm}`);
       assert.equal(check.validation.status, 'passed', JSON.stringify(check.validation.diagnostics));
       assert.equal(check.curvature.status, 'certified');
       assert.ok(check.curvature.upper < 1 && check.validation.maxCurvatureTimesRadius < 1);
@@ -92,9 +93,10 @@ describe('computed lower kagari: full-path and refinement acceptance', () => {
     assert.equal(incoming.kind, 'arc'); near(incoming.radiusMm, .203);
     const curve = result.fixture.incoming[0]; assert.equal(curve.kind, 'arc');
     if (curve.kind === 'arc') { pointNear(incoming.fromMm, curve.from); pointNear(incoming.toMm, curve.to); }
-    const ramp = result.obstacles.filter(s => s.id.startsWith('incoming-2-capsule'));
-    assert.ok(ramp.length > 1 && ramp.every(s => s.kind === 'segment' && s.radiusMm >= .203
-      && s.radiusMm <= .203 + result.metrics.obstacleToleranceMm + 1e-12));
+    // The ramp is its own exact tube: no chord cover and no cover tolerance.
+    const ramp = result.obstacles.find(s => s.id === 'incoming-2')!, source = result.fixture.incoming[1];
+    assert.equal(ramp.kind, 'curve'); near(ramp.radiusMm, .203);
+    if (ramp.kind === 'curve' && source.kind === 'bezier') assert.deepEqual(ramp.piecesMm, [source.controls]);
     const marking = result.obstacles.find(s => s.id === result.fixture.markingSupport.id)!;
     near(marking.radiusMm, .083);
   });
