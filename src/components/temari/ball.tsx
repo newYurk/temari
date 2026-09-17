@@ -21,7 +21,7 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import { createTemariMaterial, createWrapBaker, createWrapCoverMaterial, syncTemariMaterial, syncWrapCoverMaterial } from "./shader";
-import { createMotifGeometry, getYarnTexture } from "./stitches";
+import { createMotifGeometry, getPerleBump, getPerleTexture, getYarnTexture } from "./stitches";
 import { pinPosition, useTemari } from "./store";
 import * as feel from "./feel";
 import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
@@ -83,7 +83,10 @@ function ThreadLayer({
   const geos = useMemo(() => {
     return colors.map((_, i) => createMotifGeometry(stitches, i, kind));
   }, [stitches, kind, colors]);
-  const yarn = useMemo(() => getYarnTexture(), []);
+  // A pearl cord shows its two plies; flat metallic jiwari keeps the plain yarn.
+  const cord = kind !== "metallic";
+  const yarn = useMemo(() => (cord ? getPerleTexture() : getYarnTexture()), [cord]);
+  const bump = useMemo(() => (cord ? getPerleBump() : null), [cord]);
 
   useEffect(() => {
     return () => {
@@ -98,6 +101,8 @@ function ThreadLayer({
           <mesh key={i} geometry={geo} renderOrder={order}>
             <meshStandardMaterial
               map={yarn}
+              bumpMap={bump ?? undefined}
+              bumpScale={bump ? 0.6 : undefined}
               color={colors[i]}
               roughness={threadRoughness(kind)}
               metalness={threadMetalness(kind)}

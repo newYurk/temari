@@ -390,7 +390,7 @@ function stackedArcChain(
   const flush = (pts: THREE.Vector3[], parks: boolean) => {
     if (pts.length < 2) return;
     const path = parks ? buryWorkingStart(pts, kind) : buryWorkingEnds(pts, kind);
-    parts.push(tubeOnSphere(path, stitchRadius(kind), false, false));
+    parts.push(tubeOnSphere(path, stitchRadius(kind), false, false, twistPerUnit(kind)));
   };
   let pts: THREE.Vector3[] = [];
   let kai0 = chain[0]?.kai;
@@ -481,6 +481,71 @@ function stackedArcRibbon(
     }
   }
   return ribbonFromPoints(pts, width, false);
+}
+
+/**
+ * Pearl cotton is 2-ply with a visible helix. The pitch is taken as 1.8 of the
+ * cord's own diameter — read off photographs of perle #5, not measured, so it
+ * sits here as one named number to correct rather than spread through the code.
+ */
+export const PERLE_TWIST_PITCH = 1.8;
+
+function twistPerUnit(kind: ThreadKind) {
+  const pitch = unitFromMm(kindMm(kind)) * PERLE_TWIST_PITCH;
+  return pitch > 0 ? 1 / pitch : 0;
+}
+
+/**
+ * One tile = one twist along the cord × once around it, so the bands meet
+ * themselves at every edge: band(v - u) with two plies is seamless in both.
+ */
+function makePerleTexture(relief: boolean) {
+  const w = 128;
+  const h = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return tex;
+  const image = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const u = x / w;
+      const v = y / h;
+      // Two plies: the phase runs twice around while the helix advances once.
+      const phase = 2 * (v - u);
+      const across = Math.abs(((phase % 1) + 1.5) % 1 - 0.5) * 2; // 0 at the crown, 1 in the groove
+      const round = Math.cos(across * Math.PI * 0.5); // a ply is round, not flat
+      const level = relief ? round : 0.82 + 0.18 * round;
+      const value = Math.max(0, Math.min(255, Math.round(level * 255)));
+      const i = (y * w + x) * 4;
+      image.data[i] = value;
+      image.data[i + 1] = value;
+      image.data[i + 2] = value;
+      image.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+let perle: THREE.CanvasTexture | null = null;
+let perleBump: THREE.CanvasTexture | null = null;
+
+/** Colour map of a pearl cord: the plies keep the thread's own colour. */
+export function getPerleTexture() {
+  if (!perle) perle = makePerleTexture(false);
+  return perle;
+}
+
+/** Height of the same plies, for the relief of the twist. */
+export function getPerleBump() {
+  if (!perleBump) perleBump = makePerleTexture(true);
+  return perleBump;
 }
 
 export function getYarnTexture() {
@@ -647,6 +712,12 @@ function tubeOnSphere(
   radius: number,
   taperEnds = false,
   closed = false,
+  /**
+   * Texture repeats per unit of length. 0 keeps the old 0..1 across the piece;
+   * a positive value makes one repeat a fixed length, so a long stitch and a
+   * short one carry the same twist.
+   */
+  uPerUnit = 0,
 ) {
   if (pts.length < 2) return new THREE.BufferGeometry();
   const path: THREE.Vector3[] = [];
@@ -716,7 +787,8 @@ function tubeOnSphere(
       pos.push(p.x + nx, p.y + ny, p.z + nz);
       const nl = Math.hypot(nx, ny, nz) || 1;
       nrm.push(nx / nl, ny / nl, nz / nl);
-      uv.push(i / Math.max(1, nPath - 1), j / radialSegs);
+      uv.push(uPerUnit > 0 ? (along[i] ?? 0) * uPerUnit : i / Math.max(1, nPath - 1),
+        j / radialSegs);
     }
   }
   const wallSegs = closed ? nPath : nPath - 1;
