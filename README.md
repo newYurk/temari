@@ -13,7 +13,7 @@
 
 Исходники — в `src/`, вход игры — `index.html` → `src/pages.tsx`. GitHub Pages собирается Actions из `main`: тесты → проверка типов → сборка → публикация `dist/`. Результат сборки не хранится в Git. Старые `docs/assets`, `assets` и `dist-pages` оставлены как исторические копии и больше не служат источником публикации.
 
-Для разработки нужен Node 24: `npm ci`, затем `npm run dev`. Проверки: `npm test`, `npm run typecheck`, `npm run build`. Локальный просмотр сборки: `npm run preview`; браузерная проверка с установленным Chrome: `node scripts/check-pages.mjs http://127.0.0.1:4173/`. Снимок опубликованных исходников — `/build.json`.
+Для разработки нужен Node 24: `npm ci`, затем `npm run dev`. Проверки: `npm test`, `npm run typecheck`, `npm run build`. Два адреса закреплены, чтобы параллельные проекты не перехватывали их друг у друга: dev-сервер — `npm run dev` на 8860, просмотр собранной версии — `npm run preview` на 4174. Браузерные проверки идут против собранной: `node scripts/check-pages.mjs http://127.0.0.1:4174/`. Снимок опубликованных исходников — `/build.json`.
 
 **Карта ремесла.** `Temari-Obsidian/` — хранилище Obsidian, собранное из каталога игры (`src/components/temari/library.ts`): узоры, разметки, стежки, нити, размеры шара и то, что из них достижимо в мастерской. Руками не правится: `npx tsx scripts/build-craft-vault.mts --write`, CI проверяет `--check`. Картинка без Obsidian — `--picture`. На чём стоят наши числа — [docs/assumptions.md](docs/assumptions.md).
 
