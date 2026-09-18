@@ -33,7 +33,9 @@ const swings: { t: number; ax: number; ay: number; az: number; ang: number }[] =
 const SWING_WINDOW_MS = 90;
 const ptrs = new Map<number, { x: number; y: number }>();
 const pinch = { mx: 0, my: 0, span: 0, held: false };
-const _origin = new THREE.Vector3();
+/** Where a panned ball springs back to. Never written: it is the rest point. */
+const ORIGIN = Object.freeze(new THREE.Vector3()) as THREE.Vector3;
+const _centre = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _up = new THREE.Vector3();
 const _axis = new THREE.Vector3();
@@ -52,8 +54,10 @@ const _hit = new THREE.Vector3();
  * kiku ring targets sit exactly there.
  */
 function sphereRaycast(mesh: THREE.Mesh, radius: number, raycaster: THREE.Raycaster, out: THREE.Intersection[]) {
-  _origin.setFromMatrixPosition(mesh.matrixWorld);
-  _ray.copy(_origin).sub(raycaster.ray.origin);
+  // Its own scratch vector: this runs on every hover, and sharing the spring's
+  // rest point here once made a panned ball stay wherever the finger left it.
+  _centre.setFromMatrixPosition(mesh.matrixWorld);
+  _ray.copy(_centre).sub(raycaster.ray.origin);
   const along = _ray.dot(raycaster.ray.direction);
   const d2 = _ray.lengthSq() - along * along, r2 = radius * radius;
   if (d2 > r2) return;
@@ -935,7 +939,7 @@ export function Ball() {
       omega.current.set(0, 0, 0);
     }
     if (g && !pinch.held && g.position.lengthSq() > 1e-8) {
-      g.position.lerp(_origin, 1 - Math.exp(-10 * d));
+      g.position.lerp(ORIGIN, 1 - Math.exp(-10 * d));
       if (g.position.lengthSq() < 1e-7) g.position.set(0, 0, 0);
     }
 
