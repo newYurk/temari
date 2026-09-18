@@ -10,6 +10,9 @@ on:
       - 'docs/design/**'
       - 'dist-pages/design.html'
       - 'scripts/sync-design.mjs'
+      - 'scripts/build-craft-vault.mts'
+      - 'src/components/temari/library.ts'
+      - 'Temari-Obsidian/**'
       - '.github/workflows/documentation.yml'
   pull_request:
     paths:
@@ -21,6 +24,9 @@ on:
       - 'docs/design/**'
       - 'dist-pages/design.html'
       - 'scripts/sync-design.mjs'
+      - 'scripts/build-craft-vault.mts'
+      - 'src/components/temari/library.ts'
+      - 'Temari-Obsidian/**'
       - '.github/workflows/documentation.yml'
 permissions:
   contents: read
@@ -33,3 +39,6 @@ jobs:
         with:
           node-version: '24'
       - run: node scripts/sync-design.mjs --check
+      # карта ремесла собирается из каталога игры: разойтись они не должны
+      - run: npm ci
+      - run: npx tsx scripts/build-craft-vault.mts --check

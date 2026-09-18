@@ -9,5 +9,5 @@ screenshots/
 .claude/worktrees/
 
 # личное состояние окна Obsidian, у каждого своё
-.obsidian/workspace.json
-.obsidian/workspace-mobile.json
+Temari-Obsidian/.obsidian/workspace.json
+Temari-Obsidian/.obsidian/workspace-mobile.json

@@ -15,7 +15,7 @@
 
 Для разработки нужен Node 24: `npm ci`, затем `npm run dev`. Проверки: `npm test`, `npm run typecheck`, `npm run build`. Локальный просмотр сборки: `npm run preview`; браузерная проверка с установленным Chrome: `node scripts/check-pages.mjs http://127.0.0.1:4173/`. Снимок опубликованных исходников — `/build.json`.
 
-**Граф документов.** Папку репозитория можно открыть в Obsidian как хранилище («Open folder as vault»): заметки — это сами документы, связи — ссылки, которые в них уже стоят, поэтому картинка не может разойтись с текстом. Настройки графа лежат в `.obsidian/` (личное состояние окна — нет). Та же карта без Obsidian: `node scripts/docs-graph.mjs` — страница в игнорируемой `screenshots/docs-graph/`. На чём стоят наши числа — [docs/assumptions.md](docs/assumptions.md).
+**Карта ремесла.** `Temari-Obsidian/` — хранилище Obsidian, собранное из каталога игры (`src/components/temari/library.ts`): узоры, разметки, стежки, нити, размеры шара и то, что из них достижимо в мастерской. Руками не правится: `npx tsx scripts/build-craft-vault.mts --write`, CI проверяет `--check`. Картинка без Obsidian — `--picture`. На чём стоят наши числа — [docs/assumptions.md](docs/assumptions.md).
 
 Модель разработки: [архитектура и математика](spec/embroidery-model.md), [ремесленные источники](spec/craft-sources.md), [контракты проверки](src/components/temari/rules.md). Поддержка рецепта, его реализация и ремесленная приёмка отмечаются раздельно.
 
