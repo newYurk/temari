@@ -42,6 +42,26 @@ const shown = (appears: string) =>
   appears === 'dock' ? 'кнопка в мастерской' : appears === 'variant-chip' ? 'чип варианта' : 'только данные, кнопки нет';
 
 const VAULT = 'Temari-Obsidian';
+
+/**
+ * What this builder owns — and nothing else. The vault is also where the owner
+ * draws (Excalidraw) and where Obsidian keeps its settings and plugins: a file
+ * outside these paths is never written, never checked and never removed. Before
+ * this list the builder treated everything it had not made as stale and deleted
+ * it on --write, which would have taken her drawings with it.
+ */
+const OWNED_FILES = ['00 Карта ремесла.md'];
+const OWNED_DIRS = ['01 Этапы', '02 Узоры', '03 Разметки', '04 Стежки', '05 Нити', '06 Шары'];
+const owned = (path: string) =>
+  OWNED_FILES.includes(path) || OWNED_DIRS.some((d) => path.startsWith(d + '/'));
+
+/**
+ * Obsidian's own settings: written once so a fresh clone opens with the craft
+ * colours, then left to Obsidian. It rewrites them (drops the final newline,
+ * lists its core plugins), and a builder that put them back would fight it.
+ */
+const seeds = new Map<string, string>();
+const seed = (path: string, body: string) => seeds.set(path, body);
 const write = process.argv.includes('--write');
 const check = process.argv.includes('--check');
 
@@ -268,15 +288,15 @@ put('00 Карта ремесла.md', [
   '- Пересказа спецификаций: их здесь нет намеренно, чтобы не разошлись.',
 ].join('\n') + footer);
 
-put('.obsidian/app.json', JSON.stringify({ promptDelete: false, useMarkdownLinks: false, newLinkFormat: 'shortest' }, null, 2) + '\n');
-put('.obsidian/appearance.json', JSON.stringify({ theme: 'system' }, null, 2) + '\n');
-put('.obsidian/core-plugins.json', JSON.stringify({
+seed('.obsidian/app.json', JSON.stringify({ promptDelete: false, useMarkdownLinks: false, newLinkFormat: 'shortest' }, null, 2) + '\n');
+seed('.obsidian/appearance.json', JSON.stringify({ theme: 'system' }, null, 2) + '\n');
+seed('.obsidian/core-plugins.json', JSON.stringify({
   'file-explorer': true, 'global-search': true, switcher: true, graph: true, backlink: true,
   'outgoing-link': true, 'page-preview': true, 'command-palette': true, outline: true, bookmarks: true,
   canvas: false, 'daily-notes': false, templates: false, 'note-composer': false, 'tag-pane': false,
   properties: false, 'slash-command': false, 'random-note': false, 'file-recovery': true,
 }, null, 2) + '\n');
-put('.obsidian/graph.json', JSON.stringify({
+seed('.obsidian/graph.json', JSON.stringify({
   'collapse-filter': false, search: '', showTags: false, showAttachments: false,
   hideUnresolved: true, showOrphans: false, 'collapse-color-groups': false,
   colorGroups: [
@@ -304,13 +324,16 @@ async function onDisk() {
       else out.set(prefix + e.name, await readFile(full, 'utf8'));
     }
   };
-  await walk(VAULT);
+  for (const f of OWNED_FILES) {
+    try { out.set(f, await readFile(join(VAULT, f), 'utf8')); } catch { /* not built yet */ }
+  }
+  for (const d of OWNED_DIRS) await walk(join(VAULT, d), d + '/');
   return out;
 }
 
 /** Та же карта картинкой, чтобы посмотреть без Obsidian (папка игнорируется). */
 async function picture() {
-  const nodes = [...files.keys()].filter((f) => f.endsWith('.md'));
+  const nodes = [...files.keys()].filter((f) => f.endsWith('.md') && owned(f));
   const id = (f: string) => 'n' + f.replace(/[^a-zA-Zа-яА-Я0-9]/g, '_');
   const nameOf = (f: string) => f.split('/').pop()!.replace(/\.md$/, '');
   const byName = new Map(nodes.map((f) => [nameOf(f), f]));
@@ -346,7 +369,10 @@ mermaid.initialize({startOnLoad:true,theme:'base',themeVariables:{primaryColor:'
 
 const current = await onDisk();
 const differing = [...files.keys()].filter((f) => current.get(f) !== files.get(f));
-const extra = [...current.keys()].filter((f) => !files.has(f));
+// Inside its own folders a file it did not make is a note the catalogue lost.
+const extra = [...current.keys()].filter((f) => owned(f) && !files.has(f));
+const strays = [...files.keys()].filter((f) => !owned(f));
+if (strays.length) throw new Error(`builder wrote outside what it owns: ${strays.join(', ')}`);
 
 if (check) {
   if (differing.length || extra.length) {
@@ -363,6 +389,14 @@ if (check) {
     await mkdir(dirname(join(VAULT, f)), { recursive: true });
     await writeFile(join(VAULT, f), body);
   }
+  let seeded = 0;
+  for (const [f, body] of seeds) {
+    try { await readFile(join(VAULT, f)); continue; } catch { /* absent: seed it */ }
+    await mkdir(dirname(join(VAULT, f)), { recursive: true });
+    await writeFile(join(VAULT, f), body);
+    seeded++;
+  }
+  if (seeded) console.log(`настроек Obsidian заведено: ${seeded}`);
   console.log(JSON.stringify({ vault: VAULT, notes: files.size, written: differing.length, removed: extra.length }, null, 1));
 } else if (process.argv.includes('--picture')) {
   await picture();

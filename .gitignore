@@ -11,3 +11,18 @@ screenshots/
 # личное состояние окна Obsidian, у каждого своё
 Temari-Obsidian/.obsidian/workspace.json
 Temari-Obsidian/.obsidian/workspace-mobile.json
+
+# Obsidian: код плагинов в git не идёт никогда (у Excalidraw это ~5 МБ).
+# Их настройки (data.json) и список включённых (community-plugins.json) — идут.
+Temari-Obsidian/.obsidian/plugins/*/main.js
+Temari-Obsidian/.obsidian/plugins/*/styles.css
+Temari-Obsidian/.obsidian/plugins/*/manifest.json
+
+# Рисунки владельца. Исходник *.excalidraw.md — в git, если на рисунок ссылается
+# заметка. Картинки (кадры-подложки и экспорт) — нет: лёгкий экспорт, на который
+# ссылаются, добавляется осознанно, через git add -f.
+Temari-Obsidian/Рисунки/**/*.png
+Temari-Obsidian/Рисунки/**/*.svg
+Temari-Obsidian/Рисунки/**/*.jpg
+Temari-Obsidian/Рисунки/**/*.jpeg
+Temari-Obsidian/Рисунки/**/*.webp
