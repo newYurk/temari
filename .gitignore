@@ -20,8 +20,9 @@ Temari-Obsidian/.obsidian/plugins/*/main.js
 Temari-Obsidian/.obsidian/plugins/*/styles.css
 Temari-Obsidian/.obsidian/plugins/*/manifest.json
 Temari-Obsidian/.obsidian/plugins/*/data.json
-# Скрипты Excalidraw из его магазина — чужой код (папка по умолчанию scriptFolderPath).
-Temari-Obsidian/Excalidraw/Scripts/
+# Служебная папка Excalidraw: скрипты из магазина (чужой код), библиотеки,
+# шаблон и шрифты CJK (мегабайты) — умолчания 2.27.3, всё под Excalidraw/.
+Temari-Obsidian/Excalidraw/
 
 # Рисунки владельца. Исходник *.excalidraw.md — в git, если на рисунок ссылается
 # заметка. Картинки (кадры-подложки и экспорт) — нет: лёгкий экспорт, на который

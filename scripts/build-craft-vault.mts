@@ -288,7 +288,7 @@ put('00 Карта ремесла.md', [
   '- Пересказа спецификаций: их здесь нет намеренно, чтобы не разошлись.',
 ].join('\n') + footer);
 
-seed('.obsidian/app.json', JSON.stringify({ promptDelete: false, useMarkdownLinks: false, newLinkFormat: 'shortest' }, null, 2) + '\n');
+seed('.obsidian/app.json', JSON.stringify({ promptDelete: false, useMarkdownLinks: false, newLinkFormat: 'shortest', attachmentFolderPath: 'Рисунки' }, null, 2) + '\n');
 seed('.obsidian/appearance.json', JSON.stringify({ theme: 'system' }, null, 2) + '\n');
 seed('.obsidian/core-plugins.json', JSON.stringify({
   'file-explorer': true, 'global-search': true, switcher: true, graph: true, backlink: true,

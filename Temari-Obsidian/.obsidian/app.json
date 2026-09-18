@@ -1,5 +1,6 @@
 {
   "promptDelete": false,
   "useMarkdownLinks": false,
-  "newLinkFormat": "shortest"
+  "newLinkFormat": "shortest",
+  "attachmentFolderPath": "Рисунки"
 }
