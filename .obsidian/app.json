@@ -1,0 +1,13 @@
+{
+  "promptDelete": false,
+  "alwaysUpdateLinks": true,
+  "newLinkFormat": "relative",
+  "useMarkdownLinks": true,
+  "userIgnoreFilters": [
+    "node_modules/",
+    "dist/",
+    "screenshots/",
+    ".claude/",
+    "public/"
+  ]
+}
