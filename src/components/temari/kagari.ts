@@ -21,6 +21,12 @@ export type PatternRecipe = {
   innerMm: number;
   /** Fraction of pole–equator measured up from the equator. */
   outerFromEquator: number;
+  /**
+   * Нить, которой этот рецепт шьётся. От её толщины считаются шаг ряда и
+   * ширина подхвата у метки: до этого поля перле №5 была вписана в трёх местах
+   * кода и ни в одном — в данных, поэтому сменить нить было нечем.
+   */
+  thread: keyof typeof STITCH_THREAD_MM;
   crossing: Crossing;
   /**
    * Bite width across the mark, millimetres on the mari.
@@ -44,6 +50,7 @@ export const KIKU_8_POINT: PatternRecipe = {
   sets: 2,
   innerMm: 5,
   outerFromEquator: 1 / 3,
+  thread: "pearl5",
   crossing: "over-all",
   cornerMm: 0.71,
   stretchMm: 2,

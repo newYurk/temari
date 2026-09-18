@@ -36,6 +36,8 @@ const supportOf = (division: string, family: string) => {
   const got = motifSupport(d, family as MotifId);
   return got.supported ? { supported: true as const, reason: '' } : { supported: false as const, reason: got.reason };
 };
+/** Стежки, которые рецепт умеет назвать: тип RecipeStitch в kagari.ts. */
+const ENGINE_STITCHES = new Set(['uwagake-chidori', 'chidori', 'sakasa']);
 const shown = (appears: string) =>
   appears === 'dock' ? 'кнопка в мастерской' : appears === 'variant-chip' ? 'чип варианта' : 'только данные, кнопки нет';
 
@@ -113,12 +115,23 @@ for (const m of MOTIF_CATALOG) {
     lines.push('- ⚠️ кнопка есть, а шить нечем — это видно игроку.');
   }
   if (m.recipe) {
+    const yarn = YARN_CATALOG.find((y) => y.kind === m.recipe!.thread);
+    lines.push('', '## Чем шьётся', '',
+      `- Нить: ${yarn ? link(yarn.names.ru) : m.recipe.thread} — от её толщины считается шаг ряда`,
+      `- Рабочих групп: ${m.recipe.sets}${m.recipe.sets === 2 ? ' — две нити попеременно, A и B' : ''}`);
     lines.push('', '## Числа рецепта', '',
       `- внутренние метки: ${m.recipe.innerMm} мм от полюса`,
       `- нижние точки: ${Math.round(m.recipe.outerFromEquator * 100)}% пути от экватора к полюсу`,
       `- растяжка острия: ${m.recipe.stretchMm} мм`,
       `- подхват поперёк метки: ${m.recipe.cornerMm} мм`,
       '', 'Что из этих чисел от источника, а что наш выбор — `docs/assumptions.md`.');
+  }
+  const family = MOTIF_CATALOG.filter((x) => x.family === m.family && x.id !== m.id);
+  if (family.length) {
+    const base = MOTIF_CATALOG.find((x) => x.family === m.family && x.appears === 'dock');
+    lines.push('', '## Та же семья', '',
+      ...(base && base.id !== m.id ? [`- Основной: ${link(base.names.ru)}`] : []),
+      ...family.filter((x) => !base || x.id !== base.id).map((x) => `- ${link(x.names.ru)} — ${STATUS[x.status]}`));
   }
   put(`02 Узоры/${title(m.names)}.md`, lines.join('\n') + footer);
 }
@@ -131,6 +144,11 @@ for (const d of DIVISION_CATALOG) {
     '## О ней', '',
     `- Вид: ${d.kind === 'simple' ? 'простое деление' : d.kind === 'combination' ? 'комбинированное' : 'дополнительное'}`,
     ...(d.poles ? [`- Центров: ${d.poles}`] : []),
+    ...(d.rays ? [`- Лучей: ${d.rays}`] : []),
+    ...(d.builtOn ? [(() => {
+      const base = DIVISION_CATALOG.find((x) => x.id === d.builtOn);
+      return `- Построена на: ${base ? link(base.names.ru) : d.builtOn}`;
+    })()] : []),
     `- Этап: ${link(STAGES.mark.title)}`,
     `- Состояние: **${STATUS[d.status]}**`,
     '', '## Что на ней шьётся', '',
@@ -158,6 +176,11 @@ for (const s of STITCH_CATALOG) {
     '', '## Каким узорам нужен', '',
     ...(used.length ? used.map((m) => `- ${link(m.names.ru)}`) : ['- пока ни одному']),
   ];
+  const sewable = used.filter((m) => supportOf(m.requires, m.family).supported);
+  lines.push('', '## Достижимость в игре', '',
+    `- В интерфейсе: ${shown(s.appears)}`,
+    `- Движок называет этот стежок: ${ENGINE_STITCHES.has(s.id) ? '**да**' : '**нет** — рецепт его не знает'}`,
+    `- Узоров, которые им действительно шьются: ${sewable.length} из ${used.length}`);
   put(`04 Стежки/${title(s.names)}.md`, lines.join('\n') + footer);
 }
 
@@ -169,6 +192,8 @@ for (const y of YARN_CATALOG) {
     `- Толщина: **${y.mm} мм**`,
     `- Роль: ${y.role === 'wrap' ? 'намотка' : y.role === 'mark' ? 'разметка' : 'вышивка'} — ${link(stage.title)}`,
     `- Состояние: **${STATUS[y.status]}**`,
+    ...(y.kind ? [`- В кадре рисуется как \`${y.kind}\` (свои блеск и шероховатость)`] : ['- Рендер эту нить пока не рисует отдельно']),
+    ...(MOTIF_CATALOG.filter((m) => m.recipe?.thread === y.kind).map((m) => `- Ею шьётся: ${link(m.names.ru)}`)),
     '', '## Достижимость в игре', '',
     y.role === 'kagari'
       ? '- В мастерской выбирается **цвет** нити, а не сама нить: вид и толщина пока заданы рецептом.'
@@ -186,6 +211,7 @@ for (const s of MARI_CATALOG) {
     `- Окружность: **${s.C} см** (радиус ${(s.C / (2 * Math.PI)).toFixed(2)} см)`,
     `- Этап: ${link(STAGES.wrap.title)}`,
     `- Состояние: **${STATUS[s.status]}**`,
+    ...(s.C === 24 ? [] : ['', '> Геометрия узора сегодня считается для эталона 24 см: перенос рецепта на этот размер ещё не проверен.']),
   ];
   put(`06 Шары/${slug(s.label)}.md`, lines.join('\n') + footer);
 }

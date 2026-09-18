@@ -471,7 +471,8 @@ export function kikuSpec(
       recipe: null,
     };
   }
-  const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
+  // Шаг ряда — толщина нити этого рецепта, а не вписанная сюда перле №5.
+  const pitch = unitFromMm(STITCH_THREAD_MM[recipe.thread]);
   const stretch = unitFromMm(recipe.stretchMm);
   const inner = unitFromMm(recipe.innerMm);
   const outer = (Math.PI / 2) * (1 - recipe.outerFromEquator);

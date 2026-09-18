@@ -13,6 +13,7 @@
  */
 
 import { MARI_SIZES, STITCH_THREAD_MM, WRAP_THREAD_MM } from "./measure.ts";
+import { STITCH_THREADS, type ThreadKind } from "./thread.ts";
 import { KIKU_8_POINT, type Crossing, type PatternRecipe } from "./kagari.ts";
 
 export type CatalogStatus = "now" | "v1" | "later";
@@ -41,7 +42,10 @@ export function catalogLabel(names: CatalogName, surface: LabelSurface) {
 export type YarnEntry = {
   id: string;
   role: "wrap" | "mark" | "kagari";
+  /** Толщина берётся из таблиц measure.ts / thread.ts, здесь её не заводят. */
   mm: number;
+  /** Как эта нить рисуется, если рендер её умеет. */
+  kind?: ThreadKind;
   names: CatalogName;
   note: string;
   status: CatalogStatus;
@@ -52,6 +56,10 @@ export type DivisionEntry = {
   names: CatalogName;
   kind: "simple" | "combination" | "extra";
   poles?: number;
+  /** Сколько лучей сходится в центре; у комбинированных — сорта центров. */
+  rays?: string;
+  /** Разметка, поверх которой эта строится. */
+  builtOn?: string;
   status: CatalogStatus;
   appears: AppearsIn;
   note: string;
@@ -95,23 +103,23 @@ export const MARI_CATALOG = MARI_SIZES.map((s) => ({
 export const YARN_CATALOG: YarnEntry[] = [
   { id: "wrap-yarn", role: "wrap", mm: WRAP_THREAD_MM.yarn.mm, names: n("毛糸", "keito", "yarn", "пряжа"), note: WRAP_THREAD_MM.yarn.what, status: "now" },
   { id: "wrap-fine", role: "wrap", mm: WRAP_THREAD_MM.fine.mm, names: n("細い毛糸", "hosoi keito", "fine yarn", "тоньше"), note: WRAP_THREAD_MM.fine.what, status: "now" },
-  { id: "wrap-sew", role: "wrap", mm: WRAP_THREAD_MM.sew.mm, names: n("縫い糸", "nui-ito", "sewing thread", "швейная"), note: WRAP_THREAD_MM.sew.what, status: "now" },
-  { id: "pearl-5", role: "kagari", mm: STITCH_THREAD_MM.pearl5, names: n("パール5", "pearl 5", "pearl cotton #5", "перле 5"), note: "TemariKai: 7 × #5 = 0.5 см", status: "now" },
-  { id: "pearl-8", role: "kagari", mm: STITCH_THREAD_MM.pearl8, names: n("パール8", "pearl 8", "pearl cotton #8", "перле 8"), note: "тоньше кагари", status: "v1" },
-  { id: "mark-metallic", role: "mark", mm: STITCH_THREAD_MM.mark, names: n("地割り糸", "jiwari-ito", "marking thread", "дзивари"), note: "металлик / тонкая разметочная", status: "now" },
-  { id: "hana-ito", role: "kagari", mm: 0.4, names: n("花糸", "hana-ito", "flower thread / silk", "хана-ито"), note: "шёлк; picker не сейчас (#76)", status: "later" },
-  { id: "bunka", role: "kagari", mm: 0.9, names: n("文化糸", "bunka-ito", "bunka", "бунка"), note: "не этот этап", status: "later" },
+  { id: "wrap-sew", role: "wrap", mm: WRAP_THREAD_MM.sew.mm, kind: "serger", names: n("縫い糸", "nui-ito", "sewing thread", "швейная"), note: WRAP_THREAD_MM.sew.what, status: "now" },
+  { id: "pearl-5", role: "kagari", mm: STITCH_THREAD_MM.pearl5, kind: "pearl5", names: n("パール5", "pearl 5", "pearl cotton #5", "перле 5"), note: "TemariKai: 7 × #5 = 0.5 см", status: "now" },
+  { id: "pearl-8", role: "kagari", mm: STITCH_THREAD_MM.pearl8, kind: "pearl8", names: n("パール8", "pearl 8", "pearl cotton #8", "перле 8"), note: "тоньше кагари", status: "v1" },
+  { id: "mark-metallic", role: "mark", mm: STITCH_THREAD_MM.mark, kind: "metallic", names: n("地割り糸", "jiwari-ito", "marking thread", "дзивари"), note: "металлик / тонкая разметочная", status: "now" },
+  { id: "hana-ito", role: "kagari", mm: STITCH_THREADS.hana.mm, names: n("花糸", "hana-ito", "flower thread / silk", "хана-ито"), note: "шёлк; picker не сейчас (#76)", status: "later" },
+  { id: "bunka", role: "kagari", mm: STITCH_THREADS.bunka.mm, names: n("文化糸", "bunka-ito", "bunka", "бунка"), note: "не этот этап", status: "later" },
 ];
 
 export const DIVISION_CATALOG: DivisionEntry[] = [
-  { id: "s8", names: n("単純8等分", "tanjyun 8 toubun", "Simple 8", "простое 8"), kind: "simple", poles: 2, status: "now", appears: "dock", note: "Два полюса, экватор, 8 лучей. Учебный старт." },
-  { id: "c8", names: n("8等分の組み合わせ", "hachitobun no kumiawase", "C8", "C8"), kind: "combination", poles: 6, status: "now", appears: "dock", note: "6 восьмилучевых центров." },
-  { id: "c10", names: n("10等分の組み合わせ", "jutobun no kumiawase", "C10", "C10"), kind: "combination", poles: 12, status: "v1", appears: "dock", note: "12 десятилучевых. Серый, пока C8 честный." },
-  { id: "s4", names: n("単純4等分", "tanjyun 4 toubun", "Simple 4", "простое 4"), kind: "simple", poles: 2, status: "v1", appears: "data-only", note: "Suess Autumn Moon. Не кику." },
-  { id: "s10", names: n("単純10等分", "tanjyun 10 toubun", "Simple 10", "простое 10"), kind: "simple", poles: 2, status: "v1", appears: "data-only", note: "База для C10." },
-  { id: "s16", names: n("単純16等分", "tanjyun 16 toubun", "Simple 16", "простое 16"), kind: "simple", poles: 2, status: "later", appears: "data-only", note: "16-слойное кику." },
+  { id: "s8", names: n("単純8等分", "tanjyun 8 toubun", "Simple 8", "простое 8"), kind: "simple", poles: 2, rays: "8 лучей у каждого полюса", status: "now", appears: "dock", note: "Два полюса, экватор, 8 лучей. Учебный старт." },
+  { id: "c8", names: n("8等分の組み合わせ", "hachitobun no kumiawase", "C8", "C8"), kind: "combination", poles: 6, rays: "6 центров по 8 лучей и 8 центров по 6", builtOn: "s8", status: "now", appears: "dock", note: "6 восьмилучевых центров." },
+  { id: "c10", names: n("10等分の組み合わせ", "jutobun no kumiawase", "C10", "C10"), kind: "combination", poles: 12, rays: "12 центров по 10 лучей", builtOn: "s10", status: "v1", appears: "dock", note: "12 десятилучевых. Серый, пока C8 честный." },
+  { id: "s4", names: n("単純4等分", "tanjyun 4 toubun", "Simple 4", "простое 4"), kind: "simple", poles: 2, rays: "4 луча у каждого полюса", status: "v1", appears: "data-only", note: "Suess Autumn Moon. Не кику." },
+  { id: "s10", names: n("単純10等分", "tanjyun 10 toubun", "Simple 10", "простое 10"), kind: "simple", poles: 2, rays: "10 лучей у каждого полюса", status: "v1", appears: "data-only", note: "База для C10." },
+  { id: "s16", names: n("単純16等分", "tanjyun 16 toubun", "Simple 16", "простое 16"), kind: "simple", poles: 2, rays: "16 лучей у каждого полюса", status: "later", appears: "data-only", note: "16-слойное кику." },
   { id: "c6", names: n("6等分の組み合わせ", "combination 6", "C6", "C6"), kind: "combination", status: "later", appears: "data-only", note: "Suess workbook, не стандарт JTA." },
-  { id: "double-c8", names: n("二重8組み合わせ", "double C8", "Double C8", "двойное C8"), kind: "combination", status: "later", appears: "data-only", note: "Suess workbook." },
+  { id: "double-c8", names: n("二重8組み合わせ", "double C8", "Double C8", "двойное C8"), kind: "combination", builtOn: "c8", status: "later", appears: "data-only", note: "Suess workbook." },
   { id: "tamentai", names: n("多面体", "tamentai", "multicenter marking", "таментай"), kind: "extra", status: "later", appears: "data-only", note: "Не этот этап (#54)." },
 ];
 
