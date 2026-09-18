@@ -70,7 +70,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     kagariDir: s.kagariDir, kagariSpacing: s.kagariSpacing, mode: s.mode,
     layerDone: s.layerDone, history: s.history, sewnHistory: s.sewnHistory,
     pinHistory: s.pinHistory, pinNote: s.pinNote, selectedColor: s.selectedColor,
-    paletteId: s.paletteId, setColor: s.setColor,
+    paletteId: s.paletteId, setColor: s.setColor, kagariEdit: s.kagariEdit, editThread: s.editThread,
   })));
   const { division, motif, craft, pins, facingPole, jiwariOn, jiwariPhase, jiwariLaid,
     kagariPlan, kagariLaid, kagariKept, kagariColors, kagariPlaying, kagariSet, kikuLayers,
@@ -107,20 +107,19 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     complete ? "Следующий ряд" : kagariPlan.length ? "Продолжить" : "Начать кику";
 
   // A kiku is sewn with two working threads that alternate by rounds (GT14 asks
-  // for two colours). The palette holds the one in hand; with the first group
-  // finished the hand has already taken the second, as the store does.
+  // for two colours): «1» for the first four petals, «2» for the second four.
+  // The palette paints the one chosen there; by default the one in hand, which
+  // after the first group is already the second, as the store does.
   const groupLaidOut = kagariPlan.length > 0 && kagariLaid >= kagariPlan.length;
   const inHand: 0 | 1 = kagariSet === 0 && groupLaidOut ? 1 : kagariSet;
   const sewingThread = motif === "kiku" && (kagariPlan.length > 0 || kagariKept.length > 0);
-  const otherThread = sewingThread ? kagariColors[inHand === 0 ? 1 : 0] : -1;
-  const threadLine = inHand === 0
-    ? "В руке нить первой четвёрки. Цвет меняет её, уже пришитое остаётся."
-    : "В руке нить второй четвёрки. Цвет меняет её, уже пришитое остаётся.";
+  const editing: 0 | 1 = s.kagariEdit ?? inHand;
+  const otherThread = motif === "kiku" ? kagariColors[editing === 0 ? 1 : 0] : -1;
   const threadName = (i: number) => {
     const name = `${COLOR_NAMES[i]} нить`;
-    if (!sewingThread) return name;
-    if (i === kagariColors[inHand]) return `${name} — в руке`;
-    if (i === otherThread) return `${name} — ${inHand === 0 ? "вторая" : "первая"} четвёрка`;
+    if (motif !== "kiku") return name;
+    if (i === kagariColors[editing]) return `${name} — нить ${editing + 1}`;
+    if (i === otherThread) return `${name} — нить ${editing === 0 ? 2 : 1}`;
     return name;
   };
 
@@ -218,12 +217,25 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
                 </button>;
               })}
             </div>
+            {motif === "kiku" ? <div role="group" aria-label="Две нити кику"
+              className="flex min-h-9 items-center justify-center gap-1 px-1 py-0.5">
+              {([0, 1] as const).map((slot) => <button key={slot} type="button" aria-pressed={editing === slot}
+                aria-label={`Нить ${slot + 1}, ${slot === 0 ? "первая" : "вторая"} четвёрка: ${COLOR_NAMES[kagariColors[slot]]?.toLowerCase() ?? ""}`}
+                onClick={() => s.editThread(slot)}
+                className={cn("flex h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs", focusStyle,
+                  editing === slot ? "bg-ink/8 font-medium ring-1 ring-ink/40" : "text-ink/70 hover:bg-ink/5")}>
+                <span aria-hidden>{slot + 1}</span>
+                <span aria-hidden className="size-4 rounded-full ring-1 ring-line"
+                  style={{ backgroundColor: THREAD_COLORS[kagariColors[slot]] }} />
+              </button>)}
+              <span className="min-w-0 text-[11px] leading-4 text-ink/70">
+                {sewingThread ? "Цвет — для выбранной нити. Пришитое не меняется." : "Четвёрки лепестков: 1 и 2. Выберите нить, затем цвет."}
+              </span>
+            </div> :
             <p className="min-h-9 px-2 py-1.5 text-center text-xs leading-4 text-ink/70">
-              {motif === "kiku" && sewingThread ? threadLine :
-                motif === "kiku" ? "Кику — хризантема. Метки: полюс и треть пути от экватора к нему." :
-                division !== "simple" && jiwariOn ? `Для кику выберите S8 в «Разметке». Рецепта ${division.toUpperCase()} ещё нет.` :
+              {division !== "simple" && jiwariOn ? `Для кику выберите S8 в «Разметке». Рецепта ${division.toUpperCase()} ещё нет.` :
                 "Начните с кику на S8. Эскиз — свободные линии между метками."}
-            </p>
+            </p>}
           </>}
 
           <div className="flex items-center justify-between gap-1 border-t border-line pt-1">
@@ -243,8 +255,8 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
                 aria-pressed={s.selectedColor === i} title={threadName(i)}
                 onClick={() => s.setColor(i)} className={cn("flex h-10 min-w-0 flex-1 items-center justify-center rounded-lg", focusStyle)}>
                 <span className={cn("size-6 rounded-full ring-1 ring-line",
-                  // The thread in hand is ringed; the other working thread keeps a
-                  // quieter mark, so a kiku's pair is readable in one row.
+                  // The thread being painted is ringed; the other working thread
+                  // keeps a quieter mark, so a kiku's pair is readable in one row.
                   otherThread === i && s.selectedColor !== i && "ring-2 ring-ink/35",
                   s.selectedColor === i && "ring-2 ring-ink ring-offset-2 ring-offset-linen")}
                   style={{ backgroundColor: color }} />

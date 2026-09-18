@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { CRAFT_ACTIONS, dispatchCommand, getCraftState } from "./actions";
-import { c8Pins, c10Pins } from "./jiwari";
+import { c8Pins, c10Pins, kikuThreads } from "./jiwari";
 import { around, kikuWorkingPins, motifStitchPlan, motifSupport, stitchPoleIndex, type MotifId } from "./patterns";
 import { useTemari } from "./store";
 
@@ -443,6 +443,65 @@ describe("quick kiku: marking and pins at the facing pole in one tap", () => {
     }
     assert.deepEqual([...(bySet.get(0) ?? [])], [1], "set A stays its colour to the equator");
     assert.deepEqual([...(bySet.get(1) ?? [])], [3], "set B stays its colour to the equator");
+  });
+
+  it("a colour picked before «Кику здесь» is the first four petals' thread", () => {
+    // The owner picked a colour in the workshop and the first four came out in
+    // another one: starting a new flower replaced the pick with a default pair.
+    const wrap = useTemari.getState().wrapColor;
+    const pick = [0, 1, 2, 3, 4].find((c) => c !== wrap && c !== kikuThreads(wrap)[0])!;
+    useTemari.getState().setColor(pick);
+    dispatchCommand("quick-kiku");
+    assert.equal(useTemari.getState().kagariColors[0], pick);
+    dispatchCommand("fill");
+    finishPlan();
+    assert.ok(useTemari.getState().kagariPlan.every((stitch) => stitch.color === pick));
+  });
+
+  it("a thread of the wrap's own colour is not carried into a new flower", () => {
+    const wrap = useTemari.getState().wrapColor;
+    useTemari.getState().setColor(wrap);
+    dispatchCommand("quick-kiku");
+    assert.equal(useTemari.getState().kagariColors[0], kikuThreads(wrap)[0]);
+  });
+
+  it("«1» and «2» choose which four petals the palette paints", () => {
+    dispatchCommand("quick-kiku");
+    const [a] = useTemari.getState().kagariColors;
+    const b = [0, 1, 2, 3, 4].find((c) => c !== a)!;
+    // Both threads chosen before a stitch is sewn.
+    useTemari.getState().editThread(1);
+    useTemari.getState().setColor(b);
+    let s = useTemari.getState();
+    assert.deepEqual(s.kagariColors, [a, b]);
+    assert.equal(s.selectedColor, b, "the palette shows the thread being painted");
+    dispatchCommand("fill");
+    assert.equal(useTemari.getState().kagariEdit, 1, "the choice holds while the group is sewn");
+    finishPlan();
+    s = useTemari.getState();
+    assert.ok(s.kagariPlan.every((stitch) => stitch.color === a), "first four in thread 1");
+    assert.equal(s.kagariEdit, null, "once the hand changes thread, the palette follows it again");
+    assert.equal(s.selectedColor, b);
+    dispatchCommand("motif-kiku");
+    finishPlan();
+    s = useTemari.getState();
+    assert.ok(s.kagariPlan.every((stitch) => stitch.color === b), "second four in thread 2");
+    assert.ok(s.kagariKept.every((stitch) => stitch.color === a));
+    // Thread 1 repainted while the second group waits: nothing laid changes,
+    // the rows still to come in set A take the new colour.
+    const c = [0, 1, 2, 3, 4].find((x) => x !== a && x !== b)!;
+    useTemari.getState().editThread(0);
+    useTemari.getState().setColor(c);
+    s = useTemari.getState();
+    assert.deepEqual(s.kagariColors, [c, b]);
+    assert.ok(s.kagariKept.every((stitch) => stitch.color === a), "laid thread keeps its colour");
+    dispatchCommand("kiku-finish");
+    finishPlan();
+    const rest = useTemari.getState().kagariPlan.slice(useTemari.getState().kagariPlan.length / 2);
+    for (const stitch of rest) {
+      if (stitch.kind === "arc" && stitch.set === 0) assert.equal(stitch.color, c);
+      if (stitch.kind === "arc" && stitch.set === 1) assert.equal(stitch.color, b);
+    }
   });
 
   it("the palette always shows the thread the next stitches will be sewn in", () => {

@@ -375,3 +375,15 @@ const SECOND_THREAD = [1, 0, 3, 1, 1];
 export function kikuThreads(wrapColor: number): [number, number] {
   return [contrastThread(wrapColor), SECOND_THREAD[wrapColor] ?? 1];
 }
+
+/**
+ * The pair a new kiku starts from: the player's own two threads. Only a thread
+ * of the wrap's own colour is replaced by the starting pair's, because it would
+ * vanish on the ball. Starting over from kikuThreads used to throw away a colour
+ * picked before «Кику здесь», so the first four petals came out in a thread
+ * nobody chose.
+ */
+export function kikuThreadsFor(chosen: readonly [number, number], wrapColor: number): [number, number] {
+  const start = kikuThreads(wrapColor);
+  return [chosen[0] === wrapColor ? start[0] : chosen[0], chosen[1] === wrapColor ? start[1] : chosen[1]];
+}
