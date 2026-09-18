@@ -16,10 +16,10 @@ Temari-Obsidian/.obsidian/workspace-mobile.json
 # Настройки плагинов (data.json) — тоже нет: Excalidraw хранит там ключи API
 # своего ИИ-режима, а обязательные настройки записаны в AGENTS.project.md.
 # Список включённых плагинов (community-plugins.json) — идёт.
-Temari-Obsidian/.obsidian/plugins/*/main.js
-Temari-Obsidian/.obsidian/plugins/*/styles.css
-Temari-Obsidian/.obsidian/plugins/*/manifest.json
-Temari-Obsidian/.obsidian/plugins/*/data.json
+# Перечисление по именам файлов пропускало всё остальное, что кладут плагины:
+# у Juggl это graph.css, у Breadcrumbs — data-backup после миграции настроек.
+# Поэтому игнорируется папка целиком.
+Temari-Obsidian/.obsidian/plugins/
 # Служебная папка Excalidraw: скрипты из магазина (чужой код), библиотеки,
 # шаблон и шрифты CJK (мегабайты) — умолчания 2.27.3, всё под Excalidraw/.
 Temari-Obsidian/Excalidraw/
