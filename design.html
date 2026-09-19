@@ -93,6 +93,9 @@
       .steps figure { position: relative; padding-top: 0.2rem; }
       .steps figcaption { text-align: left; }
       .stitch-focus { grid-template-columns: 1fr; max-width: 22rem; margin-inline: auto; }
+      .diagram-archive { margin: 1.2rem 0; border-block: 1px solid var(--line); padding: 0.85rem 0; }
+      .diagram-archive summary { cursor: pointer; font-weight: 500; line-height: 1.45; }
+      .diagram-archive summary:focus-visible { outline: 2px solid var(--beni); outline-offset: 4px; }
       .diagram-label {
         font-size: 0.68rem;
         font-weight: 600;
@@ -165,7 +168,7 @@
         технического брака и показывает реальный путь нити шаг за шагом.
       </p>
 
-      <p class="note"><b>Редакция: 16.09.2026 · модель толстой нити для нижнего подхвата —
+      <p class="note"><b>Редакция документа: 19.09.2026. Модель нижнего подхвата от 16.09 —
         <a href="https://github.com/newYurk/temari/commit/9d9e474d223a37ae40fa63755661215be71a13d7"><code>9d9e474</code></a>
         (после ремесленной сверки <a href="https://github.com/newYurk/temari/commit/44a297e8212c946bf5ccb960754fe9041a3edd0d"><code>44a297e</code></a>).</b>
         Цель, реализованное и проверенное разделены ниже. Учебные схемы объясняют замысел;
@@ -1250,12 +1253,20 @@
         Цветовой рецепт и параметры материала задаются отдельно; доступность — в <a href="#status">таблице состояния</a>.
       </p>
 
-      <p class="note">
-        <strong>Проверка ракурса.</strong> Схемы делений ниже — корректные ортографические проекции сферы,
-        не изометрия: вид на полюс честно показывает симметрию. Для механики одного стежка такого вида
-        недостаточно, поэтому ниже дан косой крупный план с явным порядком слоёв.
-      </p>
-
+      <h3 id="diagram-status">Симметрия, ракурс и маршрут нити</h3>
+      <p>Вид на полюс помогает читать разметку и симметрию, косой вид помогает увидеть глубину.
+        Но удачный ракурс сам по себе не подтверждает правильный подхват: ранние рисунки ниже
+        сделаны вручную и не строятся из текущего рассчитанного пути нити.</p>
+      <p>Для выбранного нижнего uwagake ориентир теперь другой:
+        <a href="#lower-chidori">обратный проход и выходящая ветвь поверх входящей</a>.
+        Сравнивать маршрут следует с <a href="./lab.html#spatial-catch">актуальным отдельным подхватом</a>,
+        а развитие рядов с <a href="./lab.html#s8-kiku">контрольным S8 в лаборатории</a>.
+        Численная приёмка лаборатории не означает ремесленную приёмку всего узора.</p>
+      <details class="diagram-archive" id="stitch-archive">
+        <summary>Ранние схемы стежка от 10.09: открыть для сравнения, не как текущую инструкцию</summary>
+        <p class="note">История сохранена: вид на полюс и косой крупный план уже менялись.
+          Эти рисунки не заменяют последующую сверку маршрута с источниками и пространственный расчёт.
+          Их повторная отрисовка должна опираться на актуальные контрольные примеры, а не на старые SVG.</p>
       <div class="steps stitch-focus" id="stitch-compare">
         <figure hidden aria-hidden="true">
           <svg class="ball" viewBox="0 0 200 200" aria-label="Ёлочка: стежок 1-2-3-4 по двум меридианам">
@@ -1325,7 +1336,7 @@
             <path d="M177 80 C187 82 192 88 194 95" fill="none" stroke="#665f58" stroke-width="1" />
             <text x="197" y="78" text-anchor="end" font-size="9" font-weight="500" fill="#665f58" font-family="IBM Plex Sans, sans-serif">под дзивари</text>
           </svg>
-          <figcaption><strong>Стежок крупно.</strong> В точке 2 короткий пунктир проходит под золотой дзивари; игла не показана. Чёрная точка у полюса — булавка, белые кольца — точки стежка.</figcaption>
+          <figcaption><strong>Ранний косой крупный план.</strong> Пунктир обозначает скрытый участок под дзивари, но рисунок не показывает полностью проверенный обратный подхват. Чёрная точка — булавка, белые кольца — точки стежка; игла не показана.</figcaption>
         </figure>
         <figure>
           <svg class="ball" viewBox="0 0 200 200" aria-label="Три ряда ёлочки">
@@ -1352,9 +1363,10 @@
             <text x="113.2" y="90.6" text-anchor="start" font-size="10" fill="#8a847c" font-family="IBM Plex Sans, sans-serif">наружу</text>
             <text x="160.3" y="56.8" text-anchor="start" font-size="10" fill="#8a847c" font-family="IBM Plex Sans, sans-serif">внутрь</text>
           </svg>
-          <figcaption><strong>Ряды.</strong> Те же стежки целиком. Наружу — от полюса к краю (лепесток растёт). Внутрь — от края к полюсу (фигура густеет).</figcaption>
+          <figcaption><strong>Ранняя схема направлений.</strong> Подписи «наружу» и «внутрь» показывают разные направления, а не два режима одной проверенной кику. Контрольный uwagake растёт от полюса; обратный способ требует отдельного рецепта.</figcaption>
         </figure>
       </div>
+      </details>
 
       <p>
         Меньше рядов означает более раннюю остановку по тому же правилу роста.
