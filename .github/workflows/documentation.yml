@@ -11,7 +11,9 @@ on:
       - 'dist-pages/design.html'
       - 'scripts/sync-design.mjs'
       - 'scripts/build-craft-vault.mts'
-      - 'src/components/temari/library.ts'
+      # хранилище считает состояние механик по замыканию импортов,
+      # поэтому расходится не только с каталогом, но и с любым src/
+      - 'src/**'
       - 'Temari-Obsidian/**'
       - '.github/workflows/documentation.yml'
   pull_request:
@@ -25,7 +27,9 @@ on:
       - 'dist-pages/design.html'
       - 'scripts/sync-design.mjs'
       - 'scripts/build-craft-vault.mts'
-      - 'src/components/temari/library.ts'
+      # хранилище считает состояние механик по замыканию импортов,
+      # поэтому расходится не только с каталогом, но и с любым src/
+      - 'src/**'
       - 'Temari-Obsidian/**'
       - '.github/workflows/documentation.yml'
 permissions:

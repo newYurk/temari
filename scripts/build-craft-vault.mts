@@ -1,37 +1,66 @@
 /**
  * Карта ремесла как хранилище Obsidian — собрана из данных самой игры.
  *
- * Узлы: узоры, разметки, стежки, нити, размеры шара и три этапа работы.
- * Рёбра: то, что уже записано в `src/components/temari/library.ts` — какой узор
- * на какой разметке живёт, каким стежком шьётся, какая нить на каком этапе.
- * Руками здесь не пишется ничего: добавили строку в каталог — узел появился сам,
- * и разойтись с игрой он не может, потому что игра читает тот же файл.
+ * ДВА ЭТАЖА (решение владелицы 19.09: «сверху механики, внутри каталог»).
  *
- * Правило рёбер (от него зависит, читается ли граф):
+ *   Верх — «00 Карта ремесла»: приборная панель. Стадия числами, ОДНА схема
+ *   механик прямо в теле заметки, строка на механику, открытые вопросы.
+ *   Узлов на схеме семь, а не сорок шесть: узел — механика, не строка каталога.
+ *
+ *   Низ — «01 Механики»: у каждой механики своя заметка, и каталог живёт ТАМ.
+ *   Прежние «01 Этапы» сняты: три заметки-этапа пересказывали каталог и были
+ *   хабом на 29 входящих, а схема лежала отдельным html в `screenshots/`,
+ *   который git игнорирует. «Всё то, что должно быть в одном месте, — в разных
+ *   местах» (владелица, 19.09). Теперь схема внутри заметки, и картинки нет.
+ *
+ * ОТКУДА ВЗЯЛСЯ СПИСОК МЕХАНИК. Не из прозы «шар → намотка → разметка →
+ * стежок → узор»: разбор 18.09 показал, что проза расходится с кодом. Список
+ * выведен из трёх мест, и все три проверяемы:
+ *   1. Цепочка запретов в `actions.ts` — `needWrap` → `needMarks` /
+ *      `needFinishedMarking` → `needRecipe` → `kikuMarksReady`. Это игра сама
+ *      называет свои предусловия, то есть свой настоящий граф зависимостей.
+ *      Там же видно, что намотка в зависимостях ЕСТЬ: 17 из 22 действий
+ *      проходят через `needWrap`. В прежнем графе хранилища её не было потому,
+ *      что нить намотки и шар не участвуют в рёбрах КАТАЛОГА, — это разное.
+ *   2. Замыкание импортов от входов `src/pages.tsx` (игра) и `src/lab.ts`
+ *      (лаборатория). Оно, а не наше мнение, отвечает «работает» это или
+ *      «собрано, но не в игре»; считается ниже функцией `closure()`.
+ *   3. Каталоги `library.ts` + `motifSupport` — какие строки чьи.
+ *
+ * Правило рёбер (от него зависит, читается ли граф Obsidian):
  *   — Зависимость живёт в свойстве frontmatter той заметки, которая зависит:
- *     у узора «разметка», «стежок», «нить», у разметки «основа». Всего их 27,
- *     ровно столько, сколько настоящих зависимостей в каталоге.
- *   — Обратное перечисление ссылкой не пишется никогда. Его показывает панель
- *     Backlinks, а встречная пара A↔B рисует в графе два ребра друг поверх
- *     друга, и направление становится нечитаемым. Списки «Что на ней шьётся»,
- *     «Каким узорам нужен», «Ею шьётся» остаются текстом.
- *   — Принадлежность к разделу («- Этап: …», «Та же семья») — тоже текст:
- *     это оглавление, а не зависимость.
- *   — Ссылками остаются только вход в хранилище («00 Карта ремесла») и списки
- *     самих этапов: по ним нажимают. В графе владелицы они отключены фильтром
- *     `.obsidian/graph.json`, так что на картинке видны ровно те 27 рёбер.
+ *     у узора «разметка», «стежок», «нить», у разметки «основа», у механики
+ *     «нужна». Обратное перечисление ссылкой не пишется никогда: его показывает
+ *     панель Backlinks, а встречная пара A↔B рисует два ребра друг поверх друга.
+ *   — Каталог внутри заметки механики — ТЕКСТ, а не ссылки. Ссылками он вернул
+ *     бы ровно ту патологию, которую сняли 18.09: семь хабов на сорок шесть
+ *     входящих. Имя строки плюс её состояние — это и есть работа панели, а до
+ *     самой заметки один Ctrl+O.
+ *   — Мермейд-схема ссылок в индекс Obsidian не добавляет (это подмена DOM
+ *     после отрисовки), поэтому кликабельность схемы графу ничего не стоит.
+ *
+ * ВНИМАНИЕ ПРО ГРАФ. Фильтр в `.obsidian/graph.json` прячет `-file:"Этап · "`.
+ * Заметок с таким именем больше нет, а новые семь («Механика · …») под фильтр
+ * не попадают и в графе видны — отдельной цепочкой из семи узлов рядом с
+ * облаком каталога. Это намеренно: цепочку механик владелица и просила увидеть.
+ * Сам `.obsidian/` не трогаем — он настроен ведущим.
  *
  * Сборка:  npx tsx scripts/build-craft-vault.mts --write
  * Проверка: npx tsx scripts/build-craft-vault.mts --check   (для CI)
  */
 import { readFile, writeFile, mkdir, readdir, rm } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve, relative } from 'node:path';
 import {
   DIVISION_CATALOG, MARI_CATALOG, MOTIF_CATALOG, STITCH_CATALOG, YARN_CATALOG,
   type CatalogName, type CatalogStatus,
 } from '../src/components/temari/library.ts';
-import { motifSupport, type MotifId } from '../src/components/temari/patterns.ts';
+import { motifSupport, kikuWorkingPins, type MotifId } from '../src/components/temari/patterns.ts';
 import { CRAFT_ACTIONS } from '../src/components/temari/actions.ts';
+import { PUZZLES } from '../src/components/temari/puzzles.ts';
+import { SIMPLE_THREADS, C8_EXTRA } from '../src/components/temari/jiwari.ts';
+import { MARI_C_CM, STITCH_THREAD_MM, WRAP_THREAD_MM } from '../src/components/temari/measure.ts';
+import { THREAD_KINDS } from '../src/components/temari/thread.ts';
+import type { Division } from '../src/components/temari/division.ts';
 
 /**
  * Достижимость: что из каталога на самом деле выбирается в мастерской.
@@ -55,19 +84,359 @@ const ENGINE_STITCHES = new Set(['uwagake-chidori', 'chidori', 'sakasa']);
 const shown = (appears: string) =>
   appears === 'dock' ? 'кнопка в мастерской' : appears === 'variant-chip' ? 'чип варианта' : 'только данные, кнопки нет';
 
-const VAULT = 'Temari-Obsidian';
-
 /**
- * What this builder owns — and nothing else. The vault is also where the owner
- * draws (Excalidraw) and where Obsidian keeps its settings and plugins: a file
- * outside these paths is never written, never checked and never removed. Before
- * this list the builder treated everything it had not made as stale and deleted
- * it on --write, which would have taken her drawings with it.
+ * Единственный рецепт — это поле `recipe` у строки каталога. `motifSupport`
+ * различает СЕМЬИ, а не строки: на «простом 8» он говорит «да» всем шести кику,
+ * хотя компилятор собирает одну геометрию — ту, что записана в `KIKU_8_POINT`.
+ * Поэтому «шьётся на самом деле» считается по `recipe`, а не по `motifSupport`.
+ */
+const RECIPES = MOTIF_CATALOG.flatMap((m) => (m.recipe ? [m.recipe] : []));
+
+const VAULT = 'Temari-Obsidian';
+const ROOT = resolve(import.meta.dirname, '..');
+
+// ── что игра на самом деле подключает ────────────────────────────────────────
+/**
+ * Замыкание импортов от входа. Это и есть ответ на вопрос «в игре или нет»:
+ * модуль, которого нет в замыкании `src/pages.tsx`, в игру не попадает, какой
+ * бы законченный он ни был. Так «нить в пространстве» и «ката» получают своё
+ * состояние не с наших слов, а из файлов.
+ */
+async function closure(entry: string): Promise<Set<string>> {
+  const seen = new Set<string>();
+  const exists = async (p: string) => {
+    try { await readFile(p); return true; } catch { return false; }
+  };
+  const resolveSpec = async (from: string, spec: string) => {
+    const raw = spec.startsWith('@/') ? join(ROOT, 'src', spec.slice(2)) : spec.startsWith('.') ? resolve(dirname(from), spec) : null;
+    if (!raw) return null;
+    const bare = raw.replace(/\.(ts|tsx)$/, '');
+    for (const cand of [`${bare}.ts`, `${bare}.tsx`, join(bare, 'index.ts'), join(bare, 'index.tsx')]) {
+      if (await exists(cand)) return cand;
+    }
+    return null;
+  };
+  const walk = async (file: string) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    let src: string;
+    try { src = await readFile(file, 'utf8'); } catch { return; }
+    const specs = [
+      ...[...src.matchAll(/from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]!),
+      // `import "./spatial-catch";` — ради побочного эффекта, без `from`.
+      // Без этой строки половина лаборатории считалась бы неподключённой.
+      ...[...src.matchAll(/^\s*import\s+['"]([^'"]+)['"]/gm)].map((m) => m[1]!),
+      ...[...src.matchAll(/import\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]!),
+      // Воркер — тоже вход: `new Worker(new URL('./x.worker.ts', import.meta.url))`.
+      ...[...src.matchAll(/new URL\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]!),
+    ];
+    for (const spec of specs) {
+      const target = await resolveSpec(file, spec);
+      if (target) await walk(target);
+    }
+  };
+  const start = join(ROOT, entry);
+  if (!(await exists(start))) throw new Error(`вход ${entry} не найден: пересчитать замыкание нечем`);
+  await walk(start);
+  return new Set([...seen].map((f) => relative(ROOT, f)));
+}
+
+const GAME = await closure('src/pages.tsx');
+const LAB = await closure('src/lab.ts');
+/** Символы, которые интерфейс игры действительно вызывает (кнопка существует). */
+const UI_SOURCE = await (async () => {
+  let text = '';
+  for (const f of GAME) {
+    if (!f.endsWith('.tsx')) continue;
+    try { text += await readFile(join(ROOT, f), 'utf8'); } catch { /* исчез — считаем, что вызова нет */ }
+  }
+  return text;
+})();
+
+const MODULE_STATE = (f: string) =>
+  GAME.has(f) ? 'в игре' : LAB.has(f) ? 'только в лаборатории' : 'нигде не подключён';
+
+// ── механики: верхний этаж ───────────────────────────────────────────────────
+type Row = { name: string; state: string; live: boolean };
+type Mechanic = {
+  key: string;
+  title: string;
+  one: string;
+  what: string;
+  /** Ключи механик, без которых эта не работает. Ребро пишется здесь. */
+  needs: string[];
+  /** Файлы, в которых эта механика живёт. По ним считается состояние. */
+  modules: string[];
+  /** Вход из интерфейса: id действия либо символ, который зовёт .tsx игры. */
+  entry: { action?: string; call?: string };
+  /** Внутренние шаги для маленькой схемы. Не заметки — кликабельными не будут. */
+  steps: string[];
+  catalogTitle: string;
+  rows: Row[];
+  limits: string[];
+};
+
+const wrapYarns = YARN_CATALOG.filter((y) => y.role === 'wrap');
+const kagariYarns = YARN_CATALOG.filter((y) => y.role !== 'wrap');
+const wrapMm = Object.values(WRAP_THREAD_MM).map((w) => w.mm);
+const recipeMm = RECIPES.map((r) => STITCH_THREAD_MM[r.thread]);
+/**
+ * ⚑ РАЗМЕТОЧНАЯ НИТЬ ТОЖЕ ЛЕЖИТ НА ШАРЕ (19.09). Обе проверки ниже знали только про намотку и
+ * рецепт, поэтому дзивари (0,2 мм, статус `now`) объявлялась незваной — а её кладут и на титуле,
+ * и в мастерской, и это первое, что игрок видит после намотки. Из-за этого таблица стадии
+ * показывала «доходит до нитки на шаре 4» вместо 5 и противоречила своей же колонке «отложено».
+ */
+const markMm = STITCH_THREAD_MM.mark;
+const GAME_DIVISIONS = (Object.keys(UI_DIVISION) as string[])
+  .filter((id) => ACTION_IDS.has(UI_DIVISION[id]!));
+const divisionArg = (id: string) => (id === 's8' ? 'simple' : id) as Division;
+const marksOf = (id: string) => kikuWorkingPins(divisionArg(id), 0).length;
+
+const MECHANICS: Mechanic[] = [
+  {
+    key: 'wrap',
+    title: 'Механика · намотка шара',
+    one: 'Шар обматывается нитью до ровной сферы — и до неё ни одно другое действие не открыто.',
+    what:
+      'Три прохода, толстый к тонкому: пряжа, тоньше, швейная. Видно только верхний слой, он же держит булавки.\n'
+      + 'Намотку ведёт рука: виток кладётся по большому кругу, плоскость поворачивается на границе витка, а не посреди него.\n'
+      + 'В коде это `MariWinder` и `WrapBuffer`; готовность считается покрытием сферы, а не числом витков.',
+    needs: [],
+    modules: ['src/components/temari/craft.ts'],
+    entry: { call: 'MariWinder' },
+    steps: Object.values(WRAP_THREAD_MM).map((w) => `${w.label} ${w.mm} мм`).concat('база готова'),
+    catalogTitle: 'Каталог: нити намотки и размеры шара',
+    rows: [
+      ...wrapYarns.map((y) => ({
+        name: `${y.names.ru} — ${y.mm} мм`,
+        state: wrapMm.includes(y.mm) ? 'кладётся проходом намотки' : 'в намотке не участвует',
+        live: wrapMm.includes(y.mm),
+      })),
+      ...MARI_CATALOG.map((s) => ({
+        name: `${s.label} — окружность ${s.C} см`,
+        state: s.C === MARI_C_CM ? 'на нём и считается геометрия' : `геометрия под ${MARI_C_CM} см, перенос не проверен`,
+        live: s.C === MARI_C_CM,
+      })),
+    ],
+    limits: [
+      `Размер шара не выбирается: \`MARI_C_CM\` = ${MARI_C_CM} см вписан константой, остальные ${MARI_CATALOG.length - 1} строки каталога существуют только как данные.`,
+      'Цвет намотки выбирается на титуле, толщина — ползунком; самой нити из каталога игрок не выбирает.',
+    ],
+  },
+  {
+    key: 'marking',
+    title: 'Механика · разметка',
+    one: 'Дзивари: большие круги делят поверхность и задают, где вообще может стоять стежок.',
+    what:
+      'Разметка идёт фазами: полоска на обхват, полюса, экватор, меридианы, у комбинированных — квадраты и V-линейка, потом юг.\n'
+      + `Простое 8 — это ${SIMPLE_THREADS.length} больших кругов, C8 добавляет ещё ${C8_EXTRA.length} квадратов у полюсов.\n`
+      + 'Пока фаза не доведена до конца, вышивка закрыта: это `needFinishedMarking` в `actions.ts`.',
+    needs: ['wrap'],
+    modules: ['src/components/temari/jiwari.ts', 'src/components/temari/division.ts'],
+    entry: { action: 'jiwari-simple' },
+    steps: [`${SIMPLE_THREADS.length} больших кругов`, 'фазы до «done»', 'метки-булавки'],
+    catalogTitle: 'Каталог: разметки',
+    rows: DIVISION_CATALOG.map((d) => {
+      const button = !!UI_DIVISION[d.id] && ACTION_IDS.has(UI_DIVISION[d.id]!);
+      const sewable = MOTIF_CATALOG.some((m) => m.recipe && m.recipe.requires === divisionArg(d.id));
+      return {
+        name: d.names.ru,
+        state: !button ? 'только данные, кнопки нет'
+          : sewable ? 'кнопка есть, и на ней есть что шить'
+          : 'кнопка есть, узора под неё нет',
+        live: button,
+      };
+    }),
+    limits: [
+      `Кнопкой выбираются ${GAME_DIVISIONS.length} разметки из ${DIVISION_CATALOG.length}; остальные — строки каталога без геометрии в коде.`,
+      `Узор с рецептом есть ровно на одной из них; на прочих разметка ложится, а шить нечем.`,
+    ],
+  },
+  {
+    key: 'recipe',
+    title: 'Механика · рецепт узора',
+    one: 'Рецепт — то единственное, что решает, дадут ли шить этот узор на этой разметке.',
+    what:
+      '`motifSupport(разметка, семья)` спрашивают все кнопки узоров и обе кнопки шитья; без «да» кнопка гаснет с причиной.\n'
+      + '`PatternRecipe` — не пересказ книги, а геометрия одной реализации: метки, доля пути от экватора, нить, перехлёст, растяжка, подхват.\n'
+      + 'Важная тонкость: `motifSupport` различает СЕМЬИ, а не строки каталога. Шесть строк кику он считает поддержанными, а компилятор собирает одну геометрию.',
+    needs: ['marking'],
+    modules: ['src/components/temari/patterns.ts', 'src/components/temari/kagari.ts'],
+    entry: { action: 'motif-kiku' },
+    steps: ['motifSupport(разметка, семья)', 'PatternRecipe', 'compileKiku'],
+    catalogTitle: 'Каталог: узоры',
+    rows: MOTIF_CATALOG.map((m) => ({
+      name: m.names.ru,
+      state: m.recipe ? 'рецепт есть — эта геометрия и шьётся'
+        : supportOf(m.requires, m.family).supported ? 'семья поддержана, своей геометрии нет'
+        : `рецепта нет — ${supportOf(m.requires, m.family).reason}`,
+      live: !!m.recipe,
+    })),
+    limits: [
+      `Поле \`recipe\` заполнено у ${RECIPES.length} строки из ${MOTIF_CATALOG.length}.`,
+      `Кнопок узора в мастерской ${MOTIF_CATALOG.filter((m) => m.appears === 'dock').length} плюс свободный эскиз; у трёх из них подпись «Позже» и запрет от \`needRecipe\`.`,
+      `\`MOTIF_LIST\` в \`patterns.ts\` перечисляет «none» и «kiku» — и не используется нигде, кроме своего теста: список узоров интерфейсу задают действия, а не он.`,
+    ],
+  },
+  {
+    key: 'marks',
+    title: 'Механика · метки под узор',
+    one: 'Прежде чем шить, игрок ставит булавки ровно туда, где рецепт назначил метки.',
+    what:
+      '`kikuWorkingPins` выдаёт рабочие метки полюса: сам полюс плюс внешние точки на трети пути от экватора.\n'
+      + '`snapToKikuMark` притягивает нажатие к ближайшей, `kikuMarksReady` держит кнопку шитья, пока стоят не все.\n'
+      + 'Метки приходят из рецепта: без него `kikuWorkingPins` возвращает пустой список, и ставить нечего.',
+    needs: ['marking', 'recipe'],
+    modules: ['src/components/temari/patterns.ts', 'src/components/temari/local-marking.ts'],
+    entry: { action: 'pin' },
+    steps: ['kikuWorkingPins', 'snapToKikuMark', 'kikuMarksReady'],
+    catalogTitle: 'Каталог: рабочие метки по разметкам',
+    rows: GAME_DIVISIONS.map((id) => {
+      const n = marksOf(id);
+      const d = DIVISION_CATALOG.find((x) => x.id === id);
+      return {
+        name: `${d ? d.names.ru : id} — ${n} рабочих меток`,
+        state: n > 0 ? 'метки есть, кику по ним шьётся' : 'меток нет: рецепта под эту разметку не существует',
+        live: n > 0,
+      };
+    }),
+    limits: [
+      'Метки умеет выдавать только кику: у любого другого узора своего набора меток в коде нет.',
+      'Метки дзивари и рабочие метки узора — разные вещи: дальний полюс и экватор держат разметку, но не этот цветок.',
+    ],
+  },
+  {
+    key: 'kagari',
+    title: 'Механика · укладка стежка',
+    one: 'Кагари: рецепт разворачивается в ряд операций, и нить ложится виток за витком поверх уже лежащих.',
+    what:
+      '`compileKiku` превращает рецепт в `KagariOp` — положить на шар, подхватить у метки, встать поверх нужных прежних рядов (`stackOver`).\n'
+      + 'Рабочих нитей две, A и B, они идут попеременно и паркуются между кай; ряды считаются до вместимости полюса (`kikuFit`).\n'
+      + 'Дальше `stitches.ts` строит из этого ленты и трубки для кадра.',
+    needs: ['recipe', 'marks'],
+    modules: ['src/components/temari/stitches.ts', 'src/components/temari/patterns.ts', 'src/components/temari/kagari.ts'],
+    entry: { action: 'fill' },
+    steps: ['compileKiku → KagariOp', 'две группы: A и B', 'stackOver: кто поверх кого', 'Stitch → кадр'],
+    catalogTitle: 'Каталог: стежки',
+    rows: STITCH_CATALOG.map((s) => {
+      const sewn = RECIPES.some((r) => r.stitch === s.id);
+      return {
+        name: s.names.ru,
+        state: sewn ? 'им и шьётся действующий рецепт'
+          : ENGINE_STITCHES.has(s.id) ? 'рецепт умеет его назвать, но ни один рецепт не называет'
+          : 'движок этот стежок не знает',
+        live: sewn,
+      };
+    }),
+    limits: [
+      `Тип \`RecipeStitch\` знает ${ENGINE_STITCHES.size} имени, рецепт называет ${new Set(RECIPES.map((r) => r.stitch)).size}; остальные ${STITCH_CATALOG.length - ENGINE_STITCHES.size} строк каталога движку не имена, а текст.`,
+      'Стежок не выбирается отдельно: он приходит вместе с рецептом узора.',
+      'Отрисовка умеет только поднимать нить над лежащей. Там, где по ремеслу нить должна пройти ПОД пучком, перехлёст остаётся неверным.',
+    ],
+  },
+  {
+    key: 'spatial',
+    title: 'Механика · нить в пространстве',
+    one: 'Настоящая толстая нить: длина, изгибная жёсткость, контакт с шаром и с собой — вместо дуги по сфере.',
+    what:
+      'Задача поставлена как толстая нить: цель — интеграл квадрата скорости, кривизна ограничена радиусом `ρ_min`, сертификат ККТ на NNLS.\n'
+      + 'Нижний подхват, первый круг кику на простом 8 и лестница разрешений приняты численно и показываются в `lab.html`.\n'
+      + 'В игру это не включено: в кадре мастерской по-прежнему дуги и подъёмы из `stitches.ts`.',
+    needs: ['kagari'],
+    modules: [
+      'src/components/temari/spatial-contact.ts',
+      'src/components/temari/curvature-bound.ts',
+      'src/components/temari/taut-contact.ts',
+      'src/components/temari/thread-geometry.ts',
+      'src/components/temari/lower-kagari.ts',
+      'src/components/temari/computed-lower-kagari.ts',
+      'src/components/temari/thick-rope-ladder.ts',
+      'src/components/temari/s8-kiku.ts',
+      'src/components/temari/spatial-spline-seed.ts',
+      'src/components/temari/spatial-catch-fixture.ts',
+    ],
+    entry: {},
+    steps: ['постановка: толстая нить', 'решатель + сертификат', 'лестница разрешений', 'lab.html'],
+    catalogTitle: 'Каталог: модули этой механики',
+    rows: [
+      'src/components/temari/spatial-contact.ts',
+      'src/components/temari/curvature-bound.ts',
+      'src/components/temari/taut-contact.ts',
+      'src/components/temari/thread-geometry.ts',
+      'src/components/temari/lower-kagari.ts',
+      'src/components/temari/computed-lower-kagari.ts',
+      'src/components/temari/thick-rope-ladder.ts',
+      'src/components/temari/s8-kiku.ts',
+      'src/components/temari/spatial-spline-seed.ts',
+      'src/components/temari/spatial-catch-fixture.ts',
+    ].map((f) => ({
+      name: f.replace('src/components/temari/', ''),
+      state: MODULE_STATE(f),
+      live: GAME.has(f),
+    })),
+    limits: [
+      'Численная приёмка — не ремесленная: принята заданная конструкция, а не форма после затягивания.',
+      'Сжатие нити не обосновано источником; сечение держится круглым и несжимаемым.',
+      'Перенести это в мастерскую нельзя одной заменой: решатель считает медленно, а кадр должен собираться за миллисекунды.',
+    ],
+  },
+  {
+    key: 'kata',
+    title: 'Механика · ката',
+    one: 'Отдельный режим: не шить, а заливать грани разметки в цвет по образцу.',
+    what:
+      'У каждой головоломки своя разметка, своя палитра и целевая раскладка; совпадение проверяет `fillsMatch`, решённые копятся в `solved`.\n'
+      + 'Режим целиком собран — состояние, отрисовка, подсчёт решённых в накладке.\n'
+      + 'Попасть в него нельзя: `enterKata` не вызывается ни из одного файла интерфейса.',
+    needs: ['marking'],
+    modules: ['src/components/temari/puzzles.ts'],
+    entry: { call: 'enterKata' },
+    steps: ['заливка граней', 'fillsMatch', 'solved'],
+    catalogTitle: 'Каталог: головоломки',
+    rows: PUZZLES.map((p) => ({
+      name: `${p.name} — ${p.hint}`,
+      state: UI_SOURCE.includes('enterKata') ? 'открыта из интерфейса' : 'входа в режим нет',
+      live: UI_SOURCE.includes('enterKata'),
+    })),
+    limits: [
+      'Заливка грани — не вышивка: узор здесь не шьётся, а закрашивается.',
+      'Кнопки «ката» на титуле нет: `enterKata` объявлен в хранилище состояния и не вызван ни из одного файла интерфейса.',
+    ],
+  },
+];
+
+const BY_KEY = new Map(MECHANICS.map((m) => [m.key, m]));
+const titleOf = (key: string) => BY_KEY.get(key)?.title ?? key;
+
+/** Состояние механики — из файлов и списка действий, а не с наших слов. */
+function stateOf(m: Mechanic) {
+  const missing = m.modules.filter((f) => !GAME.has(f) && !LAB.has(f));
+  const inGame = m.modules.every((f) => GAME.has(f));
+  const reachable = m.entry.action ? ACTION_IDS.has(m.entry.action)
+    : m.entry.call ? UI_SOURCE.includes(m.entry.call)
+    : false;
+  if (inGame && reachable) return 'работает';
+  if (missing.length === m.modules.length) return 'задумано';
+  return 'собрано, но не в игре';
+}
+const STATE_OF = new Map(MECHANICS.map((m) => [m.key, stateOf(m)]));
+const liveOf = (m: Mechanic) => m.rows.filter((r) => r.live).length;
+
+// ── что пишет сборщик, и ничего больше ───────────────────────────────────────
+/**
+ * A file outside these paths is never written, never checked and never removed:
+ * the vault is also where the owner draws (Excalidraw) and where Obsidian keeps
+ * its settings and plugins.
+ *
+ * `RETIRED_DIRS` — папки, которые сборщик писал раньше и больше не пишет. Они
+ * остаются «своими» ровно для того, чтобы `--write` их вычистил: убрать их из
+ * списка совсем значило бы оставить в хранилище три заметки-сироты навсегда.
  */
 const OWNED_FILES = ['00 Карта ремесла.md'];
-const OWNED_DIRS = ['01 Этапы', '02 Узоры', '03 Разметки', '04 Стежки', '05 Нити', '06 Шары'];
+const OWNED_DIRS = ['01 Механики', '02 Узоры', '03 Разметки', '04 Стежки', '05 Нити', '06 Шары'];
+const RETIRED_DIRS = ['01 Этапы'];
 const owned = (path: string) =>
-  OWNED_FILES.includes(path) || OWNED_DIRS.some((d) => path.startsWith(d + '/'));
+  OWNED_FILES.includes(path) || [...OWNED_DIRS, ...RETIRED_DIRS].some((d) => path.startsWith(d + '/'));
 
 /**
  * Obsidian's own settings: written once so a fresh clone opens with the craft
@@ -85,15 +454,6 @@ const STATUS: Record<CatalogStatus, string> = {
   later: 'позже',
 };
 
-const STAGES = {
-  wrap: { file: '01 Этапы/Этап · намотка.md', title: 'Этап · намотка',
-    what: 'Шар обматывается нитью до ровной сферы. Пряжа, затем тоньше, затем швейная — верхний слой и есть то, что видно.' },
-  mark: { file: '01 Этапы/Этап · разметка.md', title: 'Этап · разметка',
-    what: 'Дзивари: нити делят поверхность и задают, где будут стежки. Ставятся булавки-метки.' },
-  kagari: { file: '01 Этапы/Этап · вышивка.md', title: 'Этап · вышивка',
-    what: 'Кагари: узор кладётся по меткам, каждый ряд поверх ранее уложенных.' },
-} as const;
-
 const slug = (s: string) => s.replace(/[\\/:*?"<>|#^[\]]/g, '·').trim();
 const title = (names: CatalogName) => slug(names.ru);
 const head = (names: CatalogName) => `${names.ja}（${names.reading}） · ${names.en}`;
@@ -101,14 +461,13 @@ const head = (names: CatalogName) => `${names.ja}（${names.reading}） · ${nam
 /**
  * Одно имя — не всегда одна заметка. «Судзидагику» и «сикаку» есть в каталоге
  * и узором, и стежком: короткая ссылка `[[сикаку]]` тогда неоднозначна, и
- * Obsidian выбирает файл за нас (сейчас — стежок, хотя в заметке нити речь про
- * узор). Поэтому имена сперва пересчитываются, и там, где имя занято дважды,
- * ссылка пишется с путём и подписью: `[[04 Стежки/сикаку|сикаку]]`.
+ * Obsidian выбирает файл за нас. Поэтому имена сперва пересчитываются, и там,
+ * где имя занято дважды, ссылка пишется с путём и подписью.
  */
 const HOMONYMS = (() => {
   const seen = new Map<string, number>();
   const bump = (name: string) => seen.set(slug(name), (seen.get(slug(name)) ?? 0) + 1);
-  for (const s of Object.values(STAGES)) bump(s.title);
+  for (const m of MECHANICS) bump(m.title);
   for (const m of MOTIF_CATALOG) bump(m.names.ru);
   for (const d of DIVISION_CATALOG) bump(d.names.ru);
   for (const s of STITCH_CATALOG) bump(s.names.ru);
@@ -117,7 +476,7 @@ const HOMONYMS = (() => {
   return new Set([...seen].filter(([, n]) => n > 1).map(([name]) => name));
 })();
 const FOLDER = {
-  stage: '01 Этапы', motif: '02 Узоры', division: '03 Разметки',
+  mechanic: '01 Механики', motif: '02 Узоры', division: '03 Разметки',
   stitch: '04 Стежки', yarn: '05 Нити', mari: '06 Шары',
 } as const;
 /** Ссылка на заметку папки `folder`; однозначная даже при совпадении имён. */
@@ -131,37 +490,93 @@ const link = (folder: string, t: string) => {
  *
  * Ребро пишется ОДИН раз — в той заметке, которая зависит. Обратное
  * перечисление не пишется никогда: его показывает панель Backlinks, а две
- * встречные ссылки дают в графе два ребра друг поверх друга, и направление
- * прочитать уже нельзя. Имена полей русские: их читает владелица в панели
- * «Свойства», и то же имя Breadcrumbs берёт как имя ребра. Ссылка в значении
- * обязана быть в кавычках — иначе YAML видит вложенный список.
+ * встречные ссылки дают в графе два ребра друг поверх друга. Имена полей
+ * русские: их читает владелица в панели «Свойства», и то же имя Breadcrumbs
+ * берёт как имя ребра. Ссылка в значении обязана быть в кавычках — иначе YAML
+ * видит вложенный список; список ссылок пишется отдельными строками с дефисом.
  */
-const frontmatter = (props: [string, string][]) =>
-  props.length ? ['---', ...props.map(([k, v]) => `${k}: "${v}"`), '---', ''] : [];
+const frontmatter = (props: [string, string | string[]][]) =>
+  props.length
+    ? ['---', ...props.flatMap(([k, v]) =>
+        Array.isArray(v) ? [`${k}:`, ...v.map((one) => `  - "${one}"`)] : [`${k}: "${v}"`]), '---', '']
+    : [];
 
 const files = new Map<string, string>();
 const put = (path: string, body: string) => files.set(path, body.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n');
-const footer = '\n\n---\n\n*Собрано `scripts/build-craft-vault.mts` из `src/components/temari/library.ts`. Править — там: эти файлы перезаписываются.*';
+const footer = '\n\n---\n\n*Собрано `scripts/build-craft-vault.mts` из кода игры. Править — там: эти файлы перезаписываются.*';
 
-// ── этапы работы: их связывают с нитями роли в каталоге ───────────────────────
-const yarnsOf = (role: 'wrap' | 'mark' | 'kagari') => YARN_CATALOG.filter((y) => y.role === role);
-for (const [role, stage] of Object.entries(STAGES) as [keyof typeof STAGES, typeof STAGES[keyof typeof STAGES]][]) {
-  const yarns = yarnsOf(role);
-  const lines = [`# ${stage.title}`, '', stage.what, '', '## Нити этого этапа', ''];
-  for (const y of yarns) lines.push(`- ${link(FOLDER.yarn, y.names.ru)} — ${y.mm} мм, ${STATUS[y.status]}`);
-  if (role === 'mark') {
-    lines.push('', '## Разметки', '');
-    for (const d of DIVISION_CATALOG) lines.push(`- ${link(FOLDER.division, d.names.ru)} — ${STATUS[d.status]}`);
+/**
+ * Кликабельный узел mermaid — проверено по коду Obsidian 1.13.7. После
+ * отрисовки Obsidian ищет `[*|class*="internal-link"] > g.label foreignObject
+ * > div` и подменяет содержимое на `<a class="internal-link" href=ТЕКСТ>`.
+ *
+ * СЛЕДСТВИЕ, КОТОРОЕ РЕШАЕТ ВСЁ: ссылка ведёт по ПОДПИСИ узла. Подпись обязана
+ * быть точным именем существующей заметки, буква в букву, иначе ссылка уходит
+ * в пустоту и молча. Поэтому каждая такая подпись собирается здесь и в конце
+ * сверяется со списком написанных заметок — сборка падает, а не выпускает
+ * хранилище с мёртвой схемой.
+ */
+const clickable: { where: string; label: string }[] = [];
+/**
+ * Схема. `note` делает узел ссылкой (Obsidian берёт цель из ПОДПИСИ, поэтому подпись обязана быть
+ * точным именем заметки). `idle` рисует его пунктиром — «собрано, но в игре не включено»:
+ * без этого все узлы одинаковы, и стадию, за которой схему и просили, на картинке не видно.
+ */
+function mermaid(
+  lines: string[],
+  nodes: { id: string; label: string; note?: boolean; idle?: boolean }[],
+  edges: string[], where: string,
+) {
+  const links = nodes.filter((n) => n.note);
+  const idle = nodes.filter((n) => n.idle);
+  for (const n of links) clickable.push({ where, label: n.label });
+  lines.push('```mermaid', 'flowchart LR');
+  if (idle.length) lines.push('  classDef idle stroke-dasharray:5 3,opacity:0.65;');
+  for (const n of nodes) lines.push(`  ${n.id}["${n.label}"]`);
+  for (const e of edges) lines.push(`  ${e}`);
+  if (links.length) lines.push(`  class ${links.map((n) => n.id).join(',')} internal-link;`);
+  if (idle.length) lines.push(`  class ${idle.map((n) => n.id).join(',')} idle;`);
+  lines.push('```');
+}
+
+// ── механики: заметки второго этажа ──────────────────────────────────────────
+for (const m of MECHANICS) {
+  const state = STATE_OF.get(m.key)!;
+  const dependents = MECHANICS.filter((x) => x.needs.includes(m.key));
+  const lines = [
+    ...frontmatter(m.needs.length ? [['нужна', m.needs.map((k) => `[[${titleOf(k)}]]`)]] : []),
+    `# ${m.title}`, '',
+    `> ${m.one}`, '',
+    `- Состояние: **${state}**`,
+    `- Нужна: ${m.needs.length ? m.needs.map((k) => link(FOLDER.mechanic, titleOf(k))).join(', ') : 'ничего — это начало цепочки'}`,
+    `- Без неё не работает: ${dependents.length ? dependents.map((x) => link(FOLDER.mechanic, x.title)).join(', ') : 'ничего'}`,
+    `- Живых строк каталога: **${liveOf(m)} из ${m.rows.length}**`,
+    '',
+    m.what, '',
+    '## Как работает', '',
+  ];
+  {
+    // Внутренние шаги подписями заметок не являются — кликабельными их делать
+    // нельзя: ссылка по подписи ушла бы в пустоту. Кликабельны только соседи.
+    const nodes: { id: string; label: string; note?: boolean }[] = [];
+    const edges: string[] = [];
+    m.needs.forEach((k, i) => nodes.push({ id: `IN${i}`, label: titleOf(k), note: true }));
+    m.steps.forEach((s, i) => nodes.push({ id: `S${i}`, label: s }));
+    dependents.forEach((x, i) => nodes.push({ id: `OUT${i}`, label: x.title, note: true }));
+    m.needs.forEach((_, i) => edges.push(`S0 --> IN${i}`));
+    // Тот же разворот, что и на карте: шаги читаются «что за чем», слева направо.
+    for (let i = 1; i < m.steps.length; i++) edges.push(`S${i - 1} --> S${i}`);
+    dependents.forEach((_, i) => edges.push(`S${m.steps.length - 1} --> OUT${i}`));
+    mermaid(lines, nodes, edges, `01 Механики/${m.title}.md`);
   }
-  if (role === 'kagari') {
-    lines.push('', '## Узоры', '');
-    for (const m of MOTIF_CATALOG) lines.push(`- ${link(FOLDER.motif, m.names.ru)} — ${STATUS[m.status]}`);
-  }
-  if (role === 'wrap') {
-    lines.push('', '## Размеры шара', '');
-    for (const s of MARI_CATALOG) lines.push(`- ${link(FOLDER.mari, s.label)} — окружность ${s.C} см, ${STATUS[s.status]}`);
-  }
-  put(stage.file, lines.join('\n') + footer);
+  lines.push('', 'Стрелка читается «что за чем»: слева то, что делают раньше.', '');
+  lines.push(`## ${m.catalogTitle}`, '');
+  // Каталог здесь ТЕКСТОМ: ссылками он собрал бы обратно хаб на все строки.
+  for (const r of m.rows) lines.push(`- ${r.live ? '**' + r.name + '**' : r.name} — ${r.state}`);
+  lines.push('', `Живых: ${liveOf(m)} из ${m.rows.length}.`, '');
+  lines.push('## Чем ограничена', '');
+  for (const l of m.limits) lines.push(`- ${l}`);
+  put(`01 Механики/${m.title}.md`, lines.join('\n') + footer);
 }
 
 // ── узоры ────────────────────────────────────────────────────────────────────
@@ -185,7 +600,7 @@ for (const m of MOTIF_CATALOG) {
     '## Чем и на чём', '',
     `- Разметка: ${division ? link(FOLDER.division, division.names.ru) : `любая (${m.requires})`}`,
     `- Стежок: ${stitch ? link(FOLDER.stitch, stitch.names.ru) : m.stitch}`,
-    `- Этап: ${STAGES.kagari.title}`,
+    `- Механика: ${MECHANICS.find((x) => x.key === 'recipe')!.title}`,
     `- Состояние: **${STATUS[m.status]}**`,
   ];
   if (m.centers) lines.push(`- Центры: ${m.centers === 'facing-pole' ? 'полюс, обращённый к мастеру' : 'оба полюса'}`);
@@ -196,7 +611,8 @@ for (const m of MOTIF_CATALOG) {
   const support = supportOf(m.requires, m.family);
   lines.push('', '## Достижимость в игре', '',
     `- В интерфейсе: ${shown(m.appears)}${uiMotif && ACTION_IDS.has(uiMotif) ? ` (действие \`${uiMotif}\`)` : ''}`,
-    `- Рецепт на своей разметке: ${support.supported ? '**есть**' : `**нет** — ${support.reason}`}`);
+    `- Семья поддержана компилятором: ${support.supported ? '**да**' : `**нет** — ${support.reason}`}`,
+    `- Своя геометрия (поле \`recipe\`): ${m.recipe ? '**есть**' : '**нет** — шьётся не эта строка'}`);
   if (m.appears !== 'data-only' && !support.supported) {
     lines.push('- ⚠️ кнопка есть, а шить нечем — это видно игроку.');
   }
@@ -236,7 +652,7 @@ for (const d of DIVISION_CATALOG) {
     ...(d.poles ? [`- Центров: ${d.poles}`] : []),
     ...(d.rays ? [`- Лучей: ${d.rays}`] : []),
     ...(d.builtOn ? [`- Построена на: ${base ? link(FOLDER.division, base.names.ru) : d.builtOn}`] : []),
-    `- Этап: ${STAGES.mark.title}`,
+    `- Механика: ${MECHANICS.find((x) => x.key === 'marking')!.title}`,
     `- Состояние: **${STATUS[d.status]}**`,
     // Обратное перечисление: то же самое слово в слово показывает панель
     // Backlinks, теперь наполняемая свойством «разметка» у самих узоров.
@@ -244,10 +660,10 @@ for (const d of DIVISION_CATALOG) {
     ...(sewn.length ? sewn.map((m) => `- ${title(m.names)} — ${STATUS[m.status]}`) : ['- пока ничего']),
   ];
   const uiDivision = UI_DIVISION[d.id];
-  const sewable = sewn.filter((m) => supportOf(d.id === 's8' ? 'simple' : d.id, m.family).supported);
+  const sewable = sewn.filter((m) => !!m.recipe);
   lines.push('', '## Достижимость в игре', '',
     `- В интерфейсе: ${shown(d.appears)}${uiDivision && ACTION_IDS.has(uiDivision) ? ` (действие \`${uiDivision}\`)` : ''}`,
-    `- Узоров с рецептом: ${sewable.length} из ${sewn.length}`);
+    `- Узоров со своей геометрией: ${sewable.length} из ${sewn.length}`);
   if (d.appears === 'dock' && sewable.length === 0) {
     lines.push('- ⚠️ разметку выбрать можно, а узора под неё пока нет.');
   }
@@ -260,13 +676,13 @@ for (const s of STITCH_CATALOG) {
   const lines = [
     `# ${title(s.names)}`, '', `*${head(s.names)}*`, '', s.what, '',
     `- Семья: ${s.family}`,
-    `- Этап: ${STAGES.kagari.title}`,
+    `- Механика: ${MECHANICS.find((x) => x.key === 'kagari')!.title}`,
     `- Состояние: **${STATUS[s.status]}**`,
     // Тоже обратное перечисление: его даёт Backlinks из свойства «стежок».
     '', '## Каким узорам нужен', '',
     ...(used.length ? used.map((m) => `- ${title(m.names)}`) : ['- пока ни одному']),
   ];
-  const sewable = used.filter((m) => supportOf(m.requires, m.family).supported);
+  const sewable = used.filter((m) => !!m.recipe);
   lines.push('', '## Достижимость в игре', '',
     `- В интерфейсе: ${shown(s.appears)}`,
     `- Движок называет этот стежок: ${ENGINE_STITCHES.has(s.id) ? '**да**' : '**нет** — рецепт его не знает'}`,
@@ -276,13 +692,15 @@ for (const s of STITCH_CATALOG) {
 
 // ── нити ─────────────────────────────────────────────────────────────────────
 for (const y of YARN_CATALOG) {
-  const stage = STAGES[y.role];
+  const mechanic = y.role === 'wrap' ? 'wrap' : y.role === 'mark' ? 'marking' : 'kagari';
   const lines = [
     `# ${title(y.names)}`, '', `*${head(y.names)}*`, '', y.note, '',
     `- Толщина: **${y.mm} мм**`,
-    `- Роль: ${y.role === 'wrap' ? 'намотка' : y.role === 'mark' ? 'разметка' : 'вышивка'} — ${stage.title}`,
+    `- Роль: ${y.role === 'wrap' ? 'намотка' : y.role === 'mark' ? 'разметка' : 'вышивка'} — ${titleOf(mechanic)}`,
     `- Состояние: **${STATUS[y.status]}**`,
-    ...(y.kind ? [`- В кадре рисуется как \`${y.kind}\` (свои блеск и шероховатость)`] : ['- Рендер эту нить пока не рисует отдельно']),
+    ...(y.kind
+      ? [`- В кадре рисуется как \`${y.kind}\`${THREAD_KINDS.includes(y.kind) ? '' : ' (вид, которого рендер не знает)'}`]
+      : ['- Рендер эту нить пока не рисует отдельно']),
     // `y.kind &&` — не косметика. Без него нить без `kind` сравнивалась с узором
     // без рецепта как `undefined === undefined`, и бунка «шила» асаноху: четыре
     // нити × одиннадцать узоров = 44 выдуманных ребра. Настоящее — одно.
@@ -295,6 +713,11 @@ for (const y of YARN_CATALOG) {
       : y.role === 'wrap'
         ? '- Выбирается на титульном экране цветом намотки; толщина — ползунком нити.'
         : '- Ставится разметкой, отдельного выбора нет.',
+    `- Кладётся ли она сегодня: ${
+      y.role === 'wrap' && wrapMm.includes(y.mm) ? '**да**, это один из проходов намотки'
+        : y.role === 'mark' && y.mm === markMm ? '**да**, ею ложится разметка — и на титуле, и в мастерской'
+        : recipeMm.includes(y.mm) ? '**да**, ею шьёт действующий рецепт'
+        : '**нет** — ни намотка, ни разметка, ни рецепт её не зовут'}`,
   ];
   put(`05 Нити/${title(y.names)}.md`, lines.join('\n') + footer);
 }
@@ -304,99 +727,144 @@ for (const s of MARI_CATALOG) {
   const lines = [
     `# ${slug(s.label)}`, '', s.note, '',
     `- Окружность: **${s.C} см** (радиус ${(s.C / (2 * Math.PI)).toFixed(2)} см)`,
-    `- Этап: ${STAGES.wrap.title}`,
+    `- Механика: ${titleOf('wrap')}`,
     `- Состояние: **${STATUS[s.status]}**`,
-    ...(s.C === 24 ? [] : ['', '> Геометрия узора сегодня считается для эталона 24 см: перенос рецепта на этот размер ещё не проверен.']),
+    ...(s.C === MARI_C_CM
+      ? [`- Именно на этом размере игра и считает: \`MARI_C_CM\` = ${MARI_C_CM}.`]
+      : ['', `> Геометрия узора сегодня считается для эталона ${MARI_C_CM} см: перенос рецепта на этот размер ещё не проверен.`]),
   ];
   put(`06 Шары/${slug(s.label)}.md`, lines.join('\n') + footer);
 }
 
-// ── карта ────────────────────────────────────────────────────────────────────
-const now = (xs: { status: CatalogStatus }[]) => xs.filter((x) => x.status === 'now').length;
-put('00 Карта ремесла.md', [
-  '# Карта ремесла',
+// ── 00 Карта ремесла: приборная панель ───────────────────────────────────────
+/**
+ * Скелет входной заметки один на три игры: заголовок, «Стадия», «Как это
+ * устроено» с ОДНОЙ схемой в теле, «Механики», «Что осталось», «Чего здесь нет».
+ * Числа в таблице считаются, а не пишутся руками.
+ */
+const dockMotifButtons = CRAFT_ACTIONS.filter((a) => a.id.startsWith('motif-')).length;
+const dockDivisionButtons = CRAFT_ACTIONS.filter((a) => a.id.startsWith('jiwari-')).length;
+const recipeStitches = new Set(RECIPES.map((r) => r.stitch));
+const liveYarns = YARN_CATALOG.filter((y) =>
+  (y.role === 'wrap' && wrapMm.includes(y.mm)) || (y.role === 'mark' && y.mm === markMm) || recipeMm.includes(y.mm));
+const later = (xs: { status: CatalogStatus }[]) => xs.filter((x) => x.status !== 'now').length;
+
+const stageRows: [string, string, string, string, string][] = [
+  ['узоры', `${MOTIF_CATALOG.length}`,
+    `${dockMotifButtons} (включая свободный эскиз)`,
+    `**${RECIPES.length}** — своя геометрия только у «${MOTIF_CATALOG.find((m) => m.recipe)?.names.ru ?? '—'}»`,
+    `${later(MOTIF_CATALOG)}`],
+  ['разметки', `${DIVISION_CATALOG.length}`,
+    `${dockDivisionButtons} (включая «без сетки»)`,
+    `**${DIVISION_CATALOG.filter((d) => MOTIF_CATALOG.some((m) => m.recipe && m.recipe.requires === divisionArg(d.id))).length}** — на остальных шить нечем`,
+    `${later(DIVISION_CATALOG)}`],
+  ['стежки', `${STITCH_CATALOG.length}`, 'выбора нет — приходит с рецептом',
+    `**${STITCH_CATALOG.filter((s) => recipeStitches.has(s.id)).length}** из ${ENGINE_STITCHES.size}, которые движок умеет назвать`,
+    `${later(STITCH_CATALOG)}`],
+  ['нити', `${YARN_CATALOG.length}`, 'выбирается цвет, не нить',
+    // Разбивка по ролям, а не «намотка и всё остальное»: разметочная нить — третий случай,
+    // и сваливать её в «нить рецепта» значит снова потерять её из виду.
+    `**${liveYarns.length}** — ${[
+      [liveYarns.filter((y) => y.role === 'wrap').length, 'прохода намотки'],
+      [liveYarns.filter((y) => y.role === 'mark').length, 'нить разметки'],
+      [liveYarns.filter((y) => y.role === 'kagari').length, 'нить рецепта'],
+    ].filter(([n]) => n).map(([n, w]) => `${n} ${w}`).join(', ')}`,
+    `${later(YARN_CATALOG)}`],
+  ['размеры шара', `${MARI_CATALOG.length}`, 'выбора нет',
+    `**${MARI_CATALOG.filter((s) => s.C === MARI_C_CM).length}** — \`MARI_C_CM\` = ${MARI_C_CM} см вписан константой`,
+    `${later(MARI_CATALOG)}`],
+];
+
+const mapLines: string[] = [
+  '# Темари — карта',
   '',
-  'Что из чего собирается: шар → намотка → разметка → стежок → узор, и какие нити на каком этапе.',
-  'Собрано из каталога игры, поэтому показывает ровно то, что игра умеет сегодня.',
+  '> Игрок наматывает шар, размечает его нитями и вышивает по меткам. Тянет не сюжет, а то, что рука кладёт настоящую нить:',
+  '> ряд ложится поверх ряда, и промах виден сразу — как в ремесле.',
   '',
-  '## Этапы',
+  '## Стадия',
   '',
-  ...Object.values(STAGES).map((s) => `- ${link(FOLDER.stage, s.title)}`),
+  // Ответ стоит НАД таблицей: сначала «где мы», потом доказательство. Пока вывод лежал под
+  // таблицей 5×5, глаз проходил 25 клеток с числами и только потом узнавал, что из них следует.
+  `**Каталог на ${MOTIF_CATALOG.length + DIVISION_CATALOG.length + STITCH_CATALOG.length + YARN_CATALOG.length + MARI_CATALOG.length} строк, `
+  + `а шьётся из него одна связка** — «${MOTIF_CATALOG.find((m) => m.recipe)?.names.ru ?? '—'}» на «${DIVISION_CATALOG.find((d) => d.id === 's8')?.names.ru ?? '—'}» `
+  + `стежком «${STITCH_CATALOG.find((s) => recipeStitches.has(s.id))?.names.ru ?? '—'}» нитью «${YARN_CATALOG.find((y) => recipeMm.includes(y.mm))?.names.ru ?? '—'}». `
+  + `Это не ошибка карты: каталог ведётся заранее, а компилятор рецептов пока один.`,
   '',
-  '## Сколько чего',
+  '| что | строк в каталоге | показано в мастерской | доходит до нитки на шаре | отложено |',
+  '| --- | ---: | --- | --- | ---: |',
+  ...stageRows.map((r) => `| ${r.join(' | ')} |`),
   '',
-  `- Узоры: ${MOTIF_CATALOG.length}, из них в игре сейчас ${now(MOTIF_CATALOG)}`,
-  `- Разметки: ${DIVISION_CATALOG.length}, сейчас ${now(DIVISION_CATALOG)}`,
-  `- Стежки: ${STITCH_CATALOG.length}, сейчас ${now(STITCH_CATALOG)}`,
-  `- Нити: ${YARN_CATALOG.length}, сейчас ${now(YARN_CATALOG)}`,
-  `- Размеры шара: ${MARI_CATALOG.length}, сейчас ${now(MARI_CATALOG)}`,
+  `Чего нет вовсе: выбора нити и размера шара, второго рецепта, входа в режим ката.`,
   '',
-  // Единственные ссылки, которые здесь остаются: карта — вход в хранилище,
-  // и по ней нажимают. Всё прочее «см. также» в заметках снято до текста.
-  '## В игре сейчас',
+  '## Как это устроено',
   '',
-  ...MOTIF_CATALOG.filter((m) => m.status === 'now').map((m) => {
-    const d = DIVISION_CATALOG.find((x) => x.id === m.requires.replace('simple', 's8'));
-    const s = STITCH_CATALOG.find((x) => x.id === m.stitch);
-    return `- ${link(FOLDER.motif, m.names.ru)} — на ${d ? link(FOLDER.division, d.names.ru) : m.requires}, `
-      + `стежком ${s ? link(FOLDER.stitch, s.names.ru) : m.stitch}`;
-  }),
+];
+{
+  const nodes = MECHANICS.map((m, i) =>
+    ({ id: `M${i}`, label: m.title, note: true, idle: STATE_OF.get(m.key) !== 'работает' }));
+  const index = new Map(MECHANICS.map((m, i) => [m.key, `M${i}`]));
+  // ⚑ НАПРАВЛЕНИЕ: «что за чем», а не «что от чего зависит» (19.09). Зависимость пишется в
+  // MECHANICS.needs как «мне нужен тот», и стрелка `M1 --> M0` в flowchart LR ставила намотку —
+  // первый шаг ремесла — в КОНЕЦ строки, а недоделанное в начало. Глаз читает слева направо и
+  // встречал цепочку задом наперёд. Рисуем обратное ребро: данные те же, порядок чтения верный.
+  const edges = MECHANICS.flatMap((m, i) => m.needs.map((k) => `${index.get(k)} --> M${i}`));
+  mermaid(mapLines, nodes, edges, '00 Карта ремесла.md');
+}
+mapLines.push('',
+  'Стрелка читается «что за чем»: от того, что уже есть, к тому, что оно открывает.',
+  'Узел — механика, а не строка каталога: каталог лежит внутри механики. Пунктиром — собрано, но в игре не включено.',
+  'Нажатие на узел открывает её заметку.',
   '',
-  /**
-   * «На каких-то разметках можно всё сделать?» — таблица отвечает прямо.
-   * Считается не по `requires` (это документация каталога, намерение), а по
-   * `supportOf` → `motifSupport`: та же функция решает в мастерской, дадут ли
-   * шить. Галочка — рецепт есть, прочерк — разметка есть, рецепта нет.
-   */
-  ...(() => {
-    /** Колонка — семья, названная первым своим узором: это имя и в мастерской. */
-    const families = MOTIF_CATALOG.filter((m, i) =>
-      MOTIF_CATALOG.findIndex((x) => x.family === m.family) === i);
-    const arg = (d: typeof DIVISION_CATALOG[number]) => (d.id === 's8' ? 'simple' : d.id);
-    const can = (d: typeof DIVISION_CATALOG[number], family: string) =>
-      supportOf(arg(d), family).supported;
-    const rows = DIVISION_CATALOG.map((d) =>
-      `| ${title(d.names)} | ${families.map((m) => (can(d, m.family) ? '✓' : '—')).join(' | ')} |`);
-    const full = DIVISION_CATALOG.filter((d) => families.every((m) => can(d, m.family)));
-    const some = DIVISION_CATALOG.filter((d) => families.some((m) => can(d, m.family)));
-    const ticks = DIVISION_CATALOG.reduce(
-      (sum, d) => sum + families.filter((m) => can(d, m.family)).length, 0);
-    return ['## Что на чём шьётся', '',
-      `| разметка | ${families.map((m) => title(m.names)).join(' | ')} |`,
-      `| --- | ${families.map(() => ':---:').join(' | ')} |`,
-      ...rows, '',
-      `Галочек ${ticks} на ${DIVISION_CATALOG.length} × ${families.length} клеток. `
-      + (full.length
-        ? `Всё шьётся на: ${full.map((d) => title(d.names)).join(', ')}. `
-        : 'Разметки, на которой можно всё, нет ни одной. ')
-      + (some.length
-        ? `Хоть что-то — только на: ${some.map((d) => title(d.names)).join(', ')}.`
-        : 'Шить нечего нигде.')];
-  })(),
+  '## Механики',
   '',
-  '## Достижимо из мастерской',
+  ...MECHANICS.map((m) =>
+    `- ${link(FOLDER.mechanic, m.title)} — ${m.one} **${STATE_OF.get(m.key)}**, живых строк ${liveOf(m)} из ${m.rows.length}.`),
   '',
-  ...(() => {
-    const dock = MOTIF_CATALOG.filter((m) => m.appears === 'dock');
-    const withRecipe = dock.filter((m) => supportOf(m.requires, m.family).supported);
-    const divisionsShown = DIVISION_CATALOG.filter((d) => d.appears === 'dock');
-    const divisionsSewable = divisionsShown.filter((d) => MOTIF_CATALOG.some((m) =>
-      m.requires.replace('simple', 's8') === d.id && supportOf(d.id === 's8' ? 'simple' : d.id, m.family).supported));
-    return [
-      `- Узоры: кнопок ${dock.length}, из них с рецептом ${withRecipe.length}.`,
-      `- Разметки: кнопок ${divisionsShown.length}, из них с узором ${divisionsSewable.length}.`,
-      '- Нити: выбирается только цвет; вид нити и толщина задаются рецептом.',
-      '',
-      'Разрыв между «показано» и «шьётся» — это не ошибка карты, а состояние игры.',
-    ];
-  })(),
+  '## Что осталось',
   '',
-  '## Чего здесь нет',
-  '',
-  '- Источников и того, на чём держатся числа — это `docs/assumptions.md` и `spec/craft-sources.md`.',
-  '- Состояния работы и задач — это доска и `STATE.md`.',
-  '- Пересказа спецификаций: их здесь нет намеренно, чтобы не разошлись.',
-].join('\n') + footer);
+);
+{
+  const noRecipe = MOTIF_CATALOG.length - RECIPES.length;
+  const noSewable = DIVISION_CATALOG.length
+    - DIVISION_CATALOG.filter((d) => MOTIF_CATALOG.some((m) => m.recipe && m.recipe.requires === divisionArg(d.id))).length;
+  const dark = MOTIF_CATALOG.filter((m) => m.appears === 'dock' && !m.recipe).length;
+  mapLines.push(
+    `- **Второй рецепт.** Без него ${noRecipe} строк узоров и ${noSewable} разметок стоят на месте, `
+    + `а ${dark} кнопки в мастерской гаснут с подписью «Позже». Держит: ${link(FOLDER.mechanic, titleOf('recipe'))}.`,
+    `- **Перехлёсты.** Отрисовка умеет только поднимать нить; там, где по ремеслу она должна пройти ПОД пучком, `
+    + `рисунок остаётся неверным. Держит: ${link(FOLDER.mechanic, titleOf('kagari'))}.`,
+    // Незакрытые вопросы механик не выписываются руками: берём те, чьё
+    // состояние сам сборщик посчитал не «работает», и спрашиваем их же, что их держит.
+    ...MECHANICS.filter((m) => STATE_OF.get(m.key) !== 'работает').map((m) =>
+      `- **${(STATE_OF.get(m.key) ?? '').replace(/^./, (c) => c.toUpperCase())}: ${m.title.replace('Механика · ', '')}.** `
+      + `${m.limits[m.limits.length - 1] ?? ''} Держит: ${link(FOLDER.mechanic, m.title)}.`),
+    `- **Каталог не читается игрой.** \`src/components/temari/library.ts\` импортируют только этот сборщик и собственный тест: `
+    + `в замыкании \`src/pages.tsx\` его нет. Значит каталог и игра могут разойтись, и \`--check\` этого не заметит — он сверяет хранилище с каталогом, а не каталог с игрой.`,
+    '',
+    '## Чего здесь нет',
+    '',
+    '- На чём стоят числа и что из них наш выбор — `docs/assumptions.md`, `spec/craft-sources.md`, `spec/embroidery-model.md`.',
+    '- Текущая правка, проверки и договорённости этапа — `STATE.md` и `HANDOFF.md`.',
+    '- Открытые вопросы поимённо — issues на GitHub.',
+    '- Пересказа спецификаций здесь нет намеренно, чтобы они не разошлись.',
+  );
+}
+put('00 Карта ремесла.md', mapLines.join('\n') + footer);
+
+// ── проверка кликабельности схем ─────────────────────────────────────────────
+/**
+ * Ссылка мермейда ведёт по подписи узла. Подпись, не совпавшая с именем
+ * заметки, ведёт в пустоту и молча — это единственный способ сломать схему так,
+ * что никто не заметит. Поэтому сверяем здесь, до записи.
+ */
+{
+  const names = new Set([...files.keys()].map((f) => f.split('/').pop()!.replace(/\.md$/, '')));
+  const dead = clickable.filter((c) => !names.has(c.label));
+  if (dead.length) {
+    throw new Error('кликабельный узел схемы не совпал с именем заметки:\n'
+      + dead.map((c) => `  ${c.where}: "${c.label}"`).join('\n'));
+  }
+}
 
 seed('.obsidian/app.json', JSON.stringify({ promptDelete: false, useMarkdownLinks: false, newLinkFormat: 'shortest', attachmentFolderPath: 'Рисунки' }, null, 2) + '\n');
 seed('.obsidian/appearance.json', JSON.stringify({ theme: 'system' }, null, 2) + '\n');
@@ -405,8 +873,8 @@ seed('.obsidian/core-plugins.json', JSON.stringify({"file-explorer": true, "glob
 // от каждого движения колёсика: держать его в git значит гонять по истории чужой зум, и раскраску
 // это уже дважды сносило в Roti. Здесь лежит исходное состояние, оно ставится ТОЛЬКО если файла нет —
 // то, что владелица подкрутила у себя, генератор не трогает.
-seed('.obsidian/graph.json', JSON.stringify({"collapse-filter": false, "search": "-file:\"Этап · \" -file:\"00 Карта ремесла\"", "showTags": false, "showAttachments": false, "hideUnresolved": true, "showOrphans": true, "collapse-color-groups": false, "colorGroups": [{"query": "path:\"02 Узоры\"", "color": {"a": 1, "rgb": 9387314}}, {"query": "path:\"03 Разметки\"", "color": {"a": 1, "rgb": 4022150}}, {"query": "path:\"04 Стежки\"", "color": {"a": 1, "rgb": 2761760}}, {"query": "path:\"05 Нити\"", "color": {"a": 1, "rgb": 12887412}}, {"query": "path:\"06 Шары\"", "color": {"a": 1, "rgb": 7035466}}], "collapse-display": false, "showArrow": true, "textFadeMultiplier": -3, "nodeSizeMultiplier": 1.2, "lineSizeMultiplier": 0.7, "collapse-forces": false, "centerStrength": 0.15, "repelStrength": 15, "linkStrength": 0.4, "linkDistance": 420, "scale": 0.9409928231902496, "close": false}, null, 2) + '\n');
-seed('.obsidian/bookmarks.json', JSON.stringify({"items": [{"type": "group", "ctime": 1789774569527, "title": "Виды графа", "items": [{"type": "graph", "ctime": 1789774569527, "title": "Зависимости ремесла", "options": {"collapse-filter": false, "search": "-file:\"Этап · \" -file:\"00 Карта ремесла\"", "showTags": false, "showAttachments": false, "hideUnresolved": true, "showOrphans": true, "collapse-color-groups": false, "colorGroups": [{"query": "path:\"02 Узоры\"", "color": {"a": 1, "rgb": 9387314}}, {"query": "path:\"03 Разметки\"", "color": {"a": 1, "rgb": 4022150}}, {"query": "path:\"04 Стежки\"", "color": {"a": 1, "rgb": 2761760}}, {"query": "path:\"05 Нити\"", "color": {"a": 1, "rgb": 12887412}}, {"query": "path:\"06 Шары\"", "color": {"a": 1, "rgb": 7035466}}], "collapse-display": false, "showArrow": true, "textFadeMultiplier": -3, "nodeSizeMultiplier": 1.2, "lineSizeMultiplier": 0.7, "collapse-forces": false, "centerStrength": 0.15, "repelStrength": 15, "linkStrength": 0.4, "linkDistance": 420, "scale": 0.9409928231902496, "close": false}}, {"type": "graph", "ctime": 1789774569528, "title": "Узор и на чём он стоит", "options": {"collapse-filter": false, "search": "path:\"02 Узоры\" OR path:\"03 Разметки\" OR path:\"04 Стежки\"", "showTags": false, "showAttachments": false, "hideUnresolved": true, "showOrphans": true, "collapse-color-groups": false, "colorGroups": [{"query": "path:\"02 Узоры\"", "color": {"a": 1, "rgb": 9387314}}, {"query": "path:\"03 Разметки\"", "color": {"a": 1, "rgb": 4022150}}, {"query": "path:\"04 Стежки\"", "color": {"a": 1, "rgb": 2761760}}, {"query": "path:\"05 Нити\"", "color": {"a": 1, "rgb": 12887412}}, {"query": "path:\"06 Шары\"", "color": {"a": 1, "rgb": 7035466}}], "collapse-display": false, "showArrow": true, "textFadeMultiplier": -3, "nodeSizeMultiplier": 1.2, "lineSizeMultiplier": 0.7, "collapse-forces": false, "centerStrength": 0.15, "repelStrength": 15, "linkStrength": 0.4, "linkDistance": 420, "scale": 0.9409928231902496, "close": false}}, {"type": "graph", "ctime": 1789774569529, "title": "Всё как было", "options": {"collapse-filter": false, "search": "", "showTags": false, "showAttachments": false, "hideUnresolved": true, "showOrphans": true, "collapse-color-groups": false, "colorGroups": [{"query": "path:\"02 Узоры\"", "color": {"a": 1, "rgb": 9387314}}, {"query": "path:\"03 Разметки\"", "color": {"a": 1, "rgb": 4022150}}, {"query": "path:\"04 Стежки\"", "color": {"a": 1, "rgb": 2761760}}, {"query": "path:\"05 Нити\"", "color": {"a": 1, "rgb": 12887412}}, {"query": "path:\"06 Шары\"", "color": {"a": 1, "rgb": 7035466}}], "collapse-display": false, "showArrow": true, "textFadeMultiplier": -3, "nodeSizeMultiplier": 1.2, "lineSizeMultiplier": 0.7, "collapse-forces": false, "centerStrength": 0.15, "repelStrength": 15, "linkStrength": 0.4, "linkDistance": 420, "scale": 0.9409928231902496, "close": false}}]}]}, null, 2) + '\n');
+seed('.obsidian/graph.json', JSON.stringify({"collapse-filter": false, "search": "-file:\"00 Карта ремесла\"", "showTags": false, "showAttachments": false, "hideUnresolved": true, "showOrphans": true, "collapse-color-groups": false, "colorGroups": [{"query": "path:\"01 Механики\"", "color": {"a": 1, "rgb": 16007990}}, {"query": "path:\"02 Узоры\"", "color": {"a": 1, "rgb": 9387314}}, {"query": "path:\"03 Разметки\"", "color": {"a": 1, "rgb": 4022150}}, {"query": "path:\"04 Стежки\"", "color": {"a": 1, "rgb": 2761760}}, {"query": "path:\"05 Нити\"", "color": {"a": 1, "rgb": 12887412}}, {"query": "path:\"06 Шары\"", "color": {"a": 1, "rgb": 7035466}}], "collapse-display": false, "showArrow": true, "textFadeMultiplier": -3, "nodeSizeMultiplier": 1.2, "lineSizeMultiplier": 0.7, "collapse-forces": false, "centerStrength": 0.15, "repelStrength": 15, "linkStrength": 0.4, "linkDistance": 420, "scale": 0.9409928231902496, "close": false}, null, 2) + '\n');
+seed('.obsidian/bookmarks.json', JSON.stringify({"items": [{"type": "group", "ctime": 1789774569527, "title": "Виды графа", "items": [{"type": "graph", "ctime": 1789774569527, "title": "Механики", "options": {"collapse-filter": false, "search": "path:\"01 Механики\"", "showTags": false, "showAttachments": false, "hideUnresolved": true, "showOrphans": true, "collapse-color-groups": false, "colorGroups": [{"query": "path:\"01 Механики\"", "color": {"a": 1, "rgb": 16007990}}], "collapse-display": false, "showArrow": true, "textFadeMultiplier": -3, "nodeSizeMultiplier": 1.2, "lineSizeMultiplier": 0.7, "collapse-forces": false, "centerStrength": 0.15, "repelStrength": 15, "linkStrength": 0.4, "linkDistance": 420, "scale": 0.9409928231902496, "close": false}}, {"type": "graph", "ctime": 1789774569528, "title": "Узор и на чём он стоит", "options": {"collapse-filter": false, "search": "path:\"02 Узоры\" OR path:\"03 Разметки\" OR path:\"04 Стежки\"", "showTags": false, "showAttachments": false, "hideUnresolved": true, "showOrphans": true, "collapse-color-groups": false, "colorGroups": [{"query": "path:\"02 Узоры\"", "color": {"a": 1, "rgb": 9387314}}, {"query": "path:\"03 Разметки\"", "color": {"a": 1, "rgb": 4022150}}, {"query": "path:\"04 Стежки\"", "color": {"a": 1, "rgb": 2761760}}], "collapse-display": false, "showArrow": true, "textFadeMultiplier": -3, "nodeSizeMultiplier": 1.2, "lineSizeMultiplier": 0.7, "collapse-forces": false, "centerStrength": 0.15, "repelStrength": 15, "linkStrength": 0.4, "linkDistance": 420, "scale": 0.9409928231902496, "close": false}}, {"type": "graph", "ctime": 1789774569529, "title": "Всё как было", "options": {"collapse-filter": false, "search": "", "showTags": false, "showAttachments": false, "hideUnresolved": true, "showOrphans": true, "collapse-color-groups": false, "colorGroups": [{"query": "path:\"01 Механики\"", "color": {"a": 1, "rgb": 16007990}}, {"query": "path:\"02 Узоры\"", "color": {"a": 1, "rgb": 9387314}}, {"query": "path:\"03 Разметки\"", "color": {"a": 1, "rgb": 4022150}}, {"query": "path:\"04 Стежки\"", "color": {"a": 1, "rgb": 2761760}}, {"query": "path:\"05 Нити\"", "color": {"a": 1, "rgb": 12887412}}, {"query": "path:\"06 Шары\"", "color": {"a": 1, "rgb": 7035466}}], "collapse-display": false, "showArrow": true, "textFadeMultiplier": -3, "nodeSizeMultiplier": 1.2, "lineSizeMultiplier": 0.7, "collapse-forces": false, "centerStrength": 0.15, "repelStrength": 15, "linkStrength": 0.4, "linkDistance": 420, "scale": 0.9409928231902496, "close": false}}]}]}, null, 2) + '\n');
 
 // ── запись или проверка ──────────────────────────────────────────────────────
 async function onDisk() {
@@ -424,83 +892,8 @@ async function onDisk() {
   for (const f of OWNED_FILES) {
     try { out.set(f, await readFile(join(VAULT, f), 'utf8')); } catch { /* not built yet */ }
   }
-  for (const d of OWNED_DIRS) await walk(join(VAULT, d), d + '/');
+  for (const d of [...OWNED_DIRS, ...RETIRED_DIRS]) await walk(join(VAULT, d), d + '/');
   return out;
-}
-
-/** Та же карта картинкой, чтобы посмотреть без Obsidian (папка игнорируется). */
-async function picture() {
-  /**
-   * ⚑ КАРТИНКА РИСУЕТ ЗАВИСИМОСТИ, А НЕ ВСЕ ССЫЛКИ (19.09).
-   * Этапы и карта — навигация, а не зависимость: принадлежность к разделу ничего не держит.
-   * Первая версия рисовала их наравне со всем, и три заметки этапов давали 34 ребра из 65 —
-   * больше половины графа уходило в хаб, а настоящая цепочка тонула. В графе Obsidian они
-   * уже спрятаны фильтром (`.obsidian/graph.json`, поле search); здесь то же исключение,
-   * чтобы картинка и граф показывали одно и то же.
-   * Подписи папок убраны намеренно: subgraph по папке тянет узлы в свою колонку и ломает
-   * укладку по цепочке — вместо неё цвет узла. Проверено: с подгруппами выходит лента 1:3.
-   */
-  const SKIP = (f: string) => f.startsWith('01 Этапы/') || f === '00 Карта ремесла.md';
-  const nodes = [...files.keys()].filter((f) => f.endsWith('.md') && owned(f) && !SKIP(f));
-  const id = (f: string) => 'n' + f.replace(/[^a-zA-Zа-яА-Я0-9]/g, '_');
-  const nameOf = (f: string) => f.split('/').pop()!.replace(/\.md$/, '');
-  const byName = new Map(nodes.map((f) => [nameOf(f), f]));
-  const edges = new Set<string>();
-  const hasIncoming = new Set<string>();
-  for (const f of nodes) {
-    for (const [, target] of (files.get(f) ?? '').matchAll(/\[\[([^\]]+)\]\]/g)) {
-      const name = target.split('|')[0]!.split('#')[0]!.split('/').pop()!.trim();
-      const to = byName.get(name);
-      if (to && to !== f) { edges.add(`  ${id(f)} --> ${id(to)}`); hasIncoming.add(to); }
-    }
-  }
-  /** Узел, от которого ничего не зависит и который сам ни на чём не стоит, — тупик каталога. */
-  const lonely = (f: string) => !hasIncoming.has(f) &&
-    ![...edges].some((e) => e.startsWith(`  ${id(f)} -->`));
-  const CLASS: Record<string, string> = {
-    '02 Узоры': 'узор', '03 Разметки': 'разметка', '04 Стежки': 'стежок',
-    '05 Нити': 'нить', '06 Шары': 'шар',
-  };
-  const mermaid = ['graph LR',
-    '  classDef узор fill:#fca5a5,stroke:#991b1b,color:#1c1917',
-    '  classDef разметка fill:#93c5fd,stroke:#1e40af,color:#1c1917',
-    '  classDef стежок fill:#d6d3d1,stroke:#44403c,color:#1c1917',
-    '  classDef нить fill:#fde68a,stroke:#b45309,color:#1c1917',
-    '  classDef шар fill:#bbf7d0,stroke:#166534,color:#1c1917',
-    '  classDef тупик fill:#f5f5f4,stroke:#d6d3d1,color:#a8a29e,stroke-dasharray:4 3',
-    ...nodes.filter((f) => !lonely(f)).map((f) =>
-      `  ${id(f)}["${nameOf(f)}"]:::${CLASS[f.split('/')[0]!] ?? 'стежок'}`),
-    ...edges].join('\n');
-  const out = 'screenshots/craft-graph';
-  await mkdir(out, { recursive: true });
-  /**
-   * Тупики на схему НЕ ставятся: девятнадцать несвязанных коробочек встают в LR-укладке
-   * одной колонкой и растягивают картинку до 751×3220 — ленту, которую не прочесть.
-   * Список под схемой говорит то же самое и занимает пять строк.
-   */
-  const deadList = nodes.filter(lonely);
-  const dead = deadList.length;
-  const byDir = new Map<string, string[]>();
-  for (const f of deadList) {
-    const d = f.split('/')[0]!;
-    byDir.set(d, [...(byDir.get(d) ?? []), nameOf(f)]);
-  }
-  const deadHtml = [...byDir.entries()]
-    .map(([d, ns]) => `<li><b>${d.replace(/^\d+ /, '')}</b> — ${ns.join(', ')}</li>`).join('');
-  await writeFile(join(out, 'craft-graph.html'), `<!doctype html><html lang="ru"><head><meta charset="utf-8">
-<title>Карта ремесла</title><style>body{margin:0;background:#efece6;color:#2a2420;font:15px/1.5 system-ui,sans-serif}
-h1{font:500 22px/1.2 Georgia,serif;margin:16px 20px 2px}p{margin:2px 20px 10px;color:#5a5149}.mermaid{padding:8px}
-b{font-weight:600}</style></head><body>
-<h1>Карта ремесла</h1><p>${nodes.length} узлов, ${edges.size} зависимостей. Стрелка ведёт от того, что шьют,
-к тому, на чём это стоит. <b>Красное</b> — узоры, <b>синее</b> — разметки, <b>серое</b> — стежки,
-<b>жёлтое</b> — нити, <b>зелёное</b> — шары.
-Этапы и карта не показаны: принадлежность к разделу — не зависимость.</p>
-<pre class="mermaid">${mermaid.replace(/</g, '&lt;')}</pre>
-<p><b>Ни с чем не связаны — ${dead} из ${nodes.length}.</b> Они есть в каталоге, но ни один узор их не требует
-и они не требуют ничего: пока это не ремесло, а список.</p><ul>${deadHtml}</ul>
-<script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-mermaid.initialize({startOnLoad:true,theme:'base',themeVariables:{primaryColor:'#e4e0d8',primaryTextColor:'#2a2420',lineColor:'#8a8178',fontSize:'13px'}});</script></body></html>`);
-  console.log(JSON.stringify({ picture: join(out, 'craft-graph.html'), nodes: nodes.length, edges: edges.size, тупиков: dead }, null, 1));
 }
 
 const current = await onDisk();
@@ -512,15 +905,16 @@ if (strays.length) throw new Error(`builder wrote outside what it owns: ${strays
 
 if (check) {
   if (differing.length || extra.length) {
-    console.error('Хранилище разошлось с каталогом игры.');
+    console.error('Хранилище разошлось с кодом игры.');
     for (const f of differing) console.error('  изменилось:', f);
     for (const f of extra) console.error('  лишнее:', f);
     console.error('Соберите заново: npx tsx scripts/build-craft-vault.mts --write');
     process.exit(1);
   }
-  console.log(JSON.stringify({ vault: VAULT, notes: files.size, state: 'совпадает' }, null, 1));
+  console.log(JSON.stringify({ vault: VAULT, notes: files.size, механик: MECHANICS.length, state: 'совпадает' }, null, 1));
 } else if (write) {
   for (const f of extra) await rm(join(VAULT, f));
+  for (const d of RETIRED_DIRS) await rm(join(VAULT, d), { recursive: true, force: true });
   for (const [f, body] of files) {
     await mkdir(dirname(join(VAULT, f)), { recursive: true });
     await writeFile(join(VAULT, f), body);
@@ -533,10 +927,8 @@ if (check) {
     seeded++;
   }
   if (seeded) console.log(`настроек Obsidian заведено: ${seeded}`);
-  console.log(JSON.stringify({ vault: VAULT, notes: files.size, written: differing.length, removed: extra.length }, null, 1));
-} else if (process.argv.includes('--picture')) {
-  await picture();
+  console.log(JSON.stringify({ vault: VAULT, notes: files.size, механик: MECHANICS.length, written: differing.length, removed: extra.length }, null, 1));
 } else {
-  console.log('Укажите --write, --check или --picture');
+  console.log('Укажите --write или --check');
   process.exit(2);
 }
