@@ -40,14 +40,14 @@ const line = (id: string, from: PointMm, to: PointMm): C8ThreadCoupon => ({
 });
 
 describe('S8 second pass (A2/B2)', () => {
-  it('planS8AB2 returns the same plan shape as planS8AB', () => {
+  it('planS8AB2 is row2 of the same phase, not a copy of the first round', () => {
     const ab1 = planS8AB(), ab2 = planS8AB2();
-    // A2 имеет те же метки и окна, что и A1 (фаза 0).
-    assert.deepEqual(ab1.A.windows, ab2.A2.windows);
-    assert.deepEqual(ab1.A.tips,    ab2.A2.tips);
-    // B2 имеет те же метки и окна, что и B1 (фаза 1).
-    assert.deepEqual(ab1.B.windows, ab2.B2.windows);
-    assert.deepEqual(ab1.B.tips,    ab2.B2.tips);
+    const a2 = planS8Kiku({ stage: 'row2' });
+    const b2 = planS8Kiku({ stage: 'row2', phase: 1 });
+    assert.deepEqual(ab2.A2.windows, a2.windows);
+    assert.deepEqual(ab2.B2.windows, b2.windows);
+    assert.notDeepEqual(ab2.A2.windows, ab1.A.windows, 'row2 shifts ports off A1');
+    assert.notDeepEqual(ab2.B2.windows, ab1.B.windows, 'row2 shifts ports off B1');
   });
 
   it('nameS8Thread2 assigns A2:/B2: prefixes and does not mutate the source', () => {
