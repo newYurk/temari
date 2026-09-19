@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { DIVISION_CATALOG, MOTIF_CATALOG, type MotifEntry } from "./library.ts";
 import { DIVISION_IDS, runtimeDivisionFor } from "./division-config.ts";
 import {
@@ -11,7 +11,12 @@ import { KIKU_8_POINT } from "./kagari.ts";
 
 const motif = (id: string) => MOTIF_CATALOG.find((m) => m.id === id)!;
 const note = (path: string) => readFileSync(new URL(`../../../Temari-Obsidian/${path}`, import.meta.url), "utf8");
-const motifNote = (m: MotifEntry) => note(`02 Узоры/${m.names.ru}.md`);
+const motifNote = (m: MotifEntry) => {
+  const files = readdirSync(new URL("../../../Temari-Obsidian/02 Узоры/", import.meta.url));
+  const file = files.find((name) => note(`02 Узоры/${name}`).includes(`\nid: "${m.id}"\n`));
+  assert.ok(file, `note for ${m.id}`);
+  return note(`02 Узоры/${file}`);
+};
 const section = (text: string, heading: string) => text.split(`## ${heading}\n`)[1]?.split("\n## ")[0] ?? "";
 
 describe("exact catalogue compatibility", () => {

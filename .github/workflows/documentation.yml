@@ -47,4 +47,4 @@ jobs:
       - run: npm ci
       - run: npx tsx scripts/build-craft-vault.mts --check
       # exact claims, reverse links and runtime recipes must agree too
-      - run: npx tsx --test src/components/temari/library.test.ts src/components/temari/catalog-compatibility.test.ts
+      - run: npx tsx --test src/components/temari/library.test.ts src/components/temari/catalog-compatibility.test.ts src/components/temari/craft-vault.test.ts

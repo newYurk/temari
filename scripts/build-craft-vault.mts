@@ -1,13 +1,14 @@
 /**
  * Карта ремесла как хранилище Obsidian — собрана из данных самой игры.
  *
- * ДВА ЭТАЖА (решение владелицы 19.09: «сверху механики, внутри каталог»).
+ * После проверки скриншотов владельца 19.09 представление разделено:
  *
- *   Верх — «00 Карта ремесла»: приборная панель. Стадия числами, ОДНА схема
- *   механик прямо в теле заметки, строка на механику, открытые вопросы.
- *   Узлов на схеме семь, а не сорок шесть: узел — механика, не строка каталога.
+ *   «00 Карта ремесла»: на первом экране связь разметки, места, узора,
+ *   стежка и нити. Счётчики готовности не подменяют карту ремесла.
+ *   «00 Состояние реализации»: прежняя приборная панель и механики.
+ *   «00 Совместимость узоров»: полный каталог с границами свидетельств.
  *
- *   Низ — «01 Механики»: у каждой механики своя заметка, и каталог живёт ТАМ.
+ *   «01 Механики»: у каждой механики своя заметка и внутренний каталог.
  *   Прежние «01 Этапы» сняты: три заметки-этапа пересказывали каталог и были
  *   хабом на 29 входящих, а схема лежала отдельным html в `screenshots/`,
  *   который git игнорирует. «Всё то, что должно быть в одном месте, — в разных
@@ -42,11 +43,10 @@
  *   — Мермейд-схема ссылок в индекс Obsidian не добавляет (это подмена DOM
  *     после отрисовки), поэтому кликабельность схемы графу ничего не стоит.
  *
- * ВНИМАНИЕ ПРО ГРАФ. Фильтр в `.obsidian/graph.json` прячет `-file:"Этап · "`.
- * Заметок с таким именем больше нет, а новые семь («Механика · …») под фильтр
- * не попадают и в графе видны — отдельной цепочкой из семи узлов рядом с
- * облаком каталога. Это намеренно: цепочку механик владелица и просила увидеть.
- * Сам `.obsidian/` не трогаем — он настроен ведущим.
+ * ВНИМАНИЕ ПРО ГРАФ. Масштаб и раскладка принадлежат владельцу. Генератор
+ * исправляет имена узлов и рёбра, но не обещает фиксированный layout Graph View.
+ * Сам `.obsidian/` не трогаем. Новые диаграммы проверяются в узкой панели
+ * самого Obsidian, а не только в отдельном HTML-рендере.
  *
  * Сборка:  npx tsx scripts/build-craft-vault.mts --write
  * Проверка: npx tsx scripts/build-craft-vault.mts --check   (для CI)
@@ -445,7 +445,7 @@ const liveOf = (m: Mechanic) => m.rows.filter((r) => r.live).length;
  * остаются «своими» ровно для того, чтобы `--write` их вычистил: убрать их из
  * списка совсем значило бы оставить в хранилище три заметки-сироты навсегда.
  */
-const OWNED_FILES = ['00 Карта ремесла.md', '00 Совместимость узоров.md'];
+const OWNED_FILES = ['00 Карта ремесла.md', '00 Совместимость узоров.md', '00 Состояние реализации.md'];
 const OWNED_DIRS = ['01 Механики', '02 Узоры', '03 Разметки', '04 Стежки', '05 Нити', '06 Шары'];
 const RETIRED_DIRS = ['01 Этапы'];
 const owned = (path: string) =>
@@ -475,7 +475,8 @@ const head = (names: CatalogName) => `${names.ja}（${names.reading}） · ${nam
  * Одно имя — не всегда одна заметка. «Судзидагику» и «сикаку» есть в каталоге
  * и узором, и стежком: короткая ссылка `[[сикаку]]` тогда неоднозначна, и
  * Obsidian выбирает файл за нас. Поэтому имена сперва пересчитываются, и там,
- * где имя занято дважды, ссылка пишется с путём и подписью.
+ * где имя занято дважды, уточняем ИМЯ ФАЙЛА. Иначе ссылки правильные, но
+ * Graph View всё равно показывает две одинаковые подписи «сикаку».
  */
 const HOMONYMS = (() => {
   const seen = new Map<string, number>();
@@ -492,10 +493,24 @@ const FOLDER = {
   mechanic: '01 Механики', motif: '02 Узоры', division: '03 Разметки',
   stitch: '04 Стежки', yarn: '05 Нити', mari: '06 Шары',
 } as const;
+const NOTE_KIND: Record<string, string> = {
+  [FOLDER.mechanic]: 'Механика', [FOLDER.motif]: 'Узор',
+  [FOLDER.division]: 'Разметка', [FOLDER.stitch]: 'Стежок',
+  [FOLDER.yarn]: 'Нить', [FOLDER.mari]: 'Шар',
+};
+const noteTitle = (folder: string, name: string) =>
+  HOMONYMS.has(slug(name)) ? `${NOTE_KIND[folder]} · ${slug(name)}` : slug(name);
+const identity = (folder: string, name: string, id?: string): [string, string | string[]][] => [
+  ['тип', NOTE_KIND[folder]!.toLowerCase()],
+  ...(id ? [['id', id] as [string, string]] : []),
+  // Aliases assist Quick Switcher; they do not promise migration of arbitrary
+  // old, fully-qualified links in private notes outside the generated folders.
+  ...(HOMONYMS.has(slug(name)) ? [['aliases', [name]] as [string, string[]]] : []),
+];
 /** Ссылка на заметку папки `folder`; однозначная даже при совпадении имён. */
 const link = (folder: string, t: string) => {
-  const name = slug(t);
-  return HOMONYMS.has(name) ? `[[${folder}/${name}|${name}]]` : `[[${name}]]`;
+  const name = noteTitle(folder, t);
+  return `[[${name}]]`;
 };
 
 /**
@@ -511,7 +526,7 @@ const link = (folder: string, t: string) => {
 const frontmatter = (props: [string, string | string[]][]) =>
   props.length
     ? ['---', ...props.flatMap(([k, v]) =>
-        Array.isArray(v) ? [`${k}:`, ...v.map((one) => `  - "${one}"`)] : [`${k}: "${v}"`]), '---', '']
+        Array.isArray(v) ? [`${k}:`, ...v.map((one) => `  - ${JSON.stringify(one)}`)] : [`${k}: ${JSON.stringify(v)}`]), '---', '']
     : [];
 
 const files = new Map<string, string>();
@@ -538,12 +553,15 @@ const clickable: { where: string; label: string }[] = [];
 function mermaid(
   lines: string[],
   nodes: { id: string; label: string; note?: boolean; idle?: boolean }[],
-  edges: string[], where: string,
+  edges: string[], where: string, direction: 'TB' | 'LR' = 'TB',
 ) {
   const links = nodes.filter((n) => n.note);
   const idle = nodes.filter((n) => n.idle);
   for (const n of links) clickable.push({ where, label: n.label });
-  lines.push('```mermaid', 'flowchart LR');
+  // Narrow split panes are the actual target, not a full-width HTML preview.
+  lines.push('```mermaid',
+    '%%{init: {"flowchart":{"nodeSpacing":16,"rankSpacing":28,"curve":"linear","padding":10},"themeVariables":{"fontSize":"16px"}}}%%',
+    `flowchart ${direction}`);
   if (idle.length) lines.push('  classDef idle stroke-dasharray:5 3,opacity:0.65;');
   for (const n of nodes) lines.push(`  ${n.id}["${n.label}"]`);
   for (const e of edges) lines.push(`  ${e}`);
@@ -557,7 +575,10 @@ for (const m of MECHANICS) {
   const state = STATE_OF.get(m.key)!;
   const dependents = MECHANICS.filter((x) => x.needs.includes(m.key));
   const lines = [
-    ...frontmatter(m.needs.length ? [['нужна', m.needs.map((k) => `[[${titleOf(k)}]]`)]] : []),
+    ...frontmatter([
+      ...identity(FOLDER.mechanic, m.title),
+      ...(m.needs.length ? [['нужна', m.needs.map((k) => `[[${titleOf(k)}]]`)] as [string, string[]]] : []),
+    ]),
     `# ${m.title}`, '',
     `> ${m.one}`, '',
     `- Состояние: **${state}**`,
@@ -576,13 +597,13 @@ for (const m of MECHANICS) {
     m.needs.forEach((k, i) => nodes.push({ id: `IN${i}`, label: titleOf(k), note: true }));
     m.steps.forEach((s, i) => nodes.push({ id: `S${i}`, label: s }));
     dependents.forEach((x, i) => nodes.push({ id: `OUT${i}`, label: x.title, note: true }));
-    m.needs.forEach((_, i) => edges.push(`S0 --> IN${i}`));
+    m.needs.forEach((_, i) => edges.push(`IN${i} -->|нужно до| S0`));
     // Тот же разворот, что и на карте: шаги читаются «что за чем», слева направо.
-    for (let i = 1; i < m.steps.length; i++) edges.push(`S${i - 1} --> S${i}`);
-    dependents.forEach((_, i) => edges.push(`S${m.steps.length - 1} --> OUT${i}`));
+    for (let i = 1; i < m.steps.length; i++) edges.push(`S${i - 1} -->|затем| S${i}`);
+    dependents.forEach((_, i) => edges.push(`S${m.steps.length - 1} -->|открывает| OUT${i}`));
     mermaid(lines, nodes, edges, `01 Механики/${m.title}.md`);
   }
-  lines.push('', 'Стрелка читается «что за чем»: слева то, что делают раньше.', '');
+  lines.push('', 'Читайте сверху вниз: что требуется до действия, что идёт затем и что оно открывает.', '');
   lines.push(`## ${m.catalogTitle}`, '');
   // Каталог здесь ТЕКСТОМ: ссылками он собрал бы обратно хаб на все строки.
   for (const r of m.rows) lines.push(`- ${r.live ? '**' + r.name + '**' : r.name} — ${r.state}`);
@@ -606,6 +627,7 @@ for (const m of MOTIF_CATALOG) {
   const yarn = m.recipe ? YARN_CATALOG.find((y) => y.kind && y.kind === m.recipe!.thread) : undefined;
   const lines = [
     ...frontmatter([
+      ...identity(FOLDER.motif, m.names.ru, m.id),
       ['разметка_статус', compatibilityState(m)],
       ...(confirmed.length ? [['разметка', confirmed.map((id) => link(FOLDER.division, divisionName(id)))] as [string, string[]]] : []),
       ...(m.compatibility.state === 'unverified'
@@ -614,8 +636,48 @@ for (const m of MOTIF_CATALOG) {
       ...(stitch ? [['стежок', link(FOLDER.stitch, stitch.names.ru)] as [string, string]] : []),
       ...(yarn ? [['нить', link(FOLDER.yarn, yarn.names.ru)] as [string, string]] : []),
     ]),
-    `# ${title(m.names)}`, '', `*${head(m.names)}*`, '', m.note, '',
-    '## Чем и на чём', '',
+    `# ${noteTitle(FOLDER.motif, m.names.ru)}`, '', head(m.names), '', m.note, '',
+  ];
+  lines.push('## Что требуется этому варианту', '');
+  {
+    const nodes: { id: string; label: string; note?: boolean }[] = [
+      { id: 'M', label: noteTitle(FOLDER.motif, m.names.ru), note: true },
+    ];
+    const edges: string[] = [];
+    if (divisions.length) {
+      divisions.forEach((id, i) => {
+        nodes.push({ id: `D${i}`, label: noteTitle(FOLDER.division, divisionName(id)), note: true });
+        edges.push(m.compatibility.state === 'documented'
+          ? `M -->|разметка по источнику| D${i}`
+          : `M -.->|разметка, проверить| D${i}`);
+      });
+    } else {
+      nodes.push({ id: 'U', label: 'Разметка не установлена' });
+      edges.push('M -.->|вопрос, не запрет| U');
+    }
+    mermaid(lines, nodes, edges, `${FOLDER.motif}/${noteTitle(FOLDER.motif, m.names.ru)}.md`);
+    if (stitch || yarn) {
+      // A three-way fan exceeds Obsidian's narrow pane: split the two questions.
+      // Do not shrink labels or require a CSS snippet in the owner's settings.
+      const materials: { id: string; label: string; note?: boolean }[] = [
+        { id: 'M', label: noteTitle(FOLDER.motif, m.names.ru), note: true },
+      ];
+      const materialEdges: string[] = [];
+      if (stitch) {
+        materials.push({ id: 'S', label: noteTitle(FOLDER.stitch, stitch.names.ru), note: true });
+        materialEdges.push(m.recipe ? 'M -->|стежок рецепта| S' : 'M -.->|стежок по каталогу| S');
+      }
+      if (yarn) {
+        materials.push({ id: 'Y', label: noteTitle(FOLDER.yarn, yarn.names.ru), note: true });
+        materialEdges.push('M -->|нить рецепта| Y');
+      }
+      lines.push('');
+      mermaid(lines, materials, materialEdges, `${FOLDER.motif}/${noteTitle(FOLDER.motif, m.names.ru)}.md`);
+    }
+    lines.push('', 'Сплошная стрелка: требование источника или исполняемого рецепта. Пунктир: утверждение каталога или открытый вопрос.',
+      'Нажатие на именованный узел открывает его заметку. Это требования, не порядок шитья и не доказательство совместимости двух узоров.', '');
+  }
+  lines.push('## Чем и на чём', '',
     `- Разметка: ${divisions.length ? divisions.map(divisionName).join(', ') : 'не установлена'} (${compatibilityState(m)})`,
     `- Основание: ${m.compatibility.note}`,
     ...(m.compatibility.state === 'documented'
@@ -623,7 +685,7 @@ for (const m of MOTIF_CATALOG) {
     `- Стежок: ${stitch ? link(FOLDER.stitch, stitch.names.ru) : m.stitch}`,
     `- Механика: ${MECHANICS.find((x) => x.key === 'recipe')!.title}`,
     `- Состояние: **${STATUS[m.status]}**`,
-  ];
+  );
   if (m.centers) lines.push(`- Центры: ${m.centers === 'facing-pole' ? 'полюс, обращённый к мастеру' : 'оба полюса'}`);
   if (m.direction) lines.push(`- Ход: ${m.direction === 'outward' ? 'от полюса' : 'к полюсу'}`);
   if (m.crossing) lines.push(`- Перехлёст: ${m.crossing}`);
@@ -640,25 +702,6 @@ for (const m of MOTIF_CATALOG) {
       : 'исполняемый вариант этой строки не проверен'}`);
   if (m.appears === 'dock' && !implementation.implemented) {
     lines.push('- Кнопка семейства не означает готовый рецепт этой строки.');
-  }
-  lines.push('', '## Что требуется этому варианту', '');
-  {
-    const nodes = [{ id: 'M', label: title(m.names) }];
-    const edges: string[] = [];
-    if (divisions.length) {
-      divisions.forEach((id, i) => {
-        nodes.push({ id: `D${i}`, label: divisionName(id) });
-        edges.push(m.compatibility.state === 'documented'
-          ? `M -->|требует по источнику| D${i}`
-          : `M -.->|заявлено, проверить| D${i}`);
-      });
-    } else {
-      nodes.push({ id: 'U', label: 'Точное деление не установлено' });
-      edges.push('M -.->|вопрос, не запрет| U');
-    }
-    mermaid(lines, nodes, edges, `02 Узоры/${title(m.names)}.md`);
-    lines.push('', 'Сплошная стрелка: подтверждённое требование этого варианта. Пунктир: непроверенное утверждение или вопрос.',
-      'Это не порядок действий и не схема прохода нити. Неуказанные сочетания остаются неизвестными, а не запрещёнными.');
   }
   if (m.recipe) {
     lines.push('', '## Чем шьётся', '',
@@ -681,7 +724,7 @@ for (const m of MOTIF_CATALOG) {
       ...(base && base.id !== m.id ? [`- Основной: ${title(base.names)}`] : []),
       ...family.filter((x) => !base || x.id !== base.id).map((x) => `- ${title(x.names)} — ${STATUS[x.status]}`));
   }
-  put(`02 Узоры/${title(m.names)}.md`, lines.join('\n') + footer);
+  put(`${FOLDER.motif}/${noteTitle(FOLDER.motif, m.names.ru)}.md`, lines.join('\n') + footer);
 }
 
 // ── разметки ─────────────────────────────────────────────────────────────────
@@ -691,9 +734,33 @@ for (const d of DIVISION_CATALOG) {
   const candidates = declared.filter((m) => m.compatibility.state === 'unverified');
   const base = d.builtOn ? DIVISION_CATALOG.find((x) => x.id === d.builtOn) : undefined;
   const lines = [
-    ...frontmatter(base ? [['основа', link(FOLDER.division, base.names.ru)]] : []),
+    ...frontmatter([
+      ...identity(FOLDER.division, d.names.ru, d.id),
+      ...(base ? [['основа', link(FOLDER.division, base.names.ru)] as [string, string]] : []),
+    ]),
     `# ${title(d.names)}`, '', `*${head(d.names)}*`, '', d.note, '',
-    '## О ней', '',
+    '## Какие варианты с ней связаны', '',
+  ];
+  {
+    const divisionNode = { id: 'D', label: noteTitle(FOLDER.division, d.names.ru), note: true };
+    declared.forEach((m, i) => {
+      const edge = m.compatibility.state === 'documented'
+        ? `D -->|подтверждено для| M${i}`
+        : `D -.->|заявлено, проверить| M${i}`;
+      // Separate relations stay readable at 350–450 px, unlike a wide fan.
+      mermaid(lines, [
+        divisionNode, { id: `M${i}`, label: noteTitle(FOLDER.motif, m.names.ru), note: true },
+      ], [edge], `${FOLDER.division}/${title(d.names)}.md`);
+      lines.push('');
+    });
+    if (!declared.length) {
+      mermaid(lines, [
+        divisionNode, { id: 'U', label: 'Нет описанного варианта' },
+      ], ['D -.->|неизвестно, не запрещено| U'], `${FOLDER.division}/${title(d.names)}.md`);
+    }
+    lines.push('', 'Сплошная связь подтверждена для указанного варианта, пунктир требует проверки. Узлы открывают заметки; наличие связи не означает готовую реализацию.', '');
+  }
+  lines.push('## О ней', '',
     `- Вид: ${d.kind === 'simple' ? 'простое деление' : d.kind === 'combination' ? 'комбинированное' : 'дополнительное'}`,
     ...(d.poles ? [`- Центров: ${d.poles}`] : []),
     ...(d.rays ? [`- Лучей: ${d.rays}`] : []),
@@ -707,7 +774,7 @@ for (const d of DIVISION_CATALOG) {
       : ['- В каталоге нет подтверждённых вариантов. Это не запрет ремесла.']),
     '', '## Заявлено в каталоге, нужно проверить', '',
     ...(candidates.length ? candidates.map((m) => `- ${title(m.names)}: ${m.compatibility.note}`) : ['- Нет заявленных вариантов.']),
-  ];
+  );
   const uiDivision = UI_DIVISION[d.id];
   const sewable = declared.filter((m) => implementsOn(m, d.id));
   lines.push('', '## Достижимость в игре', '',
@@ -723,7 +790,8 @@ for (const d of DIVISION_CATALOG) {
 for (const s of STITCH_CATALOG) {
   const used = MOTIF_CATALOG.filter((m) => m.stitch === s.id);
   const lines = [
-    `# ${title(s.names)}`, '', `*${head(s.names)}*`, '', s.what, '',
+    ...frontmatter(identity(FOLDER.stitch, s.names.ru, s.id)),
+    `# ${noteTitle(FOLDER.stitch, s.names.ru)}`, '', head(s.names), '', s.what, '',
     `- Семья: ${s.family}`,
     `- Механика: ${MECHANICS.find((x) => x.key === 'kagari')!.title}`,
     `- Состояние: **${STATUS[s.status]}**`,
@@ -736,13 +804,14 @@ for (const s of STITCH_CATALOG) {
     `- В интерфейсе: ${shown(s.appears)}`,
     `- Движок называет этот стежок: ${ENGINE_STITCHES.has(s.id) ? '**да**' : '**нет** — рецепт его не знает'}`,
     `- Узоров, которые им действительно шьются: ${sewable.length} из ${used.length}`);
-  put(`04 Стежки/${title(s.names)}.md`, lines.join('\n') + footer);
+  put(`${FOLDER.stitch}/${noteTitle(FOLDER.stitch, s.names.ru)}.md`, lines.join('\n') + footer);
 }
 
 // ── нити ─────────────────────────────────────────────────────────────────────
 for (const y of YARN_CATALOG) {
   const mechanic = y.role === 'wrap' ? 'wrap' : y.role === 'mark' ? 'marking' : 'kagari';
   const lines = [
+    ...frontmatter(identity(FOLDER.yarn, y.names.ru, y.id)),
     `# ${title(y.names)}`, '', `*${head(y.names)}*`, '', y.note, '',
     `- Толщина: **${y.mm} мм**`,
     `- Роль: ${y.role === 'wrap' ? 'намотка' : y.role === 'mark' ? 'разметка' : 'вышивка'} — ${titleOf(mechanic)}`,
@@ -774,6 +843,7 @@ for (const y of YARN_CATALOG) {
 // ── размеры шара ─────────────────────────────────────────────────────────────
 for (const s of MARI_CATALOG) {
   const lines = [
+    ...frontmatter(identity(FOLDER.mari, s.label, s.id)),
     `# ${slug(s.label)}`, '', s.note, '',
     `- Окружность: **${s.C} см** (радиус ${(s.C / (2 * Math.PI)).toFixed(2)} см)`,
     `- Механика: ${titleOf('wrap')}`,
@@ -785,7 +855,7 @@ for (const s of MARI_CATALOG) {
   put(`06 Шары/${slug(s.label)}.md`, lines.join('\n') + footer);
 }
 
-// ── 00 Карта ремесла: приборная панель ───────────────────────────────────────
+// ── техническое состояние, отдельно от главной карты ремесла ───────────────
 /**
  * Скелет входной заметки один на три игры: заголовок, «Стадия», «Как это
  * устроено» с ОДНОЙ схемой в теле, «Механики», «Что осталось», «Чего здесь нет».
@@ -824,8 +894,8 @@ const stageRows: [string, string, string, string, string][] = [
     `${later(MARI_CATALOG)}`],
 ];
 
-const mapLines: string[] = [
-  '# Темари — карта',
+const statusLines: string[] = [
+  '# Состояние реализации',
   '',
   '> Игрок наматывает шар, размечает его нитями и вышивает по меткам. Тянет не сюжет, а то, что рука кладёт настоящую нить:',
   '> ряд ложится поверх ряда, и промах виден сразу — как в ремесле.',
@@ -862,10 +932,10 @@ const mapLines: string[] = [
   // первый шаг ремесла — в КОНЕЦ строки, а недоделанное в начало. Глаз читает слева направо и
   // встречал цепочку задом наперёд. Рисуем обратное ребро: данные те же, порядок чтения верный.
   const edges = MECHANICS.flatMap((m, i) => m.needs.map((k) => `${index.get(k)} --> M${i}`));
-  mermaid(mapLines, nodes, edges, '00 Карта ремесла.md');
+  mermaid(statusLines, nodes, edges, '00 Состояние реализации.md');
 }
-mapLines.push('',
-  'Стрелка читается «что за чем»: от того, что уже есть, к тому, что оно открывает.',
+statusLines.push('',
+  'Читайте сверху вниз: от того, что уже есть, к тому, что оно открывает.',
   'Узел — механика, а не строка каталога: каталог лежит внутри механики. Пунктиром — собрано, но в игре не включено.',
   'Нажатие на узел открывает её заметку.',
   '',
@@ -882,7 +952,7 @@ mapLines.push('',
   const noSewable = DIVISION_CATALOG.length
     - DIVISION_CATALOG.filter((d) => MOTIF_CATALOG.some((m) => implementsOn(m, d.id))).length;
   const dark = MOTIF_CATALOG.filter((m) => m.appears === 'dock' && !m.recipe).length;
-  mapLines.push(
+  statusLines.push(
     `- **Второй рецепт.** Без него ${noRecipe} строк узоров и ${noSewable} разметок стоят на месте, `
     + `а ${dark} кнопки в мастерской гаснут с подписью «Позже». Держит: ${link(FOLDER.mechanic, titleOf('recipe'))}.`,
     `- **Перехлёсты.** Отрисовка умеет только поднимать нить; там, где по ремеслу она должна пройти ПОД пучком, `
@@ -903,7 +973,62 @@ mapLines.push('',
     '- Пересказа спецификаций здесь нет намеренно, чтобы они не разошлись.',
   );
 }
-put('00 Карта ремесла.md', mapLines.join('\n') + footer);
+put('00 Состояние реализации.md', statusLines.join('\n') + footer);
+
+// The first screen is a craft relationship map, not a release-status report.
+// No duplicate H1: the user's Obsidian already displays the note's inline title.
+const craftMapLines = [
+  '> Разметка задаёт места для узоров. У каждого варианта свои требования к стежку и нити.',
+  '',
+  '## От разметки к узору',
+  '',
+];
+{
+  const m = MOTIF_CATALOG.find((m) => m.recipe)!;
+  const d = DIVISION_CATALOG.find((d) => d.id === m.recipe!.divisionId)!;
+  const s = STITCH_CATALOG.find((s) => s.id === m.stitch)!;
+  const y = YARN_CATALOG.find((y) => y.kind && y.kind === m.recipe!.thread)!;
+  mermaid(craftMapLines, [
+    { id: 'D', label: noteTitle(FOLDER.division, d.names.ru), note: true },
+    { id: 'P', label: 'Выбранный полюс' },
+    { id: 'M', label: noteTitle(FOLDER.motif, m.names.ru), note: true },
+    { id: 'S', label: noteTitle(FOLDER.stitch, s.names.ru), note: true },
+    { id: 'Y', label: noteTitle(FOLDER.yarn, y.names.ru), note: true },
+  ], [
+    'D -->|задаёт место| P',
+    'P -->|для варианта| M',
+    'M -->|стежок| S',
+    'M -->|нить| Y',
+  ], '00 Карта ремесла.md');
+}
+craftMapLines.push('',
+  'Нажми на название, чтобы открыть разметку, узор, стежок или нить. Это требования выбранной кику S8, не обещание поддержки всего семейства.',
+  '',
+  '## Что дают другие разметки', '',
+  ...DIVISION_CATALOG.filter((d) => d.id !== 's8' && motifsForDivision(d.id).length).map((d) => {
+    const variants = motifsForDivision(d.id);
+    return `- ${link(FOLDER.division, d.names.ru)}: ${variants.map((m) => `${title(m.names)} (${m.compatibility.state === 'documented' ? 'по источнику' : 'заявлено, проверить'})`).join('; ')}.`;
+  }),
+  '',
+  'В заметке каждой разметки есть своя схема вариантов. Пунктир означает непроверенное утверждение, а не запрет.',
+  '',
+  '## Можно ли сочетать два узора', '',
+  '- Место: помещаются ли они в выбранных областях шара?',
+  '- Подготовка: нужны ли одному узору уже вышитые элементы другого?',
+  '- Нить: где разрешены проходы сверху и снизу, нет ли столкновений?',
+  '',
+  'Эта карта пока не вычисляет такие сочетания. Совместимость каждого узора с разметкой сама по себе не доказывает совместимость двух узоров.',
+  '',
+  '## Подробнее', '',
+  '- [[00 Совместимость узоров]]: все варианты и границы наших знаний.',
+  '- [[00 Состояние реализации]]: что уже работает, проверки и оставшиеся задачи.',
+  '',
+  '## Общий граф справа', '',
+  'Он показывает ссылки между заметками, но не умеет подписывать их смысл так, как схемы выше. Для конкретного узора полезнее локальный граф; для всего каталога оставлены свойства типов.',
+  'У одноимённых сущностей подписи различаются: «Узор · сикаку» и «Стежок · сикаку». Неподтверждённые связи разметки намеренно не превращены в обычные рёбра.',
+  'Масштаб, силы и раскладка твоего общего графа не перезаписываются генератором.',
+);
+put('00 Карта ремесла.md', craftMapLines.join('\n') + footer);
 
 // No wiki-links in the catalogue table: do not recreate a hub of dependencies.
 const compatibilityLines = [
