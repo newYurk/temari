@@ -400,26 +400,13 @@ put('00 Карта ремесла.md', [
 
 seed('.obsidian/app.json', JSON.stringify({ promptDelete: false, useMarkdownLinks: false, newLinkFormat: 'shortest', attachmentFolderPath: 'Рисунки' }, null, 2) + '\n');
 seed('.obsidian/appearance.json', JSON.stringify({ theme: 'system' }, null, 2) + '\n');
-seed('.obsidian/core-plugins.json', JSON.stringify({
-  'file-explorer': true, 'global-search': true, switcher: true, graph: true, backlink: true,
-  'outgoing-link': true, 'page-preview': true, 'command-palette': true, outline: true, bookmarks: true,
-  canvas: false, 'daily-notes': false, templates: false, 'note-composer': false, 'tag-pane': false,
-  properties: false, 'slash-command': false, 'random-note': false, 'file-recovery': true,
-}, null, 2) + '\n');
-seed('.obsidian/graph.json', JSON.stringify({
-  'collapse-filter': false, search: '', showTags: false, showAttachments: false,
-  hideUnresolved: true, showOrphans: false, 'collapse-color-groups': false,
-  colorGroups: [
-    { query: 'path:"02 Узоры"', color: { a: 1, rgb: 9387314 } },
-    { query: 'path:"03 Разметки"', color: { a: 1, rgb: 4022150 } },
-    { query: 'path:"04 Стежки"', color: { a: 1, rgb: 2761760 } },
-    { query: 'path:"05 Нити"', color: { a: 1, rgb: 12887412 } },
-    { query: 'path:"06 Шары"', color: { a: 1, rgb: 7035466 } },
-  ],
-  'collapse-display': false, showArrow: true, textFadeMultiplier: -0.2,
-  nodeSizeMultiplier: 1.3, lineSizeMultiplier: 1, 'collapse-forces': false,
-  centerStrength: 0.5, repelStrength: 10, linkStrength: 1, linkDistance: 190, scale: 1, close: false,
-}, null, 2) + '\n');
+seed('.obsidian/core-plugins.json', JSON.stringify({"file-explorer": true, "global-search": true, "switcher": true, "graph": true, "backlink": true, "outgoing-link": true, "page-preview": true, "command-palette": true, "outline": true, "bookmarks": true, "canvas": false, "daily-notes": false, "templates": false, "note-composer": false, "tag-pane": true, "properties": true, "slash-command": false, "random-note": false, "file-recovery": true, "footnotes": false, "editor-status": true, "markdown-importer": false, "zk-prefixer": false, "word-count": true, "slides": false, "audio-recorder": false, "workspaces": false, "publish": false, "sync": true, "bases": true, "webviewer": false}, null, 2) + '\n');
+// Настройки графа и закладки — СЕМЕНЕМ, А НЕ ИЗ GIT (18.09). Obsidian переписывает graph.json
+// от каждого движения колёсика: держать его в git значит гонять по истории чужой зум, и раскраску
+// это уже дважды сносило в Roti. Здесь лежит исходное состояние, оно ставится ТОЛЬКО если файла нет —
+// то, что владелица подкрутила у себя, генератор не трогает.
+seed('.obsidian/graph.json', JSON.stringify({"collapse-filter": false, "search": "-file:\"Этап · \" -file:\"00 Карта ремесла\"", "showTags": false, "showAttachments": false, "hideUnresolved": true, "showOrphans": true, "collapse-color-groups": false, "colorGroups": [{"query": "path:\"02 Узоры\"", "color": {"a": 1, "rgb": 9387314}}, {"query": "path:\"03 Разметки\"", "color": {"a": 1, "rgb": 4022150}}, {"query": "path:\"04 Стежки\"", "color": {"a": 1, "rgb": 2761760}}, {"query": "path:\"05 Нити\"", "color": {"a": 1, "rgb": 12887412}}, {"query": "path:\"06 Шары\"", "color": {"a": 1, "rgb": 7035466}}], "collapse-display": false, "showArrow": true, "textFadeMultiplier": -3, "nodeSizeMultiplier": 1.2, "lineSizeMultiplier": 0.7, "collapse-forces": false, "centerStrength": 0.15, "repelStrength": 15, "linkStrength": 0.4, "linkDistance": 420, "scale": 0.9409928231902496, "close": false}, null, 2) + '\n');
+seed('.obsidian/bookmarks.json', JSON.stringify({"items": [{"type": "group", "ctime": 1789774569527, "title": "Виды графа", "items": [{"type": "graph", "ctime": 1789774569527, "title": "Зависимости ремесла", "options": {"collapse-filter": false, "search": "-file:\"Этап · \" -file:\"00 Карта ремесла\"", "showTags": false, "showAttachments": false, "hideUnresolved": true, "showOrphans": true, "collapse-color-groups": false, "colorGroups": [{"query": "path:\"02 Узоры\"", "color": {"a": 1, "rgb": 9387314}}, {"query": "path:\"03 Разметки\"", "color": {"a": 1, "rgb": 4022150}}, {"query": "path:\"04 Стежки\"", "color": {"a": 1, "rgb": 2761760}}, {"query": "path:\"05 Нити\"", "color": {"a": 1, "rgb": 12887412}}, {"query": "path:\"06 Шары\"", "color": {"a": 1, "rgb": 7035466}}], "collapse-display": false, "showArrow": true, "textFadeMultiplier": -3, "nodeSizeMultiplier": 1.2, "lineSizeMultiplier": 0.7, "collapse-forces": false, "centerStrength": 0.15, "repelStrength": 15, "linkStrength": 0.4, "linkDistance": 420, "scale": 0.9409928231902496, "close": false}}, {"type": "graph", "ctime": 1789774569528, "title": "Узор и на чём он стоит", "options": {"collapse-filter": false, "search": "path:\"02 Узоры\" OR path:\"03 Разметки\" OR path:\"04 Стежки\"", "showTags": false, "showAttachments": false, "hideUnresolved": true, "showOrphans": true, "collapse-color-groups": false, "colorGroups": [{"query": "path:\"02 Узоры\"", "color": {"a": 1, "rgb": 9387314}}, {"query": "path:\"03 Разметки\"", "color": {"a": 1, "rgb": 4022150}}, {"query": "path:\"04 Стежки\"", "color": {"a": 1, "rgb": 2761760}}, {"query": "path:\"05 Нити\"", "color": {"a": 1, "rgb": 12887412}}, {"query": "path:\"06 Шары\"", "color": {"a": 1, "rgb": 7035466}}], "collapse-display": false, "showArrow": true, "textFadeMultiplier": -3, "nodeSizeMultiplier": 1.2, "lineSizeMultiplier": 0.7, "collapse-forces": false, "centerStrength": 0.15, "repelStrength": 15, "linkStrength": 0.4, "linkDistance": 420, "scale": 0.9409928231902496, "close": false}}, {"type": "graph", "ctime": 1789774569529, "title": "Всё как было", "options": {"collapse-filter": false, "search": "", "showTags": false, "showAttachments": false, "hideUnresolved": true, "showOrphans": true, "collapse-color-groups": false, "colorGroups": [{"query": "path:\"02 Узоры\"", "color": {"a": 1, "rgb": 9387314}}, {"query": "path:\"03 Разметки\"", "color": {"a": 1, "rgb": 4022150}}, {"query": "path:\"04 Стежки\"", "color": {"a": 1, "rgb": 2761760}}, {"query": "path:\"05 Нити\"", "color": {"a": 1, "rgb": 12887412}}, {"query": "path:\"06 Шары\"", "color": {"a": 1, "rgb": 7035466}}], "collapse-display": false, "showArrow": true, "textFadeMultiplier": -3, "nodeSizeMultiplier": 1.2, "lineSizeMultiplier": 0.7, "collapse-forces": false, "centerStrength": 0.15, "repelStrength": 15, "linkStrength": 0.4, "linkDistance": 420, "scale": 0.9409928231902496, "close": false}}]}]}, null, 2) + '\n');
 
 // ── запись или проверка ──────────────────────────────────────────────────────
 async function onDisk() {
