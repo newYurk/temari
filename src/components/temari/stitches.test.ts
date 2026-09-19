@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { stackBump, markTurnPast, sphereBezier, innerBiteJoin } from "./kagari.ts";
+import { stackBump, innerBiteJoin, outerBiteJoin } from "./kagari.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 
 describe("thread stack is local, not a lifted petal", () => {
@@ -28,7 +28,7 @@ describe("thread stack is local, not a lifted petal", () => {
   });
 });
 
-describe("kiku mark turn is a U around the vertex, not a diamond", () => {
+describe("kiku mark turn is a bite across the jiwari, not a U past it", () => {
   const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
 
   function v(x: number, y: number, z: number, r = 1 + pearl * 0.5): [number, number, number] {
@@ -36,44 +36,62 @@ describe("kiku mark turn is a U around the vertex, not a diamond", () => {
     return [(x / len) * r, (y / len) * r, (z / len) * r];
   }
 
-  function sub(a: [number, number, number], b: [number, number, number]): [number, number, number] {
-    return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-  }
-
   function dot(a: [number, number, number], b: [number, number, number]) {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   }
 
-  it("past sits on the tip side of the mark, not across the jiwari", () => {
+  it("outer bite sits just below the pin, not a tail toward the equator", () => {
     const mark = v(0, 0.5, 0.87);
     const from = v(0.12, 0.55, 0.82);
     const to = v(-0.12, 0.55, 0.82);
-    const past = markTurnPast(from, mark, to, pearl);
-    const open = sub(from, mark);
-    open[0] += to[0] - mark[0];
-    open[1] += to[1] - mark[1];
-    open[2] += to[2] - mark[2];
-    const tip = sub(past, mark);
-    assert.ok(dot(tip, open) < 0, "past is opposite the open V");
-    const d = Math.hypot(...sub(past, mark));
-    assert.ok(d > pearl * 0.4, "turn has pearl room past the vertex");
-    const across: [number, number, number] = [mark[1] * 0 - mark[2] * 1, mark[2] * 0 - mark[0] * 0, mark[0] * 1 - mark[1] * 0];
-    const al = Math.hypot(...across) || 1;
-    const pn = Math.hypot(...past) || 1;
-    assert.ok(Math.abs(dot([past[0] / pn, past[1] / pn, past[2] / pn], [across[0] / al, across[1] / al, across[2] / al])) < 0.15, "U is along the ray, not across it");
+    const pts = outerBiteJoin(from, mark, to, pearl, 3);
+    const pole: [number, number, number] = [0, 1, 0];
+    const markDot = dot(
+      [mark[0] / Math.hypot(...mark), mark[1] / Math.hypot(...mark), mark[2] / Math.hypot(...mark)],
+      pole,
+    );
+    let minDot = 1;
+    for (const p of pts) {
+      const n = Math.hypot(...p) || 1;
+      const d = dot([p[0] / n, p[1] / n, p[2] / n], pole);
+      if (d < minDot) minDot = d;
+    }
+    const past = Math.acos(Math.min(1, Math.max(-1, minDot))) - Math.acos(Math.min(1, Math.max(-1, markDot)));
+    assert.ok(past > 0, "stitch is just below the pin");
+    assert.ok(past < pearl * 1.2, `outer join walked ${past.toFixed(3)} past the mark — a tail, not a kagari`);
   });
 
-  it("bezier through the past does not reverse (no cusp, no diamond)", () => {
+  it("outer bite is a dash across the meridian, not a loop down the ray", () => {
     const mark = v(0, 0.5, 0.87);
-    const from = v(0.12, 0.55, 0.82);
-    const to = v(-0.12, 0.55, 0.82);
-    const past = markTurnPast(from, mark, to, pearl);
-    const pts = [from, ...sphereBezier(from, past, to, 12)];
-    for (let i = 1; i < pts.length - 1; i++) {
-      const a = sub(pts[i]!, pts[i - 1]!);
-      const b = sub(pts[i + 1]!, pts[i]!);
-      assert.ok(dot(a, b) > 0, `tangent reversal at ${i} would draw a diamond`);
+    const from = v(0.08, 0.52, 0.85);
+    const to = v(-0.08, 0.52, 0.85);
+    const pts = outerBiteJoin(from, mark, to, pearl, 3);
+    const az = (p: [number, number, number]) => Math.atan2(p[0], p[2]);
+    const angles = pts.map((p) => az(p));
+    let span = 0;
+    for (const a of angles) {
+      for (const b of angles) {
+        let d = Math.abs(a - b);
+        if (d > Math.PI) d = Math.PI * 2 - d;
+        if (d > span) span = d;
+      }
     }
+    assert.ok(span < 0.35, `outer join spanned ${(span * 180) / Math.PI}° — a U, not a bite`);
+  });
+
+  it("bite across sits under the wrap, not on top of the flower", () => {
+    const mark = v(0, 0.5, 0.87);
+    const from = v(0.08, 0.52, 0.85);
+    const to = v(-0.08, 0.52, 0.85);
+    const outer = outerBiteJoin(from, mark, to, pearl, 3);
+    const innerMark = v(0.04, 0.99, 0.12);
+    const inner = innerBiteJoin(v(0.055, 0.987, 0.14), innerMark, v(0.025, 0.987, 0.155), pearl, 4);
+    const under = (pts: [number, number, number][]) => {
+      const mid = pts[Math.floor(pts.length / 2)]!;
+      return Math.hypot(...mid);
+    };
+    assert.ok(under(outer) < 1, `outer hidden path is on top of the maki (${under(outer).toFixed(3)})`);
+    assert.ok(under(inner) < 1, `inner hidden path is on top of the maki (${under(inner).toFixed(3)})`);
   });
 
   it("inner U does not enter the polar cap", () => {

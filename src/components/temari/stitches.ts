@@ -6,7 +6,7 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
-import { stackBump, scoopAway, scoopRadius, markTurnPast as markTurnPastVec, sphereBezier as sphereBezierVec, innerBiteJoin as innerBiteJoinVec } from "./kagari";
+import { stackBump, scoopAway, scoopRadius, innerBiteJoin as innerBiteJoinVec, outerBiteJoin as outerBiteJoinVec } from "./kagari";
 
 const ARC_SEGS = 32;
 /** Almost one pearl so the over cord clears; a hair less so it nestles, not a tent. */
@@ -236,45 +236,9 @@ function nearVec(a: THREE.Vector3, b: THREE.Vector3) {
 }
 
 /**
- * Tip of the V, past the mark, on the mari. The open side of the V is
- * `from`+`to`; the turn sits on the opposite side so the pearl goes *around*
- * the jiwari instead of reversing through the vertex.
- */
-function markTurnPast(
-  from: THREE.Vector3,
-  mark: THREE.Vector3,
-  to: THREE.Vector3,
-  dist: number,
-): THREE.Vector3 {
-  const p = markTurnPastVec(
-    [from.x, from.y, from.z],
-    [mark.x, mark.y, mark.z],
-    [to.x, to.y, to.z],
-    dist,
-  );
-  return new THREE.Vector3(p[0], p[1], p[2]);
-}
-
-/** Quadratic Bézier on the sphere. Does not cusp at the control point. */
-function sphereBezier(
-  a: THREE.Vector3,
-  b: THREE.Vector3,
-  c: THREE.Vector3,
-  n: number,
-): THREE.Vector3[] {
-  return sphereBezierVec(
-    [a.x, a.y, a.z],
-    [b.x, b.y, b.z],
-    [c.x, c.y, c.z],
-    n,
-  ).map((p) => new THREE.Vector3(p[0], p[1], p[2]));
-}
-
-/**
- * Replace the cusp at `mark` with a pearl U around it.
- * Outer V: the U sits past the pin (tip side). Inner uwagake: the U sits
- * on the open side and must not enter the polar cap — a poleward loop is
- * macaroni on the silhouette.
+ * Replace the cusp at `mark` with a pearl bite across the jiwari.
+ * Inner uwagake: the bite sits on the open side and must not enter the polar cap.
+ * Outer kiku: the flower ends at the pin — a dash across, not a U past it.
  */
 function joinAroundMark(
   pts: THREE.Vector3[],
@@ -283,7 +247,7 @@ function joinAroundMark(
   pearl: number,
 ) {
   const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
-  const keep = pearl * (inner ? 0.5 : 0.7);
+  const keep = pearl * 0.5;
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
@@ -313,20 +277,22 @@ function joinAroundMark(
   const from = atKeep(fromRaw);
   const to = atKeep(toRaw);
   pts.push(from);
-  if (inner) {
-    for (const p of innerBiteJoinVec(
-      [from.x, from.y, from.z],
-      [mark.x, mark.y, mark.z],
-      [to.x, to.y, to.z],
-      pearl,
-      3,
-    )) {
-      pts.push(new THREE.Vector3(p[0], p[1], p[2]));
-    }
-  } else {
-    const past = markTurnPast(from, mark, to, pearl * 0.32);
-    for (const p of sphereBezier(from, past, to, 20)) pts.push(p);
-  }
+  const join = inner
+    ? innerBiteJoinVec(
+        [from.x, from.y, from.z],
+        [mark.x, mark.y, mark.z],
+        [to.x, to.y, to.z],
+        pearl,
+        3,
+      )
+    : outerBiteJoinVec(
+        [from.x, from.y, from.z],
+        [mark.x, mark.y, mark.z],
+        [to.x, to.y, to.z],
+        pearl,
+        3,
+      );
+  for (const p of join) pts.push(new THREE.Vector3(p[0], p[1], p[2]));
   for (let k = i + 1; k < piece.length; k++) pts.push(piece[k]!);
 }
 

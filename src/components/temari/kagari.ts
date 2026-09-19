@@ -193,6 +193,13 @@ export function scoopRadius(t: number, surfaceR: number, half: number): number {
   return surfaceR + (Math.max(floor, buried) - surfaceR) * h;
 }
 
+/** Pull a surface point under the wrap cover. `amount` 0 = on the mari, 1 = buried. */
+function diveUnder(p: Vec3, amount: number, surfaceR: number, threadHalf: number): Vec3 {
+  const L = scoopRadius(amount, surfaceR, threadHalf);
+  const n = hypot3(p) || 1;
+  return [(p[0] / n) * L, (p[1] / n) * L, (p[2] / n) * L];
+}
+
 function shiftTowardPole(pole: Vec3, mark: Vec3, along: number): Vec3 {
   const theta = Math.acos(Math.min(1, Math.max(-1, dot(pole, mark))));
   const t = Math.max(0, theta - along);
@@ -485,22 +492,92 @@ export function innerBiteJoin(from: Vec3, mark: Vec3, to: Vec3, pearl: number, n
   }
   const out: Vec3[] = [];
   const cap = Math.abs(m[1]);
-  const push = (a: Vec3, b: Vec3, steps: number) => {
+  const threadHalf = pearl * 0.5;
+  const push = (a: Vec3, b: Vec3, steps: number, bury: "arrive" | "under" | "leave" | "surface") => {
     for (let i = 1; i <= steps; i++) {
-      const p = slerp3(a, b, i / steps);
+      const t = i / steps;
+      let p = slerp3(a, b, t);
       const L = hypot3(p) || 1;
       if (Math.abs(p[1]) / L > cap) {
         const rho = Math.sqrt(Math.max(0, 1 - cap * cap));
         const pr = Math.hypot(p[0], p[2]) || 1e-9;
-        out.push([(p[0] / pr) * rho * L, Math.sign(p[1]) * cap * L, (p[2] / pr) * rho * L]);
-      } else {
-        out.push(p);
+        p = [(p[0] / pr) * rho * L, Math.sign(p[1]) * cap * L, (p[2] / pr) * rho * L];
       }
+      const amount =
+        bury === "under" ? 1 : bury === "arrive" ? t : bury === "leave" ? 1 - t : 0;
+      out.push(amount > 0 ? diveUnder(p, amount, r, threadHalf) : p);
     }
   };
-  push(from, enter, n);
-  push(enter, exit, Math.max(2, n));
-  push(exit, to, n);
+  // Needle goes in, scoops wrap, comes out. The across is inside the maki.
+  push(from, enter, n, "arrive");
+  push(enter, exit, Math.max(2, n), "under");
+  push(exit, to, n, "leave");
+  return out;
+}
+
+/**
+ * Outer kiku point: a pearl bite *across* the jiwari, just below the pin.
+ * A U past the mark is a tail that keeps going toward the equator — the
+ * flower ends here. The stitch scoops wrap+mark and the working thread
+ * turns back up the next meridian.
+ */
+export function outerBiteJoin(from: Vec3, mark: Vec3, to: Vec3, pearl: number, n = 3): Vec3[] {
+  const m = normalize(mark);
+  const pole: Vec3 = m[1] >= 0 ? [0, 1, 0] : [0, -1, 0];
+  const along = dot(m, pole);
+  let radial: Vec3 = [
+    m[0] - pole[0] * along,
+    m[1] - pole[1] * along,
+    m[2] - pole[2] * along,
+  ];
+  if (hypot3(radial) < 1e-8) radial = [1, 0, 0];
+  radial = normalize(radial);
+  // Just below the pin — a fraction of a pearl toward the equator, not a loop.
+  const below = pearl * 0.35;
+  const center = normalize([
+    m[0] + radial[0] * below,
+    m[1] + radial[1] * below,
+    m[2] + radial[2] * below,
+  ]);
+  let across = cross(center, pole);
+  if (hypot3(across) < 1e-8) across = [1, 0, 0];
+  across = normalize(across);
+  const r = 0.5 * ((hypot3(from) || 1) + (hypot3(to) || 1));
+  const half = pearl * 0.45;
+  const mk = (s: number): Vec3 => {
+    const q = normalize([
+      center[0] + across[0] * s,
+      center[1] + across[1] * s,
+      center[2] + across[2] * s,
+    ]);
+    return [q[0] * r, q[1] * r, q[2] * r];
+  };
+  let enter = mk(-half);
+  let exit = mk(half);
+  const d2 = (a: Vec3, b: Vec3) => {
+    const dx = a[0] - b[0];
+    const dy = a[1] - b[1];
+    const dz = a[2] - b[2];
+    return dx * dx + dy * dy + dz * dz;
+  };
+  if (d2(from, exit) + d2(to, enter) < d2(from, enter) + d2(to, exit)) {
+    const tmp = enter;
+    enter = exit;
+    exit = tmp;
+  }
+  const out: Vec3[] = [];
+  const threadHalf = pearl * 0.5;
+  const push = (a: Vec3, b: Vec3, steps: number, bury: "arrive" | "under" | "leave") => {
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const p = slerp3(a, b, t);
+      const amount = bury === "under" ? 1 : bury === "arrive" ? t : 1 - t;
+      out.push(diveUnder(p, amount, r, threadHalf));
+    }
+  };
+  push(from, enter, n, "arrive");
+  push(enter, exit, Math.max(2, n), "under");
+  push(exit, to, n, "leave");
   return out;
 }
 
