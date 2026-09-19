@@ -13,7 +13,7 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
-      input: { main: "index.html", lab: "lab.html", s8ab: "s8-ab.html" },
+      input: { main: "index.html", lab: "lab.html", s8ab: "s8-ab.html", passport: "passport.html" },
     },
   },
 });

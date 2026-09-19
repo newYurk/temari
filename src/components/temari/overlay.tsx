@@ -187,6 +187,12 @@ function TitleLayer() {
           >
             исследование C8
           </a>
+          <a
+            href="./passport.html"
+            className="inline-flex h-9 items-center px-2 text-xs tracking-wide text-stone underline-offset-4 hover:text-ink hover:underline"
+          >
+            паспорт работы и расход
+          </a>
         </div>
       </div>
     </div>
