@@ -32,7 +32,7 @@ export type DiagramSnapshot = {
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 
 /** Fingerprint the actual model dependency closure, not a hand-maintained list. */
-export function modelSource(root: string) {
+export function modelSource(root: string, entry = 'src/components/temari/computed-lower-kagari.ts') {
   const seen = new Set<string>();
   const walk = (path: string) => {
     if (seen.has(path)) return;
@@ -46,7 +46,7 @@ export function modelSource(root: string) {
       walk(target);
     }
   };
-  walk(join(root, 'src/components/temari/computed-lower-kagari.ts'));
+  walk(join(root, entry));
   const files = [...seen].map((path) => ({
     path: relative(root, path).replaceAll('\\', '/'),
     sha256: hash(readFileSync(path, 'utf8')),

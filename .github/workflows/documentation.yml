@@ -15,6 +15,9 @@ on:
       - 'scripts/compute-stitch-diagram.mts'
       - 'scripts/lib/stitch-diagram-*.ts'
       - 'docs/fixtures/lower-kagari-diagram.json'
+      - 'public/fixtures/s8-ab.json'
+      - 'scripts/*s8-ab*'
+      - 'scripts/lib/s8-ab*'
       # хранилище считает состояние механик по замыканию импортов,
       # поэтому расходится не только с каталогом, но и с любым src/
       - 'src/**'
@@ -35,6 +38,9 @@ on:
       - 'scripts/compute-stitch-diagram.mts'
       - 'scripts/lib/stitch-diagram-*.ts'
       - 'docs/fixtures/lower-kagari-diagram.json'
+      - 'public/fixtures/s8-ab.json'
+      - 'scripts/*s8-ab*'
+      - 'scripts/lib/s8-ab*'
       # хранилище считает состояние механик по замыканию импортов,
       # поэтому расходится не только с каталогом, но и с любым src/
       - 'src/**'
@@ -55,5 +61,6 @@ jobs:
       - run: npm ci
       - run: npx tsx scripts/build-craft-vault.mts --check
       - run: npx tsx scripts/build-stitch-diagrams.mts --check
+      - run: npx tsx scripts/build-s8-ab-diagram.mts --check
       # exact claims, reverse links and runtime recipes must agree too
-      - run: npx tsx --test src/components/temari/library.test.ts src/components/temari/catalog-compatibility.test.ts src/components/temari/craft-vault.test.ts src/components/temari/stitch-diagram.test.ts
+      - run: npx tsx --test src/components/temari/library.test.ts src/components/temari/catalog-compatibility.test.ts src/components/temari/craft-vault.test.ts src/components/temari/stitch-diagram.test.ts src/components/temari/s8-kiku-ab.test.ts src/components/temari/s8-ab-snapshot.test.ts

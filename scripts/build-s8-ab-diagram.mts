@@ -1,0 +1,19 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { assertS8ABSnapshot, renderABOverview, type S8ABSnapshot } from './lib/s8-ab-diagram.ts';
+import { checkS8AB } from '../src/components/temari/s8-kiku-ab.ts';
+const root = resolve(import.meta.dirname, '..');
+const write = process.argv.includes('--write'), check = process.argv.includes('--check');
+if (write === check) throw new Error('Choose --write or --check.');
+const snapshot: S8ABSnapshot = JSON.parse(readFileSync(join(root, 'public/fixtures/s8-ab.json'), 'utf8'));
+assertS8ABSnapshot(snapshot, root);
+const actual = checkS8AB(snapshot.A, snapshot.B);
+if (JSON.stringify(actual) !== JSON.stringify(snapshot.checks[4])) throw new Error('Stored AB check does not match the displayed material.');
+const path = join(root, 'public/design.html'), html = readFileSync(path, 'utf8');
+const start = '<!-- s8-ab-overview:start -->', end = '<!-- s8-ab-overview:end -->';
+if (html.split(start).length !== 2 || html.split(end).length !== 2) throw new Error('Expected exactly one AB diagram block.');
+const updated = html.slice(0, html.indexOf(start) + start.length) + '\n        ' + renderABOverview(snapshot)
+  + '\n        ' + html.slice(html.indexOf(end));
+if (write) writeFileSync(path, updated);
+else if (updated !== html) throw new Error('AB overview is stale. Run build-s8-ab-diagram.mts --write and sync-design.mjs --write.');
+console.log(JSON.stringify({ status: snapshot.status, crossings: actual.surfaceCrossings, clearance: actual.clearance, mode: write ? 'written' : 'matches' }));

@@ -108,6 +108,8 @@ export type S8KikuStage = 'stitch' | 'round' | 'row2';
 /** One stitch of the working order: a tip and the uwagake row (0 = first round). */
 export type S8Catch = { tip: number; row: number };
 export type S8KikuInput = Partial<S8KikuDimensions> & {
+  /** Shift the first marking ray by one eighth-turn for the second working set. */
+  phase?: 0 | 1;
   stage?: S8KikuStage;
   handedness?: 1 | -1;
   /** A Simple 8 pole; the default is +Y. */
@@ -258,7 +260,7 @@ function tubes(id: string, curves: readonly ThreadCurve[], radius: number, route
  * neighbouring pieces of one thread. With includeHidden, piercing and buried
  * spans are projected too (a hidden passage under surface material).
  */
-function projectedCrossings(coupon: C8ThreadCoupon, pole: V, tolerance: number, includeHidden = false) {
+export function projectedCrossings(coupon: C8ThreadCoupon, pole: V, tolerance: number, includeHidden = false) {
   const e1 = unit(Math.abs(pole[0]) < .9 ? cross(pole, [1, 0, 0]) : cross(pole, [0, 1, 0])), e2 = cross(pole, e1);
   type Seg = { a: [number, number]; b: [number, number]; error: number };
   const project = (curve: ThreadCurve) => {
@@ -299,7 +301,7 @@ function projectedCrossings(coupon: C8ThreadCoupon, pole: V, tolerance: number, 
   const found: { a: string; b: string; certain: boolean }[] = [];
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
     const A = items[i], B = items[j];
-    if (A.index >= 0 && B.index >= 0 && Math.abs(A.index - B.index) <= 1) continue;
+    if (A.index >= 0 && B.index >= 0 && coupon.spans[A.index].threadId === coupon.spans[B.index].threadId && Math.abs(A.index - B.index) <= 1) continue;
     if (A.box[0] > B.box[2] || B.box[0] > A.box[2] || A.box[1] > B.box[3] || B.box[1] > A.box[3]) continue;
     let certain = false, touch = false;
     for (const s of A.segs) for (const t of B.segs) {
@@ -321,6 +323,8 @@ export function planS8Kiku(input: S8KikuInput = {}) {
     } else if (!Number.isFinite(d[key]) || d[key] <= 0) throw new RangeError(`${key} must be finite and positive`);
   }
   const stage = input.stage ?? 'stitch', handedness = input.handedness ?? 1, s0 = input.startTip ?? 0;
+  const phase = input.phase ?? 0;
+  if (phase !== 0 && phase !== 1) throw new RangeError('Simple 8 phase must be 0 or 1.');
   if (![0, 2, 4, 6].includes(s0)) throw new RangeError('startTip must be an upper tip: 0, 2, 4 or 6.');
   const tipAt = (k: number) => (s0 + k) % 8;
   const factors = [...(input.factors ?? S8_KIKU_LADDER)];
@@ -347,7 +351,8 @@ export function planS8Kiku(input: S8KikuInput = {}) {
   const rays = localMarkingRays({ center, circles, handedness, firstRay: { circleId: first.id, tangent: unit(cross(first.normal, center)) } });
   if (rays.length !== 8 || rays.some((ray, i) => Math.abs(ray.angleRad - i * Math.PI / 4) > 1e-9))
     throw new RangeError('A Simple 8 pole requires eight equally spaced rays.');
-  const frames = rays.map((ray, index) => {
+  const orderedRays = phase ? [...rays.slice(1), rays[0]] : rays;
+  const frames = orderedRays.map((ray, index) => {
     const role = index % 2 === 0 ? 'upper' as const : 'lower' as const;
     const distanceMm = role === 'upper' ? d.innerMm : outerMm, theta = distanceMm / R;
     const markMm = pointOnMarkingRayMm(center, ray.tangent, distanceMm, d.circumferenceMm), m = unit(markMm);
@@ -477,10 +482,15 @@ export function planS8Kiku(input: S8KikuInput = {}) {
     throw new RangeError('Marking segments or windows reach within 1 degree of the pole\'s horizon; the crossing check cannot project them.');
   const hiddenCurves = [...startCurves.map(c => c.curve), ...catches.flatMap(bite)];
   const hiddenCurvature = boundCurvatureTimesRadius(hiddenCurves, r);
-  return { d, stage, handedness, startTip: s0, factors, canonical, overridden, R, r, S, center, frames, tips, rows, catches, openEnd, legs, legPieces, windows, supports,
+  return { d, stage, handedness, phase, startTip: s0, factors, canonical, overridden, R, r, S, center, frames, tips, rows, catches, openEnd, legs, legPieces, windows, supports,
     bite, markOf, hullCorridor, bites, startCurves, hiddenCurves, hiddenCurvature, solverOptions: input.solverOptions };
 }
 export type S8KikuPlan = ReturnType<typeof planS8Kiku>;
+/** Fixed environment for a later, independent working thread. Never a renderer lift. */
+export type S8KikuEnvironment = {
+  marking: MarkingSupport[];
+  laidThreads: C8ThreadCoupon[];
+};
 
 /**
  * One complete construction at one resolution factor and constraint sampling
@@ -490,8 +500,9 @@ export type S8KikuPlan = ReturnType<typeof planS8Kiku>;
  * last round is solved at this factor. Everything else - bites, arcs, obstacles,
  * crossings and the complete-path check - is built as usual.
  */
-export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpan = plan.solverOptions?.samplesPerSpan ?? 4, earlier?: S8KikuLevel): S8KikuLevel {
-  const { d, R, r, legs, legPieces, supports, bite, markOf, hullCorridor, startCurves } = plan;
+export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpan = plan.solverOptions?.samplesPerSpan ?? 4, earlier?: S8KikuLevel, environment?: S8KikuEnvironment): S8KikuLevel {
+  const { d, R, r, legs, legPieces, bite, markOf, hullCorridor, startCurves } = plan;
+  const supports = [...plan.supports, ...(environment?.marking ?? [])];
   const s0 = plan.startTip;
   const markingObstacles: SpatialSupport[] = supports.map(s => ({ id: s.id, kind: 'arc', centerMm: [0, 0, 0],
     fromMm: start(s.curve), toMm: end(s.curve), radiusMm: s.radiusMm + d.numericalClearanceMm }));
@@ -535,6 +546,10 @@ export function buildS8KikuLevel(plan: S8KikuPlan, factor: number, samplesPerSpa
     }
     const route = polyline(w.seed), from = start(w.seed[0]);
     const obstacles = [...markingObstacles];
+    for (const thread of environment?.laidThreads ?? []) {
+      obstacles.push(...tubes(`laid-${thread.threadId}`, thread.spans.map(s => s.curve),
+        thread.threadRadiusMm + d.numericalClearanceMm, route, d.obstacleSearchMm));
+    }
     for (const g of groups) {
       // The group ending at this window's start port is its neighbour, not an obstacle.
       if (norm(sub(g.endMm, from)) < 1e-9) continue;
