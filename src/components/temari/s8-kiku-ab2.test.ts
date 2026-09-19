@@ -70,18 +70,13 @@ describe('S8 second pass (A2/B2)', () => {
   });
 
   it('A2/B2 operation orders do not overlap A1/B1 orders', () => {
-    const a1raw = planS8Kiku({ stage: 'round' });
-    const b1raw = planS8Kiku({ stage: 'round', phase: 1 });
-    const level = 0; // любой уровень
-    const A1 = nameS8Thread(a1raw.levels[level].coupon, 'A');
-    const B1 = nameS8Thread(b1raw.levels[level].coupon, 'B', A1.operations.length);
-
+    // Offsets are applied by nameS8Thread / nameS8Thread2, not by the planner.
+    const A1 = nameS8Thread(line('a1', [-1, 3, 0], [1, 3, 0]), 'A');
+    const B1 = nameS8Thread(line('b1', [0, 3.5, -1], [0, 3.5, 1]), 'B', A1.operations.length);
     const a1Max = Math.max(...A1.operations.map(o => o.order));
     const b1Max = Math.max(...B1.operations.map(o => o.order));
     const a2Offset = A1.operations.length + B1.operations.length;
-
-    const a2raw = planS8Kiku({ stage: 'round' });
-    const A2 = nameS8Thread2(a2raw.levels[level].coupon, 'A2', a2Offset);
+    const A2 = nameS8Thread2(line('a2', [-1, 4, 0], [1, 4, 0]), 'A2', a2Offset);
     const a2Min = Math.min(...A2.operations.map(o => o.order));
     assert.ok(a2Min > b1Max, 'A2 orders must start after B1 orders');
     assert.ok(a2Min > a1Max, 'A2 orders must start after A1 orders');
@@ -152,26 +147,31 @@ describe('S8 second pass (A2/B2)', () => {
   });
 
   it('judgeS8AB2 throws if ab2Checks length does not match b2.levels + 1', () => {
-    const a1 = planS8Kiku({ stage: 'round' });
-    const b1 = planS8Kiku({ stage: 'round', phase: 1 });
-    const a2 = planS8Kiku({ stage: 'round' });
-    const b2 = planS8Kiku({ stage: 'round', phase: 1 });
+    const stub = (status: 'accepted' | 'rejected' | 'unresolved' = 'unresolved') => ({
+      ...planS8Kiku({ stage: 'round' }),
+      status,
+      levels: [{}, {}, {}, {}, {}],
+    } as ReturnType<typeof planS8Kiku> & { status: typeof status; levels: object[] });
+    const a1 = stub(), b1 = stub(), a2 = stub(), b2 = stub();
     assert.throws(
-      () => judgeS8AB2(a1, b1, a2, b2, 'unresolved', []), // пустой массив неверен
+      () => judgeS8AB2(a1 as any, b1 as any, a2 as any, b2 as any, 'unresolved', []),
       RangeError,
     );
   });
 
   it('judgeS8AB2 returns rejected if any single-thread result is rejected', () => {
-    const a1 = planS8Kiku({ stage: 'round' });
-    const b1 = planS8Kiku({ stage: 'round', phase: 1 });
-    const a2 = planS8Kiku({ stage: 'round' });
-    const b2 = planS8Kiku({ stage: 'round', phase: 1 });
-    // Подменяем статус a1 на rejected.
-    const a1rejected = { ...a1, status: 'rejected' as const };
+    const stub = (status: 'accepted' | 'rejected' | 'unresolved') => ({
+      ...planS8Kiku({ stage: 'round' }),
+      status,
+      levels: [{}, {}, {}, {}, {}],
+    } as ReturnType<typeof planS8Kiku> & { status: typeof status; levels: object[] });
+    const b2 = stub('accepted');
     const fakeChecks = Array.from({ length: b2.levels.length + 1 },
       () => ({ status: 'passed' as const, clearances: {} as any,
         crossings: [], diagnostics: [], surfaceCrossings: 0, crossingCountUnknown: false }));
-    assert.equal(judgeS8AB2(a1rejected, b1, a2, b2, 'accepted', fakeChecks), 'rejected');
+    assert.equal(
+      judgeS8AB2(stub('rejected') as any, stub('accepted') as any, stub('accepted') as any, b2 as any, 'accepted', fakeChecks),
+      'rejected',
+    );
   });
 });
