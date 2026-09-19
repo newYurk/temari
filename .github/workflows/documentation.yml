@@ -10,6 +10,21 @@ on:
       - 'docs/design/**'
       - 'dist-pages/design.html'
       - 'scripts/sync-design.mjs'
+      - 'scripts/build-craft-vault.mts'
+      - 'scripts/build-stitch-diagrams.mts'
+      - 'scripts/compute-stitch-diagram.mts'
+      - 'scripts/lib/stitch-diagram-*.ts'
+      - 'docs/fixtures/lower-kagari-diagram.json'
+      - 'public/fixtures/s8-ab.json'
+      - 'scripts/*s8-ab*'
+      - 'scripts/lib/s8-ab*'
+      - 'scripts/build-passport-model.mts'
+      - 'public/fixtures/passport-model.json'
+      - 'passport.html'
+      # хранилище считает состояние механик по замыканию импортов,
+      # поэтому расходится не только с каталогом, но и с любым src/
+      - 'src/**'
+      - 'Temari-Obsidian/**'
       - '.github/workflows/documentation.yml'
   pull_request:
     paths:
@@ -21,6 +36,21 @@ on:
       - 'docs/design/**'
       - 'dist-pages/design.html'
       - 'scripts/sync-design.mjs'
+      - 'scripts/build-craft-vault.mts'
+      - 'scripts/build-stitch-diagrams.mts'
+      - 'scripts/compute-stitch-diagram.mts'
+      - 'scripts/lib/stitch-diagram-*.ts'
+      - 'docs/fixtures/lower-kagari-diagram.json'
+      - 'public/fixtures/s8-ab.json'
+      - 'scripts/*s8-ab*'
+      - 'scripts/lib/s8-ab*'
+      - 'scripts/build-passport-model.mts'
+      - 'public/fixtures/passport-model.json'
+      - 'passport.html'
+      # хранилище считает состояние механик по замыканию импортов,
+      # поэтому расходится не только с каталогом, но и с любым src/
+      - 'src/**'
+      - 'Temari-Obsidian/**'
       - '.github/workflows/documentation.yml'
 permissions:
   contents: read
@@ -33,3 +63,11 @@ jobs:
         with:
           node-version: '24'
       - run: node scripts/sync-design.mjs --check
+      # карта ремесла собирается из каталога игры: разойтись они не должны
+      - run: npm ci
+      - run: npx tsx scripts/build-craft-vault.mts --check
+      - run: npx tsx scripts/build-stitch-diagrams.mts --check
+      - run: npx tsx scripts/build-s8-ab-diagram.mts --check
+      - run: npx tsx scripts/build-passport-model.mts --check
+      # exact claims, reverse links and runtime recipes must agree too
+      - run: npx tsx --test src/components/temari/library.test.ts src/components/temari/catalog-compatibility.test.ts src/components/temari/craft-vault.test.ts src/components/temari/stitch-diagram.test.ts src/components/temari/s8-kiku-ab.test.ts src/components/temari/s8-ab-snapshot.test.ts src/components/temari/craft-passport.test.ts

@@ -44,18 +44,33 @@ function projection(curve: ThreadCurve, t: number, axis: PointMm) {
   if (!(d > 0)) throw new Error("Crossing iteration left its radial chart.");
   return { p: mul(p, 1 / d), v: sub(mul(v, 1 / d), mul(p, dot(axis, v) / (d * d))) };
 }
-function solve(a: ThreadCurve, wa: ThreadWindow, b: ThreadCurve, wb: ThreadTarget, axis: PointMm, ta: number, tb: number) {
+// Consecutive windows of one thread; a point on it is a piece index and its parameter.
+type Piece = { curve: ThreadCurve; t0: number; t1: number };
+type ChainPoint = { k: number; t: number };
+type ChainPart = { k: number; t0: number; t1: number };
+type ChainRoot = { a: ChainPoint; b: ChainPoint };
+// Steps in chain position (span index + t): the parameter excess past an
+// interior join carries on in the neighbouring piece. Joins are checked
+// continuous before the search, and the residual is always evaluated anew.
+function move(chain: Piece[], { k, t }: ChainPoint, dt: number): ChainPoint {
+  t += dt;
+  while (t > chain[k]!.t1 && k < chain.length - 1) { t += chain[k + 1]!.t0 - chain[k]!.t1; k++; }
+  while (t < chain[k]!.t0 && k > 0) { t += chain[k - 1]!.t1 - chain[k]!.t0; k--; }
+  return { k, t: Math.max(chain[k]!.t0, Math.min(chain[k]!.t1, t)) };
+}
+function solve(a: Piece[], pa: ChainPoint, b: Piece[], pb: ChainPoint, axis: PointMm): ChainRoot | null {
   for (let iteration = 0; iteration < 30; iteration++) {
-    const x = projection(a, ta, axis), y = projection(b, tb, axis), f = sub(x.p, y.p);
+    const x = projection(a[pa.k]!.curve, pa.t, axis), y = projection(b[pb.k]!.curve, pb.t, axis), f = sub(x.p, y.p);
     const det = dot(axis, cross(x.v, y.v));
     if (Math.abs(det) <= 1e-8 * norm(x.v) * norm(y.v) || !Number.isFinite(det) || norm(x.v) * norm(y.v) === 0) return null;
     const da = -dot(axis, cross(f, y.v)) / det, db = -dot(axis, cross(f, x.v)) / det;
-    if (norm(f) < 1e-12 && Math.max(Math.abs(da), Math.abs(db)) < 1e-9) return { ta, tb };
-    // A transverse root may be exactly at a smooth join. Newton can overshoot
-    // that endpoint before convergence; clamp the step, never the residual.
-    const nextA = Math.max(wa.t0, Math.min(wa.t1, ta + da)), nextB = Math.max(wb.t0, Math.min(wb.t1, tb + db));
-    if (nextA === ta && nextB === tb) return null;
-    ta = nextA; tb = nextB;
+    if (norm(f) < 1e-12 && Math.max(Math.abs(da), Math.abs(db)) < 1e-9) return { a: pa, b: pb };
+    // A transverse root may be exactly at or just beyond a smooth join. Newton
+    // continues across interior joins; only the chain ends clamp the step,
+    // never the residual.
+    const nextA = move(a, pa, da), nextB = move(b, pb, db);
+    if (nextA.k === pa.k && nextA.t === pa.t && nextB.k === pb.k && nextB.t === pb.t) return null;
+    pa = nextA; pb = nextB;
   }
   return null;
 }
@@ -75,13 +90,29 @@ function tangentCone(curve: ThreadCurve, t0: number, t1: number, axis: PointMm):
   }
   return hull;
 }
-function locallyUnique(a: ThreadCurve, sa: ProjectedSegment, b: ThreadCurve, sb: ProjectedSegment, axis: PointMm, ta: number, tb: number) {
-  const va = projection(a, ta, axis).v, vb = projection(b, tb, axis).v, determinant = dot(axis, cross(va, vb));
+const precedes = (p: ChainPoint, q: ChainPoint) => p.k < q.k || (p.k === q.k && p.t <= q.t);
+// One side of the rectangle containing a candidate cell of piece k and the root
+// found from it: clipped pieces in chain order, never split at the root. A piece
+// entered only a hair past a join is widened to the cell's width; the larger
+// interval keeps the proof sound and avoids ill-conditioned sliver hulls.
+function cover(chain: Piece[], k: number, cell: ProjectedSegment, root: ChainPoint): ChainPart[] {
+  const start = { k, t: cell.t0 }, end = { k, t: cell.t1 }, width = cell.t1 - cell.t0;
+  const from = precedes(root, start) ? root : start, to = precedes(end, root) ? root : end, parts: ChainPart[] = [];
+  for (let i = from.k; i <= to.k; i++) {
+    const w = chain[i]!, t0 = i === from.k ? from.t : w.t0, t1 = i === to.k ? to.t : w.t1;
+    parts.push({ k: i, t0: Math.max(w.t0, Math.min(t0, t1 - width)), t1: Math.min(w.t1, Math.max(t1, t0 + width)) });
+  }
+  return parts;
+}
+function locallyUnique(a: Piece[], sa: ChainPart[], b: Piece[], sb: ChainPart[], axis: PointMm, root: ChainRoot) {
+  const va = projection(a[root.a.k]!.curve, root.a.t, axis).v, vb = projection(b[root.b.k]!.curve, root.b.t, axis).v, determinant = dot(axis, cross(va, vb));
   if (!Number.isFinite(determinant) || determinant === 0) return false;
   // If two intersections existed, the mean tangent vectors between them
-  // would be collinear. Each mean lies in its derivative hull's positive cone.
+  // would be collinear. Each mean lies in its derivative hull's positive cone;
+  // across a continuous join it lies in the cone of the union of the pieces' hulls.
   // Strictly same-sign determinants for every hull pair exclude that case.
-  const sign = Math.sign(determinant), x = tangentCone(a, sa.t0, sa.t1, axis), y = tangentCone(b, sb.t0, sb.t1, axis);
+  const cone = (chain: Piece[], parts: ChainPart[]) => parts.flatMap((p) => tangentCone(chain[p.k]!.curve, p.t0, p.t1, axis));
+  const sign = Math.sign(determinant), x = cone(a, sa), y = cone(b, sb);
   return x.every((u) => y.every((v) => {
     const scale = norm(u) * norm(v);
     return scale > 0 && sign * dot(axis, cross(u, v)) > 1e-8 * scale;
@@ -100,76 +131,104 @@ export function validateThreadCrossings(coupon: C8ThreadCoupon, toleranceMm = .0
   const declared = new Map<string, ThreadCrossing>(), results = new Map<string, CrossingResult>();
   const seen = new Set<string>();
   for (const crossing of crossings) {
-    const ids = [...crossing.working.map((w) => w.spanId), crossing.target.id];
-    if (!crossing.id || seen.has(crossing.id)) { report("crossing-contract", "error", ids, "Crossing IDs must be nonempty and unique."); continue; }
+    const chain: ThreadWindow[] = crossing.targetChain ?? [{ spanId: crossing.target.id, t0: crossing.target.t0, t1: crossing.target.t1 }];
+    const ids = [...crossing.working.map((w) => w.spanId), ...new Set([crossing.target.id, ...chain.map((w) => w.spanId)])];
+    const diagnose = (code: string, severity: PathDiagnostic["severity"], message: string) => report(code, severity, ids, `crossing ${JSON.stringify(crossing.id)}: ${message}`);
+    if (!crossing.id || seen.has(crossing.id)) { diagnose("crossing-contract", "error", "Crossing IDs must be nonempty and unique."); continue; }
     seen.add(crossing.id); declared.set(crossing.id, crossing);
     const op = operations.get(crossing.opId), target = spans.get(crossing.target.id) ?? supports.get(crossing.target.id);
-    let valid = !!op && !!target && validInterval(crossing.target) && crossing.working.length > 0 && (crossing.pass === "over" || crossing.pass === "under");
+    let valid = !!op && !!target && validInterval(crossing.target) && crossing.working.length > 0 && chain.length > 0 && (crossing.pass === "over" || crossing.pass === "under");
     for (let i = 0; i < crossing.working.length; i++) {
       const w = crossing.working[i]!, s = spans.get(w.spanId), previous = crossing.working[i - 1];
       if (!s || s.opId !== crossing.opId || !validInterval(w)) valid = false;
       if (previous && (spans.get(previous.spanId)?.index !== (s?.index ?? 0) - 1 || previous.t1 !== 1 || w.t0 !== 0)) valid = false;
     }
-    if (!valid || !op || !target) { report("crossing-contract", "error", ids, "Crossings require finite consecutive windows owned by their declared operation and a valid target."); continue; }
-    const oldSpan = spans.get(crossing.target.id);
-    if (oldSpan && (operations.get(oldSpan.opId)?.order ?? Infinity) >= op.order) { report("crossing-future-target", "error", ids, "A crossing can reference only a previously laid working span."); continue; }
+    if (crossing.targetChain) {
+      // A chain names consecutive spans of one working thread; supports stay single.
+      const first = chain[0]!;
+      if (!spans.has(crossing.target.id) || first.spanId !== crossing.target.id || first.t0 !== crossing.target.t0 || first.t1 !== crossing.target.t1) valid = false;
+      for (let i = 0; i < chain.length; i++) {
+        const w = chain[i]!, s = spans.get(w.spanId), previous = chain[i - 1];
+        if (!s || !validInterval(w) || s.threadId !== spans.get(first.spanId)?.threadId) valid = false;
+        if (previous && (spans.get(previous.spanId)?.index !== (s?.index ?? 0) - 1 || previous.t1 !== 1 || w.t0 !== 0)) valid = false;
+      }
+    }
+    if (!valid || !op || !target) { diagnose("crossing-contract", "error", "Crossings require finite consecutive windows owned by their declared operation and a valid target."); continue; }
+    if (chain.some((w) => { const old = spans.get(w.spanId); return old && (operations.get(old.opId)?.order ?? Infinity) >= op.order; })) {
+      diagnose("crossing-future-target", "error", "A crossing can reference only a previously laid working span."); continue;
+    }
+    const targetCurve = (w: ThreadWindow) => (spans.get(w.spanId) ?? supports.get(w.spanId))!.curve;
+    const targetIndex = (w: ThreadWindow) => spans.get(w.spanId)?.index ?? 0;
     try {
+      // Global validation checks G1, but keep the join check here too: standalone
+      // crossing validation must not turn an elbow or a gap into a pass. The
+      // search below also steps and proves uniqueness across these joins.
+      let smooth = true;
+      for (const windows of [crossing.working, chain]) for (let i = 1; i < windows.length; i++) {
+        const before = targetCurve(windows[i - 1]!), after = targetCurve(windows[i]!);
+        const v = curveDerivative(before, 1), z = curveDerivative(after, 0);
+        if (norm(sub(evaluateCurve(before, 1), evaluateCurve(after, 0))) > coupon.bodyRadiusMm * 1e-10 || norm(sub(mul(v, 1 / norm(v)), mul(z, 1 / norm(z)))) > 1e-8) smooth = false;
+      }
+      if (!smooth) { diagnose("crossing-contract", "error", "Consecutive crossing windows require a continuous oriented tangent."); continue; }
       // A chart derived from the target itself preserves rotational covariance.
-      const middle = evaluateCurve(target.curve, (crossing.target.t0 + crossing.target.t1) / 2), axis = mul(middle, 1 / norm(middle));
-      let roots: { window: number; ta: number; tb: number }[] = [], ambiguous = true, possible = false;
+      const mid = chain[Math.floor((chain.length - 1) / 2)]!;
+      const middle = evaluateCurve(targetCurve(mid), (mid.t0 + mid.t1) / 2), axis = mul(middle, 1 / norm(middle));
+      const working: Piece[] = crossing.working.map((w) => ({ curve: spans.get(w.spanId)!.curve, t0: w.t0, t1: w.t1 }));
+      const targetPieces: Piece[] = chain.map((w) => ({ curve: targetCurve(w), t0: w.t0, t1: w.t1 }));
+      let roots: ChainRoot[] = [], ambiguous = true, possible = false;
       let previousPositions: { position: number; targetT: number }[] = [], stable = false;
+      const locate = (r: ChainRoot) => ({ position: spans.get(crossing.working[r.a.k]!.spanId)!.index + r.a.t, targetT: targetIndex(chain[r.b.k]!) + r.b.t });
       for (let refinement = 0; refinement <= 3; refinement++) {
         roots = []; ambiguous = false; possible = false;
-        const targetSegments = projectedSegments(target.curve, crossing.target.t0, crossing.target.t1, axis, toleranceMm / 4 ** refinement);
+        const targets = chain.map((tw) => projectedSegments(targetCurve(tw), tw.t0, tw.t1, axis, toleranceMm / 4 ** refinement));
         for (let wi = 0; wi < crossing.working.length; wi++) {
           const w = crossing.working[wi]!, actor = spans.get(w.spanId)!;
           const segments = projectedSegments(actor.curve, w.t0, w.t1, axis, toleranceMm / 4 ** refinement);
-          for (const a of segments) for (const b of targetSegments) {
-            if (!boxesMeet(a, b) || closestSegmentApproach(a.a, a.b, b.a, b.b).distanceMm > a.error + b.error + 1e-13) continue;
-            possible = true;
-            const root = solve(actor.curve, w, target.curve, crossing.target, axis, (a.t0 + a.t1) / 2, (b.t0 + b.t1) / 2);
-            if (!root) { ambiguous = true; continue; }
-            // A bounded curve/chord error can leave a false candidate next to a
-            // true crossing. Newton may find that root outside this mesh cell.
-            // Prove uniqueness on the rectangle containing BOTH the original
-            // candidate and found root: then the cell cannot hide another root.
-            const expandedA = { ...a, t0: Math.min(a.t0, root.ta), t1: Math.max(a.t1, root.ta) };
-            const expandedB = { ...b, t0: Math.min(b.t0, root.tb), t1: Math.max(b.t1, root.tb) };
-            if (!locallyUnique(actor.curve, expandedA, target.curve, expandedB, axis, root.ta, root.tb)) { ambiguous = true; continue; }
-            const position = actor.index + root.ta;
-            if (!roots.some((r) => Math.abs(spans.get(crossing.working[r.window]!.spanId)!.index + r.ta - position) < 1e-8 && Math.abs(r.tb - root.tb) < 1e-8)) roots.push({ window: wi, ...root });
+          for (let ti = 0; ti < chain.length; ti++) {
+            for (const a of segments) for (const b of targets[ti]!) {
+              if (!boxesMeet(a, b) || closestSegmentApproach(a.a, a.b, b.a, b.b).distanceMm > a.error + b.error + 1e-13) continue;
+              possible = true;
+              const root = solve(working, { k: wi, t: (a.t0 + a.t1) / 2 }, targetPieces, { k: ti, t: (b.t0 + b.t1) / 2 }, axis);
+              if (!root) { ambiguous = true; continue; }
+              // A bounded curve/chord error can leave a false candidate next to a
+              // true crossing. Newton may find that root outside this mesh cell,
+              // even past a join. Prove uniqueness on the chain rectangle containing
+              // BOTH the original candidate and found root: then the cell cannot
+              // hide another root.
+              const sideA = cover(working, wi, a, root.a), sideB = cover(targetPieces, ti, b, root.b);
+              if (!locallyUnique(working, sideA, targetPieces, sideB, axis, root)) { ambiguous = true; continue; }
+              const found = locate(root);
+              // Roots at or near a smooth join are found from both neighbouring
+              // pieces; chain positions identify them.
+              if (!roots.some((r) => { const p = locate(r); return Math.abs(p.position - found.position) < 1e-8 && Math.abs(p.targetT - found.targetT) < 1e-8; }))
+                roots.push(root);
+            }
           }
         }
-        const positions = roots.map((r) => ({ position: spans.get(crossing.working[r.window]!.spanId)!.index + r.ta, targetT: r.tb })).sort((a, b) => a.position - b.position);
+        const positions = roots.map(locate).sort((a, b) => a.position - b.position);
         stable = !ambiguous && positions.length === 1 && previousPositions.length === 1 && positions.every((p, i) => Math.abs(p.position - previousPositions[i]!.position) < 1e-7 && Math.abs(p.targetT - previousPositions[i]!.targetT) < 1e-7);
         previousPositions = ambiguous ? [] : positions;
         if (!possible || stable) break;
       }
-      if (!possible) { report("crossing-missing", "error", ids, "The finite radial projections do not intersect within the declared windows."); continue; }
-      if (ambiguous || !stable || roots.length !== 1) { report("crossing-unresolved", "unresolved", ids, "The projected crossing is tangent, multiple or not isolated after refinement."); continue; }
-      const root = roots[0]!, w = crossing.working[root.window]!, actor = spans.get(w.spanId)!;
-      const position = actor.index + root.ta;
+      if (!possible) { diagnose("crossing-missing", "error", "The finite radial projections do not intersect within the declared windows."); continue; }
+      if (ambiguous || !stable || roots.length !== 1) { diagnose("crossing-unresolved", "unresolved", "The projected crossing is tangent, multiple or not isolated after refinement."); continue; }
+      const root = roots[0]!, actor = working[root.a.k]!;
+      const { position, targetT } = locate(root);
       const first = crossing.working[0]!, last = crossing.working.at(-1)!;
-      if (position <= spans.get(first.spanId)!.index + first.t0 + 1e-9 || position >= spans.get(last.spanId)!.index + last.t1 - 1e-9 || root.tb <= crossing.target.t0 + 1e-9 || root.tb >= crossing.target.t1 - 1e-9) {
-        report("crossing-unresolved", "unresolved", ids, "An endpoint alone does not establish a two-sided transverse crossing."); continue;
+      const targetFirst = chain[0]!, targetLast = chain.at(-1)!;
+      if (position <= spans.get(first.spanId)!.index + first.t0 + 1e-9 || position >= spans.get(last.spanId)!.index + last.t1 - 1e-9
+        || targetT <= targetIndex(targetFirst) + targetFirst.t0 + 1e-9 || targetT >= targetIndex(targetLast) + targetLast.t1 - 1e-9) {
+        diagnose("crossing-unresolved", "unresolved", "An endpoint alone does not establish a two-sided transverse crossing."); continue;
       }
-      // Global validation checks G1, but keep the join check here too: standalone
-      // crossing validation must not turn an elbow or a gap into a pass.
-      let smooth = true;
-      for (let i = 1; i < crossing.working.length; i++) {
-        const before = spans.get(crossing.working[i - 1]!.spanId)!.curve, after = spans.get(crossing.working[i]!.spanId)!.curve;
-        const v = curveDerivative(before, 1), z = curveDerivative(after, 0);
-        if (norm(sub(evaluateCurve(before, 1), evaluateCurve(after, 0))) > coupon.bodyRadiusMm * 1e-10 || norm(sub(mul(v, 1 / norm(v)), mul(z, 1 / norm(z)))) > 1e-8) smooth = false;
-      }
-      if (!smooth) { report("crossing-contract", "error", ids, "Consecutive crossing windows require a continuous oriented tangent."); continue; }
-      const delta = norm(evaluateCurve(actor.curve, root.ta)) - norm(evaluateCurve(target.curve, root.tb));
+      const hit = targetPieces[root.b.k]!;
+      const delta = norm(evaluateCurve(actor.curve, root.a.t)) - norm(evaluateCurve(hit.curve, root.b.t));
       const signed = crossing.pass === "over" ? delta : -delta;
       const radii = coupon.threadRadiusMm + (supports.get(crossing.target.id)?.radiusMm ?? coupon.threadRadiusMm);
-      if (signed < -toleranceMm) { report("crossing-wrong-side", "error", ids, "Radial over/under order is opposite to the declared crossing."); continue; }
-      if (signed - radii < -toleranceMm) { report("crossing-penetration", "error", ids, "The declared radial crossing intersects the two yarn volumes."); continue; }
-      if (signed - radii <= toleranceMm) { report("crossing-unresolved", "unresolved", ids, "Radial crossing clearance is within the numerical tolerance."); continue; }
+      if (signed < -toleranceMm) { diagnose("crossing-wrong-side", "error", "Radial over/under order is opposite to the declared crossing."); continue; }
+      if (signed - radii < -toleranceMm) { diagnose("crossing-penetration", "error", "The declared radial crossing intersects the two yarn volumes."); continue; }
+      if (signed - radii <= toleranceMm) { diagnose("crossing-unresolved", "unresolved", "Radial crossing clearance is within the numerical tolerance."); continue; }
       results.set(crossing.id, { position, gap: signed - radii });
-    } catch (error) { report("crossing-unresolved", "unresolved", ids, String(error)); }
+    } catch (error) { diagnose("crossing-unresolved", "unresolved", String(error)); }
   }
   for (const capture of captures) {
     const op = operations.get(capture.opId), ids = capture.targets.map((t) => t.id);

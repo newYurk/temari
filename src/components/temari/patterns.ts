@@ -1,7 +1,7 @@
 import { polePositions, type Division } from "./division.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 import { COLOR_COUNT } from "./palettes.ts";
-import { biteAcross, closestApproachT, stackOver, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
+import { biteAcross, closestApproachT, refineApproach, stackOver, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
 
 export type KikuSlot = { pole: number; ring: number; sector: number };
 
@@ -471,7 +471,8 @@ export function kikuSpec(
       recipe: null,
     };
   }
-  const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
+  // Шаг ряда — толщина нити этого рецепта, а не вписанная сюда перле №5.
+  const pitch = unitFromMm(STITCH_THREAD_MM[recipe.thread]);
   const stretch = unitFromMm(recipe.stretchMm);
   const inner = unitFromMm(recipe.innerMm);
   const outer = (Math.PI / 2) * (1 - recipe.outerFromEquator);
@@ -1088,13 +1089,90 @@ function stitchSamples(s: Extract<Stitch, { kind: "arc" }>, n = 20): Vec3[] {
  * Same kai: B on A. Later kai: the new thread on every earlier opposite
  * set it actually meets. Parallel same-set flanks stay on the mari.
  */
+const arcSamples = new WeakMap<Extract<Stitch, { kind: "arc" }>, Vec3[]>();
+/** Sharpened crossings, kept per pair: neither stitch changes between rebuilds. */
+const arcPairs = new WeakMap<
+  Extract<Stitch, { kind: "arc" }>,
+  WeakMap<Extract<Stitch, { kind: "arc" }>, { tA: number; tB: number; dist: number }>
+>();
+const arcCaps = new WeakMap<Extract<Stitch, { kind: "arc" }>, { c: Vec3; ang: number }>();
+
+/** Longest step between a stitch's samples: how far a crossing can hide. */
+function stepOf(s: Extract<Stitch, { kind: "arc" }>) {
+  const pts = stitchSamples(s);
+  let step = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]!;
+    const b = pts[i]!;
+    step = Math.max(step, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+  }
+  return step;
+}
+
+function pointOn(s: Extract<Stitch, { kind: "arc" }>) {
+  const anchors = [s.a, ...(s.via ?? []), s.b];
+  return (t: number) => sampleAnchors(anchors, t);
+}
+
+function crossingOf(
+  a: Extract<Stitch, { kind: "arc" }>,
+  b: Extract<Stitch, { kind: "arc" }>,
+  coarse: { tA: number; tB: number; dist: number },
+) {
+  let byA = arcPairs.get(a);
+  if (!byA) {
+    byA = new WeakMap();
+    arcPairs.set(a, byA);
+  }
+  const hit = byA.get(b);
+  if (hit) return hit;
+  const n = stitchSamples(a).length;
+  const m = stitchSamples(b).length;
+  const made = refineApproach(pointOn(a), pointOn(b), coarse.tA, coarse.tB,
+    1 / Math.max(1, n - 1), 1 / Math.max(1, m - 1));
+  byA.set(b, made);
+  return made;
+}
+
 export function annotateSetCrossings(stitches: Stitch[]): Stitch[] {
   const arcs = stitches.filter((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc");
   const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
   const reach = pearl * 1.35;
+  // Every arc is sampled once, and the samples outlive the call: a stitch is
+  // immutable, the workshop runs this after each stitch, and the flower it
+  // runs over is the same objects plus one.
+  const samplesOf = (s: Extract<Stitch, { kind: "arc" }>) => {
+    const hit = arcSamples.get(s);
+    if (hit) return hit;
+    const made = stitchSamples(s);
+    arcSamples.set(s, made);
+    return made;
+  };
+  /**
+   * A stitch covers a small cap of the ball. Two caps further apart than their
+   * radii plus the reach cannot meet, and the pair loop is quadratic: on a full
+   * flower this rejects almost every pair with one dot product.
+   */
+  const capOf = (s: Extract<Stitch, { kind: "arc" }>) => {
+    const hit = arcCaps.get(s);
+    if (hit) return hit;
+    const pts = samplesOf(s);
+    let x = 0, y = 0, z = 0;
+    for (const p of pts) { x += p[0]; y += p[1]; z += p[2]; }
+    const len = Math.hypot(x, y, z) || 1;
+    const c: Vec3 = [x / len, y / len, z / len];
+    let ang = 0;
+    for (const p of pts) {
+      const dot = Math.max(-1, Math.min(1, c[0] * p[0] + c[1] * p[1] + c[2] * p[2]));
+      ang = Math.max(ang, Math.acos(dot));
+    }
+    const made = { c, ang };
+    arcCaps.set(s, made);
+    return made;
+  };
   return stitches.map((s) => {
     if (s.kind !== "arc" || s.pole == null || s.kai == null || s.set == null) return s;
-    const self = stitchSamples(s);
+    const self = samplesOf(s);
     const ats: { t: number; n: number }[] = [];
     for (const other of arcs) {
       if (other === s) continue;
@@ -1102,7 +1180,17 @@ export function annotateSetCrossings(stitches: Stitch[]): Stitch[] {
       if (other.set === s.set) continue;
       const earlier = other.kai < s.kai || (other.kai === s.kai && other.set < s.set);
       if (!earlier) continue;
-      const c = closestApproachT(self, stitchSamples(other));
+      // Chord <= angle, so the reach used as an angle only ever keeps more pairs.
+      const capA = capOf(s);
+      const capB = capOf(other);
+      const between = Math.acos(Math.max(-1, Math.min(1,
+        capA.c[0] * capB.c[0] + capA.c[1] * capB.c[1] + capA.c[2] * capB.c[2])));
+      if (between > capA.ang + capB.ang + reach) continue;
+      // Samples only bracket the crossing: between them the curves can come a
+      // whole segment closer, so the bracket is kept wide and then walked in.
+      const coarse = closestApproachT(self, samplesOf(other));
+      if (coarse.dist > reach + stepOf(s) + stepOf(other)) continue;
+      const c = crossingOf(s, other, coarse);
       if (c.dist > reach) continue;
       const sameKai = other.kai === s.kai;
       // Cross-kai tips already have sitA / sitB. Same-kai kousa is near
@@ -1217,6 +1305,9 @@ export function kagariPhaseHint(
   poleIndex = 0,
   kagariSet: 0 | 1 = 0,
   canGrow = true,
+  /** Rows lying at this pole and how many the thread leaves room for. */
+  rows = 0,
+  rowsFit = 0,
 ): string {
   const support = motifSupport(division, motif);
   if (!support.supported) return support.reason;
@@ -1226,9 +1317,11 @@ export function kagariPhaseHint(
       return "Нажмите «Вторая группа» — следующие четыре лепестка.";
     }
     if (motif === "kiku") {
+      // Say how far the flower has grown: a beginner cannot count rows on a ball.
+      const count = rows > 0 && rowsFit > 0 ? `Ряд ${rows} из ${rowsFit}. ` : "";
       return canGrow
-        ? "Нажмите «Следующий ряд» — продолжить обе группы."
-        : "Кагари: ряд лежит. Другой полюс — переверните шар.";
+        ? `${count}Нажмите «Следующий ряд» — продолжить обе группы.`
+        : `${count}Кагари: ряд лежит. Другой полюс — переверните шар.`;
     }
     return "Кагари: ряд лежит. Другой полюс — переверните шар.";
   }

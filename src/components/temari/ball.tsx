@@ -21,24 +21,54 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import { createTemariMaterial, createWrapBaker, createWrapCoverMaterial, syncTemariMaterial, syncWrapCoverMaterial } from "./shader";
-import { createMotifGeometry, getYarnTexture } from "./stitches";
+import { createMotifGeometry, createMotifGeometryParts, getPerleBump, getPerleTexture, getYarnTexture } from "./stitches";
 import { pinPosition, useTemari } from "./store";
 import * as feel from "./feel";
 import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
 import { C8_EXTRA, jiwariMarkColor, jiwariStitches, jiwariVisibleStitches, vRulerLegs } from "./jiwari";
 
-const pointer = { x: 0, y: 0, down: false, dragged: false };
+const pointer = { x: 0, y: 0, down: false, dragged: false, multi: false };
+/** Recent turns of the ball, for a throw that follows the finger, not the last event. */
+const swings: { t: number; ax: number; ay: number; az: number; ang: number }[] = [];
+const SWING_WINDOW_MS = 90;
 const ptrs = new Map<number, { x: number; y: number }>();
 const pinch = { mx: 0, my: 0, span: 0, held: false };
-const _origin = new THREE.Vector3();
+/** Where a panned ball springs back to. Never written: it is the rest point. */
+const ORIGIN = Object.freeze(new THREE.Vector3()) as THREE.Vector3;
+const _centre = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _up = new THREE.Vector3();
 const _axis = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _feed = new THREE.Vector3();
+const _qb = new THREE.Quaternion();
 const _inv = new THREE.Quaternion();
 const _local = new THREE.Vector3();
 const Y_UP = new THREE.Vector3(0, 1, 0);
+const _ray = new THREE.Vector3();
+const _hit = new THREE.Vector3();
+
+/**
+ * Taps are answered by the wrapped surface (radius 1), not by the smaller core
+ * mesh: near the silhouette a tessellated sphere loses several pixels, and the
+ * kiku ring targets sit exactly there.
+ */
+function sphereRaycast(mesh: THREE.Mesh, radius: number, raycaster: THREE.Raycaster, out: THREE.Intersection[]) {
+  // Its own scratch vector: this runs on every hover, and sharing the spring's
+  // rest point here once made a panned ball stay wherever the finger left it.
+  _centre.setFromMatrixPosition(mesh.matrixWorld);
+  _ray.copy(_centre).sub(raycaster.ray.origin);
+  const along = _ray.dot(raycaster.ray.direction);
+  const d2 = _ray.lengthSq() - along * along, r2 = radius * radius;
+  if (d2 > r2) return;
+  const half = Math.sqrt(r2 - d2);
+  const t = along - half >= 0 ? along - half : along + half;
+  if (t < 0) return;
+  _hit.copy(raycaster.ray.direction).multiplyScalar(t).add(raycaster.ray.origin);
+  const distance = _hit.distanceTo(raycaster.ray.origin);
+  if (distance < raycaster.near || distance > raycaster.far) return;
+  out.push({ distance, point: _hit.clone(), object: mesh });
+}
 
 const DAMP = 0.46;
 
@@ -55,24 +85,37 @@ function ThreadLayer({
   kind?: ThreadKind;
   order?: number;
 }) {
+  // Opaque thread is drawn as the pieces it is made of — merging the whole
+  // flower after every stitch was the long frame. A ghost stays one geometry:
+  // overlapping pieces would blend with themselves.
   const geos = useMemo(() => {
-    return colors.map((_, i) => createMotifGeometry(stitches, i, kind));
-  }, [stitches, kind, colors]);
-  const yarn = useMemo(() => getYarnTexture(), []);
+    return colors.map((_, i) =>
+      opacity >= 1
+        ? createMotifGeometryParts(stitches, i, kind)
+        : [createMotifGeometry(stitches, i, kind)].filter((g): g is THREE.BufferGeometry => !!g),
+    );
+  }, [stitches, kind, colors, opacity]);
+  // A pearl cord shows its two plies; flat metallic jiwari keeps the plain yarn.
+  const cord = kind !== "metallic";
+  const yarn = useMemo(() => (cord ? getPerleTexture() : getYarnTexture()), [cord]);
+  const bump = useMemo(() => (cord ? getPerleBump() : null), [cord]);
 
   useEffect(() => {
     return () => {
-      for (const geo of geos) geo?.dispose();
+      // Kept tubes belong to the cache and outlive this layer.
+      for (const list of geos) for (const geo of list) if (!geo.userData.cached) geo.dispose();
     };
   }, [geos]);
 
   return (
     <group>
-      {geos.map((geo, i) =>
-        geo ? (
-          <mesh key={i} geometry={geo} renderOrder={order}>
+      {geos.flatMap((list, i) =>
+        list.map((geo, j) => (
+          <mesh key={`${i}-${j}`} geometry={geo} renderOrder={order}>
             <meshStandardMaterial
               map={yarn}
+              bumpMap={bump ?? undefined}
+              bumpScale={bump ? 0.42 : undefined}
               color={colors[i]}
               roughness={threadRoughness(kind)}
               metalness={threadMetalness(kind)}
@@ -85,7 +128,7 @@ function ThreadLayer({
               polygonOffsetUnits={-1}
             />
           </mesh>
-        ) : null,
+        )),
       )}
     </group>
   );
@@ -250,6 +293,9 @@ export function Ball() {
   const group = useRef<THREE.Group>(null);
   const shafts = useRef<THREE.InstancedMesh>(null);
   const heads = useRef<THREE.InstancedMesh>(null);
+  const rims = useRef<THREE.InstancedMesh>(null);
+  const targets = useRef<THREE.InstancedMesh>(null);
+  const targetRims = useRef<THREE.InstancedMesh>(null);
   const needle = useRef<THREE.Mesh>(null);
   const knots = useRef<THREE.InstancedMesh>(null);
   const omega = useRef(new THREE.Vector3());
@@ -316,6 +362,13 @@ export function Ball() {
     return kikuWorkingPins(division, facingPole).map((pin) => pin.p);
   }, [craft, division, facingPole, mode, motif, nodes]);
   const marksReady = motif !== "kiku" || kikuMarksReady(pins, division, facingPole);
+  // Places still waiting for a pin of this flower, drawn large and in a fixed colour.
+  const kikuTargets = useMemo(() => {
+    if (mode !== "studio" || craft !== "pin" || motif !== "kiku" || !layerDone || !jiwariOn || marksReady) return [];
+    return kikuWorkingPins(division, facingPole)
+      .filter((m) => !pins.some((pin) => pin.p[0] * m.p[0] + pin.p[1] * m.p[1] + pin.p[2] * m.p[2] > 0.995))
+      .map((m) => m.p);
+  }, [craft, division, facingPole, jiwariOn, layerDone, marksReady, mode, motif, pins]);
   const outerTheta = kikuSpec(division).outer;
 
   const preset: MotifId =
@@ -400,16 +453,31 @@ export function Ball() {
 
   useLayoutEffect(() => {
     const g = group.current;
+    if (!g || mode !== "title") return;
+    // A finished ball is not looked at from its equator: the title tips the
+    // north flower towards the eye, the way it lies in a hand.
+    _q.setFromAxisAngle(_axis.set(1, 0, 0), 0.78);
+    _q.multiply(_qb.setFromAxisAngle(_feed.set(0, 1, 0), 0.4));
+    g.quaternion.copy(_q);
+  }, [mode]);
+
+  useLayoutEffect(() => {
+    const g = group.current;
     if (!g || viewNonce === 0) return;
     const pole = poles[viewPole] ?? poles[0];
     if (!pole) return;
     omega.current.set(0, 0, 0);
     _axis.set(pole[0], pole[1], pole[2]).normalize();
-    _feed.set(0, 1, 0);
+    // The working pole turns towards the eye, the way a ball is held while sewing:
+    // the whole flower is in front, not foreshortened against the silhouette.
+    // A hand's worth of tilt is kept so the ball still reads as a ball, not a disc.
+    _feed.copy(camera.position).normalize();
+    _feed.y += 0.34;
+    _feed.normalize();
     _q.setFromUnitVectors(_axis, _feed);
     g.quaternion.copy(_q);
     g.position.set(0, 0, 0);
-  }, [poles, viewNonce, viewPole]);
+  }, [camera, poles, viewNonce, viewPole]);
 
   useEffect(() => {
     wrap.reset();
@@ -456,11 +524,16 @@ export function Ball() {
       dummy.scale.setScalar(i === activePin ? 1.28 : 1);
       dummy.updateMatrix();
       head.setMatrixAt(i, dummy.matrix);
+      rims.current?.setMatrixAt(i, dummy.matrix);
     });
     shaft.count = pins.length;
     head.count = pins.length;
     shaft.instanceMatrix.needsUpdate = true;
     head.instanceMatrix.needsUpdate = true;
+    if (rims.current) {
+      rims.current.count = pins.length;
+      rims.current.instanceMatrix.needsUpdate = true;
+    }
   }, [activePin, dummy, pins]);
 
   useLayoutEffect(() => {
@@ -476,6 +549,21 @@ export function Ball() {
     mesh.instanceMatrix.needsUpdate = true;
   }, [dummy, markNodes]);
 
+  useLayoutEffect(() => {
+    for (const mesh of [targets.current, targetRims.current]) {
+      if (!mesh) continue;
+      kikuTargets.forEach((p, i) => {
+        dummy.position.set(p[0] * 1.012, p[1] * 1.012, p[2] * 1.012);
+        dummy.quaternion.identity();
+        dummy.scale.setScalar(1);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+      });
+      mesh.count = kikuTargets.length;
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+  }, [dummy, kikuTargets]);
+
   useEffect(() => {
     const el = gl.domElement;
     const onDown = (e: PointerEvent) => {
@@ -488,7 +576,10 @@ export function Ball() {
       pointer.y = e.clientY;
       pointer.down = true;
       pointer.dragged = false;
-      if (ptrs.size === 1) omega.current.set(0, 0, 0);
+      if (ptrs.size === 1) pointer.multi = false;
+      // Every new finger stops the ball: a second finger must not inherit a spin.
+      omega.current.set(0, 0, 0);
+      swings.length = 0;
       if (ptrs.size >= 2) {
         let mx = 0;
         let my = 0;
@@ -505,6 +596,7 @@ export function Ball() {
         pinch.span = Math.hypot(a.x - b.x, a.y - b.y);
         pinch.held = true;
         pointer.dragged = true;
+        pointer.multi = true;
       }
       try {
         el.setPointerCapture(e.pointerId);
@@ -552,8 +644,11 @@ export function Ball() {
         pinch.my = my;
         pinch.span = span;
         pinch.held = true;
+        swings.length = 0;
         return;
       }
+      // Below the drag threshold a shaking finger must not turn the ball at all.
+      if (!pointer.dragged) return;
 
       const k = 2.7 / Math.max(size.height, 1);
       const rx = dx * k;
@@ -595,16 +690,35 @@ export function Ball() {
         _axis.normalize();
         _q.setFromAxisAngle(_axis, ang);
         g.quaternion.premultiply(_q);
-        omega.current.copy(_axis).multiplyScalar(ang / dt);
+        swings.push({ t: now, ax: _axis.x, ay: _axis.y, az: _axis.z, ang });
+        while (swings.length > 1 && now - swings[0]!.t > SWING_WINDOW_MS) swings.shift();
       }
+    };
+    /** Mean turn over the last SWING_WINDOW_MS; zero after a pause, a pinch or a still finger. */
+    const throwSpin = (out: THREE.Vector3) => {
+      out.set(0, 0, 0);
+      const now = performance.now();
+      const last = swings.at(-1);
+      if (!pointer.dragged || pointer.multi || !last || now - last.t > 70) return out;
+      if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) return out;
+      const first = swings[0]!;
+      const span = Math.max(0.03, (last.t - first.t) / 1000);
+      for (const sw of swings) out.x += sw.ax * sw.ang, out.y += sw.ay * sw.ang, out.z += sw.az * sw.ang;
+      out.divideScalar(span);
+      if (out.length() < 1.2) out.set(0, 0, 0);
+      return out;
     };
     const onUp = (e: PointerEvent) => {
       ptrs.delete(e.pointerId);
       if (ptrs.size < 2) pinch.held = false;
       if (ptrs.size === 0) {
+        throwSpin(omega.current);
+        swings.length = 0;
         spinning.current = false;
         pointer.down = false;
       } else {
+        omega.current.set(0, 0, 0);
+        swings.length = 0;
         const rest = ptrs.entries().next().value;
         if (rest) {
           lastPtr.current = { x: rest[1].x, y: rest[1].y, t: performance.now(), id: rest[0] };
@@ -763,6 +877,11 @@ export function Ball() {
           pole: st.facingPole,
           set: st.kagariSet,
           layers: st.kikuLayers,
+          // The thread in hand and the pair of working threads, for checks.
+          hand: st.selectedColor,
+          pair: st.kagariColors,
+          planColor: st.kagariPlan[0]?.color ?? null,
+          keptColors: [...new Set(st.kagariKept.map((stitch) => stitch.color))].sort(),
         };
       },
       freezeKagari: (n?: number) => {
@@ -820,7 +939,7 @@ export function Ball() {
       omega.current.set(0, 0, 0);
     }
     if (g && !pinch.held && g.position.lengthSq() > 1e-8) {
-      g.position.lerp(_origin, 1 - Math.exp(-10 * d));
+      g.position.lerp(ORIGIN, 1 - Math.exp(-10 * d));
       if (g.position.lengthSq() < 1e-7) g.position.set(0, 0, 0);
     }
 
@@ -877,7 +996,7 @@ export function Ball() {
   const onPinPointerUp = (e: ThreeEvent<PointerEvent>) => {
     // Use the hit instance, not the sphere point behind an elevated pin head.
     e.stopPropagation();
-    const dragged = pointer.dragged;
+    const dragged = pointer.dragged || pointer.multi;
     pointer.down = false;
     pointer.dragged = false;
     if (mode !== "studio" || dragged || e.button !== 0 || e.instanceId == null) return;
@@ -904,7 +1023,7 @@ export function Ball() {
             return;
           }
           if (craft === "stitch") {
-            setHoverSlot(motif === "kiku" ? hitKikuSlot(p[0], p[1], p[2], division) : null);
+            setHoverSlot(null);
             if (snapGhost.current) snapGhost.current.visible = false;
           }
           else if (craft === "pin") {
@@ -927,7 +1046,8 @@ export function Ball() {
           }
         }}
         onPointerUp={(e) => {
-          const dragged = pointer.dragged;
+          // A pinch ends with two separate releases; neither is a tap.
+          const dragged = pointer.dragged || pointer.multi;
           pointer.down = false;
           pointer.dragged = false;
           if (!canWork || dragged || e.button !== 0) return;
@@ -947,14 +1067,15 @@ export function Ball() {
             useTemari.getState().sketchToPin(p);
             return;
           }
-          if (motif !== "kiku") return;
-          const slot = hitKikuSlot(p[0], p[1], p[2], division);
-          if (slot) sew(slot);
+          // A motif is sewn from the dock, never by tapping the ball.
         }}
         onPointerOut={() => {
           if (hover !== -1) setHover(-1);
           if (hoverSlot) setHoverSlot(null);
           if (snapGhost.current) snapGhost.current.visible = false;
+        }}
+        raycast={function (this: THREE.Mesh, raycaster, out) {
+          sphereRaycast(this, mode === "title" || layerDone ? 1 : 0.96, raycaster, out);
         }}
       >
         <sphereGeometry args={[0.96, 96, 64]} />
@@ -1012,16 +1133,47 @@ export function Ball() {
       ) : null}
 
       {mode === "studio" && craft === "pin" && motif === "kiku" && !marksReady ? (
-        <mesh
+        <group
           position={[0, (facingPole === 1 ? -1 : 1) * Math.cos(outerTheta), 0]}
           rotation={[Math.PI / 2, 0, 0]}
-          renderOrder={13}
-          raycast={() => {}}
         >
-          <torusGeometry args={[Math.sin(outerTheta), 0.0026, 6, 64]} />
-          <meshStandardMaterial color="#c4a574" roughness={0.62} metalness={0.18} />
-        </mesh>
+          {/* The ring the eight outer marks stand on: a dark backing under a light line. */}
+          <mesh renderOrder={12} raycast={() => {}}>
+            <torusGeometry args={[Math.sin(outerTheta), 0.0075, 6, 96]} />
+            <meshBasicMaterial color="#1c1714" toneMapped={false} />
+          </mesh>
+          <mesh renderOrder={13} raycast={() => {}} scale={1.0008}>
+            <torusGeometry args={[Math.sin(outerTheta), 0.0042, 6, 96]} />
+            <meshBasicMaterial color="#fbf6ec" toneMapped={false} />
+          </mesh>
+        </group>
       ) : null}
+
+      {/* Where a pin of this flower still has to go. Fixed colours: they must read on any wrap. */}
+      <instancedMesh
+        ref={targetRims}
+        args={[undefined, undefined, 16]}
+        frustumCulled={false}
+        visible={kikuTargets.length > 0}
+        count={kikuTargets.length}
+        renderOrder={14}
+        raycast={() => {}}
+      >
+        <sphereGeometry args={[0.038, 20, 14]} />
+        <meshBasicMaterial color="#1c1714" side={THREE.BackSide} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh
+        ref={targets}
+        args={[undefined, undefined, 16]}
+        frustumCulled={false}
+        visible={kikuTargets.length > 0}
+        count={kikuTargets.length}
+        renderOrder={15}
+        raycast={() => {}}
+      >
+        <sphereGeometry args={[0.03, 20, 14]} />
+        <meshBasicMaterial color="#fbf6ec" toneMapped={false} />
+      </instancedMesh>
 
       <mesh ref={needle} visible={false}>
         <sphereGeometry args={[0.018, 12, 10]} />
@@ -1039,10 +1191,10 @@ export function Ball() {
         <meshStandardMaterial color="#6a453c" roughness={0.52} metalness={0.08} />
       </instancedMesh>
 
-      <mesh ref={snapGhost} visible={false}>
+      <mesh ref={snapGhost} visible={false} renderOrder={16}>
         <sphereGeometry args={[0.026, 12, 10]} />
         <meshStandardMaterial
-          color={stitchHex}
+          color="#c98a2e"
           roughness={0.4}
           metalness={0.1}
           transparent
@@ -1055,7 +1207,7 @@ export function Ball() {
         ref={nodesMesh}
         args={[undefined, undefined, 80]}
         frustumCulled={false}
-        visible={mode === "studio" && craft === "pin" && layerDone && jiwariOn}
+        visible={mode === "studio" && craft === "pin" && layerDone && jiwariOn && motif !== "kiku"}
         count={markNodes.length}
       >
         <sphereGeometry args={[0.012, 10, 8]} />
@@ -1098,8 +1250,21 @@ export function Ball() {
         renderOrder={21}
         onPointerUp={onPinPointerUp}
       >
-        <sphereGeometry args={[0.014, 24, 16]} />
+        <sphereGeometry args={[0.03, 24, 16]} />
         <meshStandardMaterial color="#f4efe6" roughness={0.16} metalness={0.12} />
+      </instancedMesh>
+      {/* A dark rim keeps the head visible on a light wrap. */}
+      <instancedMesh
+        ref={rims}
+        args={[undefined, undefined, 80]}
+        frustumCulled={false}
+        visible={mode === "studio" && pins.length > 0}
+        count={pins.length}
+        renderOrder={20}
+        raycast={() => {}}
+      >
+        <sphereGeometry args={[0.038, 20, 14]} />
+        <meshBasicMaterial color="#181411" side={THREE.BackSide} toneMapped={false} />
       </instancedMesh>
     </group>
   );

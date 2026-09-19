@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  contrastThread,
+  jiwariMarkColor,
   C8_EXTRA,
   c8Pins,
   c8Stitches,
@@ -93,6 +95,17 @@ describe("c10 jiwari", () => {
         continue;
       }
       assert.equal(isGreatCircle(stitch.points), true);
+    }
+  });
+});
+
+describe("thread colour against the wrap", () => {
+  it("never suggests the wrap's own colour or its marking colour", () => {
+    for (let wrap = 0; wrap < 5; wrap++) {
+      const thread = contrastThread(wrap);
+      assert.ok(thread >= 0 && thread < 5, String(thread));
+      assert.notEqual(thread, wrap);
+      assert.notEqual(thread, jiwariMarkColor(wrap));
     }
   });
 });

@@ -18,7 +18,8 @@ describe("workshop library", () => {
     assert.equal(dock[0]?.id, "kiku-8-point");
     assert.notEqual(dock[0]?.id, "GT14");
     assert.equal(dock[0]?.family, "kiku");
-    assert.equal(dock[0]?.requires, "simple");
+    assert.equal(dock[0]?.compatibility.state, "documented");
+    assert.equal(dock[0]?.recipe?.divisionId, "s8");
     assert.equal(dock[0]?.recipe?.id, KIKU_8_POINT.id);
     assert.equal(catalogLabel(dock[0].names, "ui"), "Кику");
     assert.match(dock[0]?.note ?? "", /GT14/);

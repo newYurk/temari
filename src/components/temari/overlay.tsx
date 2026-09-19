@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { THREAD_COLORS } from "./palettes";
@@ -7,7 +7,8 @@ import { fillsMatch, polePositions } from "./division";
 import { useTemari } from "./store";
 import { unlock } from "./feel";
 import { ActionBar } from "./ActionBar";
-import { IconPoles } from "./icons";
+import { IconKiku, IconNeedle, IconPoles } from "./icons";
+import { CRAFT_ACTIONS, dispatchCommand, getCraftState } from "./actions";
 
 function useChromeVar(
   name: "--temari-chrome-top" | "--temari-chrome-bottom",
@@ -71,11 +72,58 @@ function RecenterButton({ className }: { className?: string }) {
       title={label}
       onClick={resetView}
       className={cn(
-        "pointer-events-auto flex size-10 items-center justify-center rounded-full bg-linen/80 text-ink ring-1 ring-line",
+        "pointer-events-auto flex h-10 items-center justify-center gap-1.5 rounded-full bg-linen/80 px-2.5 text-sm text-ink ring-1 ring-line sm:px-3",
         className,
       )}
     >
       <IconPoles next={nextNorth ? "north" : "south"} className="size-5" />
+      {/* An icon alone did not say what the button does; the word fits from small up. */}
+      <span className="hidden sm:inline">{label}</span>
+    </button>
+  );
+}
+
+/**
+ * Test shortcut until the flow is designed: S8 marking and kiku pins at the
+ * pole the viewer is looking at, in one tap.
+ */
+function QuickKikuButton() {
+  return (
+    <button
+      type="button"
+      title="Разметка S8 и булавки кику у полюса, который смотрит на вас"
+      onClick={() => dispatchCommand("quick-kiku")}
+      className="pointer-events-auto flex h-10 items-center gap-1.5 rounded-full bg-linen/80 px-3 text-sm text-ink ring-1 ring-line hover:bg-ink/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink [&>svg]:size-5"
+    >
+      <IconKiku />
+      Кику здесь
+    </button>
+  );
+}
+
+/**
+ * Test shortcut next to «Кику здесь»: sew every row this pole still has room
+ * for, instead of pressing «Следующий ряд» eight times to see a whole flower.
+ */
+function FinishKikuButton() {
+  // The action stays the single source of truth; this key says when to ask it again.
+  const key = useTemari((s) =>
+    [s.motif, s.division, s.kagariSpacing, s.kagariSet, s.kagariPlaying,
+      s.kagariPlan.length, s.kagariLaid, s.kikuLayers, s.pins.length].join("|"));
+  const ready = useMemo(
+    () => CRAFT_ACTIONS.find((item) => item.id === "kiku-finish")!.canExecute(getCraftState()),
+    [key],
+  );
+  if (!ready) return null;
+  return (
+    <button
+      type="button"
+      title="Дошить цветок до экватора этого полюса"
+      onClick={() => dispatchCommand("kiku-finish")}
+      className="pointer-events-auto flex h-10 items-center gap-1.5 rounded-full bg-linen/80 px-3 text-sm text-ink ring-1 ring-line hover:bg-ink/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink [&>svg]:size-5"
+    >
+      <IconNeedle />
+      Дошить
     </button>
   );
 }
@@ -101,7 +149,6 @@ function TitleLayer() {
             и начните с кику — узора хризантемы.
           </p>
         </div>
-        <RecenterButton />
       </div>
       <div className="min-h-0 flex-1" aria-hidden />
       <div ref={bottomRef} className="temari-rise temari-rise-3 pointer-events-auto max-w-md pb-[env(safe-area-inset-bottom)]">
@@ -139,6 +186,12 @@ function TitleLayer() {
             className="inline-flex h-9 items-center px-2 text-xs tracking-wide text-stone underline-offset-4 hover:text-ink hover:underline"
           >
             исследование C8
+          </a>
+          <a
+            href="./passport.html"
+            className="inline-flex h-9 items-center px-2 text-xs tracking-wide text-stone underline-offset-4 hover:text-ink hover:underline"
+          >
+            паспорт работы и расход
           </a>
         </div>
       </div>
@@ -186,6 +239,8 @@ function Workbench() {
               </p>
             </div>
           ) : null}
+          {mode === "studio" ? <FinishKikuButton /> : null}
+          {mode === "studio" ? <QuickKikuButton /> : null}
           <RecenterButton />
         </div>
       </header>

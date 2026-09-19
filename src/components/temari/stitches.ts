@@ -10,7 +10,13 @@ import { stackBump, scoopAway, scoopRadius, markTurnPast as markTurnPastVec, sph
 
 const ARC_SEGS = 32;
 /** Almost one pearl so the over cord clears; a hair less so it nestles, not a tent. */
-const STACK_LIFT = 0.92;
+/**
+ * Rise over one thread underneath, in diameters. The model declares a circular
+ * section that does not compress, and two such cords touch when their centres
+ * are one diameter apart — so this is 1, not a coefficient to taste. Compression
+ * is a separate question with no source yet (issue #93).
+ */
+const STACK_LIFT = 1;
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -166,7 +172,7 @@ function arcRibbon(a: THREE.Vector3, b: THREE.Vector3, width: number) {
  * cut the pearl at the outer point or the inner stitch. A complete
  * chidori round *returns* to the start mark — that is a park, not a weld.
  */
-function arcPath(
+export function arcPath(
   stitch: Extract<Stitch, { kind: "arc" }>,
   kind: ThreadKind,
 ): THREE.Vector3[] {
@@ -369,6 +375,57 @@ function buryWorkingStart(pts: THREE.Vector3[], kind: ThreadKind): THREE.Vector3
   return [...head.reverse(), ...pts];
 }
 
+/**
+ * A round that already lies does not change while the next one is sewn, and
+ * rebuilding every tube for every stitch cost one long frame per stitch,
+ * growing with the flower (0.07 s at eight stitches, 0.47 s at a hundred and
+ * fifty). Tubes are therefore kept by the path they were built from: the same
+ * points, radius and twist give back the same geometry.
+ */
+const TUBE_CACHE_MAX = 600;
+const tubeCache = new Map<string, THREE.BufferGeometry>();
+
+function tubeKey(
+  pts: THREE.Vector3[],
+  radius: number,
+  taperEnds: boolean,
+  closed: boolean,
+  uPerUnit: number,
+) {
+  const parts: string[] = [
+    radius.toFixed(5), taperEnds ? "t" : "-", closed ? "c" : "-", uPerUnit.toFixed(4),
+  ];
+  for (const p of pts) parts.push(`${p.x.toFixed(4)},${p.y.toFixed(4)},${p.z.toFixed(4)}`);
+  return parts.join("|");
+}
+
+function cachedTube(
+  pts: THREE.Vector3[],
+  radius: number,
+  taperEnds = false,
+  closed = false,
+  uPerUnit = 0,
+) {
+  const key = tubeKey(pts, radius, taperEnds, closed, uPerUnit);
+  const hit = tubeCache.get(key);
+  if (hit) {
+    // Touch: the oldest entry is the first to go when the cache is full.
+    tubeCache.delete(key);
+    tubeCache.set(key, hit);
+    return hit;
+  }
+  const geo = tubeOnSphere(pts, radius, taperEnds, closed, uPerUnit);
+  geo.userData.cached = true;
+  tubeCache.set(key, geo);
+  while (tubeCache.size > TUBE_CACHE_MAX) {
+    const oldest = tubeCache.keys().next().value;
+    if (oldest === undefined) break;
+    tubeCache.get(oldest)?.dispose();
+    tubeCache.delete(oldest);
+  }
+  return geo;
+}
+
 function stackedArcCord(
   stitch: Extract<Stitch, { kind: "arc" }>,
   kind: ThreadKind,
@@ -377,20 +434,35 @@ function stackedArcCord(
   if (pts.length < 2) return new THREE.BufferGeometry();
   // Open working length: emerge from the wrap, bury at the last stitch.
   // Full pearl — the cover hides the ends, so no taper and no coin.
-  return tubeOnSphere(buryWorkingEnds(pts, kind), stitchRadius(kind), false, false);
+  return cachedTube(buryWorkingEnds(pts, kind), stitchRadius(kind), false, false,
+    twistPerUnit(kind));
 }
 
 function stackedArcChain(
   chain: Extract<Stitch, { kind: "arc" }>[],
   kind: ThreadKind,
 ) {
-  if (chain.length === 1) return stackedArcCord(chain[0]!, kind);
+  const ok = stackedArcChainParts(chain, kind);
+  if (ok.length === 0) return new THREE.BufferGeometry();
+  if (ok.length === 1) return ok[0]!;
+  return mergeGeometries(ok, false) ?? ok[0]!;
+}
+
+/** The kept tubes a working thread is made of, one per kai it lies in. */
+function stackedArcChainParts(
+  chain: Extract<Stitch, { kind: "arc" }>[],
+  kind: ThreadKind,
+): THREE.BufferGeometry[] {
+  if (chain.length === 1) {
+    const one = stackedArcCord(chain[0]!, kind);
+    return (one.getAttribute("position")?.count ?? 0) > 0 ? [one] : [];
+  }
   const pearl = unitFromMm(kindMm(kind));
   const parts: THREE.BufferGeometry[] = [];
   const flush = (pts: THREE.Vector3[], parks: boolean) => {
     if (pts.length < 2) return;
     const path = parks ? buryWorkingStart(pts, kind) : buryWorkingEnds(pts, kind);
-    parts.push(tubeOnSphere(path, stitchRadius(kind), false, false));
+    parts.push(cachedTube(path, stitchRadius(kind), false, false, twistPerUnit(kind)));
   };
   let pts: THREE.Vector3[] = [];
   let kai0 = chain[0]?.kai;
@@ -427,10 +499,7 @@ function stackedArcChain(
     const last = chain[chain.length - 1]!;
     flush(pts, !!(headA && sameMark(headA, last.b)));
   }
-  const ok = parts.filter((g) => (g.getAttribute("position")?.count ?? 0) > 0);
-  if (ok.length === 0) return new THREE.BufferGeometry();
-  if (ok.length === 1) return ok[0]!;
-  return mergeGeometries(ok, false) ?? ok[0]!;
+  return parts.filter((g) => (g.getAttribute("position")?.count ?? 0) > 0);
 }
 
 function stackedArcRibbon(
@@ -481,6 +550,90 @@ function stackedArcRibbon(
     }
   }
   return ribbonFromPoints(pts, width, false);
+}
+
+/**
+ * Pearl cotton is 2-ply with a visible helix; one full turn takes this many of
+ * the cord's own diameters. Two estimates, neither of them a manufacturer's
+ * figure — nobody publishes the twist of coton perlé:
+ *
+ * - measured off macro photographs of DMC perle #5 (Needle 'n Thread): the
+ *   slope of the plies at the centre of the silhouette is 43°, which is a pitch
+ *   of 3.4 diameters, and counting the bands along the cord gives 3.7–3.9;
+ * - calculated from sourced yarn data (5/2 = Ne 5 singles, twist-multiplier
+ *   rules, 7–15 turns per inch for comparable mercerised plied cottons):
+ *   230–350 turns per metre, a pitch of 4–6 diameters, angle 28–38°.
+ *
+ * 3.6 is the photographic reading, which is the one about appearance. The first
+ * value here was 1.8 — an angle of 60°, a hard rope — and the owner said so.
+ */
+export const PERLE_TWIST_PITCH = 3.6;
+
+function twistPerUnit(kind: ThreadKind) {
+  const pitch = unitFromMm(kindMm(kind)) * PERLE_TWIST_PITCH;
+  return pitch > 0 ? 1 / pitch : 0;
+}
+
+/**
+ * One tile = one twist along the cord × once around it, so the bands meet
+ * themselves at every edge: band(v - u) with two plies is seamless in both.
+ */
+function makePerleTexture(relief: boolean) {
+  const w = 128;
+  const h = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return tex;
+  const image = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const u = x / w;
+      const v = y / h;
+      // Two plies: the phase runs twice around while the helix advances once.
+      //
+      // Handedness, which is easy to get backwards: the ring angle turns from
+      // the outward axis towards tangent x outward, a right-handed screw along
+      // the thread, so on the geometry's own v this would be a Z twist — but a
+      // texture is sampled with flipY on (three.js default, checked), so the
+      // drawn v is 1 - v and the helix comes out left-handed. That is S, which
+      // is what pearl cotton is: «mercerized, 100% cotton, S-twisted, 2-ply
+      // thread» (needlery.org, Pearl Cotton & Floss). Flipping this sign draws
+      // a Z twist — the wrong thread.
+      const phase = 2 * (v - u);
+      const across = Math.abs(((phase % 1) + 1.5) % 1 - 0.5) * 2; // 0 at the crown, 1 in the groove
+      const round = Math.cos(across * Math.PI * 0.5); // a ply is round, not flat
+      const level = relief ? round : 0.82 + 0.18 * round;
+      const value = Math.max(0, Math.min(255, Math.round(level * 255)));
+      const i = (y * w + x) * 4;
+      image.data[i] = value;
+      image.data[i + 1] = value;
+      image.data[i + 2] = value;
+      image.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+let perle: THREE.CanvasTexture | null = null;
+let perleBump: THREE.CanvasTexture | null = null;
+
+/** Colour map of a pearl cord: the plies keep the thread's own colour. */
+export function getPerleTexture() {
+  if (!perle) perle = makePerleTexture(false);
+  return perle;
+}
+
+/** Height of the same plies, for the relief of the twist. */
+export function getPerleBump() {
+  if (!perleBump) perleBump = makePerleTexture(true);
+  return perleBump;
 }
 
 export function getYarnTexture() {
@@ -554,6 +707,42 @@ function geodesicRibbon(points: THREE.Vector3[], width: number) {
   return ribbonFromPoints(pts, width, false);
 }
 
+/**
+ * The motif as the pieces it is made of. Merging them costs a copy of the whole
+ * flower, and the workshop rebuilds after every stitch: at a hundred and sixty
+ * stitches that copy alone was 0.2 s, one long frame per stitch. Drawing the
+ * pieces as they are keeps the kept tubes untouched.
+ */
+export function createMotifGeometryParts(
+  stitches: Stitch[],
+  colorIndex: number,
+  kind = DEFAULT_KIND.stitch,
+): THREE.BufferGeometry[] {
+  const width = ribbonWidth(kind);
+  const cord = kind !== "metallic";
+  const parts: THREE.BufferGeometry[] = [];
+  const annotated = annotateSetCrossings(stitches);
+  const arcs: Extract<Stitch, { kind: "arc" }>[] = [];
+  for (const stitch of annotated) {
+    if (stitch.color !== colorIndex) continue;
+    if (stitch.kind === "arc") {
+      arcs.push(stitch);
+    } else {
+      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, stitch.lift ?? 0, kind)), width * 1.08, true));
+    }
+  }
+  if (cord) {
+    for (const chain of groupWorkingThreads(arcs)) {
+      parts.push(...stackedArcChainParts(chain, kind));
+    }
+  } else {
+    for (const stitch of arcs) {
+      parts.push(stackedArcRibbon(stitch, width, kind));
+    }
+  }
+  return parts;
+}
+
 export function createMotifGeometry(
   stitches: Stitch[],
   colorIndex: number,
@@ -583,7 +772,8 @@ export function createMotifGeometry(
   }
   if (parts.length === 0) return null;
   const merged = mergeGeometries(parts, false);
-  for (const geo of parts) geo.dispose();
+  // A kept tube outlives the merge that copied it; only fresh parts go.
+  for (const geo of parts) if (!geo.userData.cached) geo.dispose();
   if (!merged) return null;
   return merged;
 }
@@ -647,6 +837,12 @@ function tubeOnSphere(
   radius: number,
   taperEnds = false,
   closed = false,
+  /**
+   * Texture repeats per unit of length. 0 keeps the old 0..1 across the piece;
+   * a positive value makes one repeat a fixed length, so a long stitch and a
+   * short one carry the same twist.
+   */
+  uPerUnit = 0,
 ) {
   if (pts.length < 2) return new THREE.BufferGeometry();
   const path: THREE.Vector3[] = [];
@@ -716,7 +912,8 @@ function tubeOnSphere(
       pos.push(p.x + nx, p.y + ny, p.z + nz);
       const nl = Math.hypot(nx, ny, nz) || 1;
       nrm.push(nx / nl, ny / nl, nz / nl);
-      uv.push(i / Math.max(1, nPath - 1), j / radialSegs);
+      uv.push(uPerUnit > 0 ? (along[i] ?? 0) * uPerUnit : i / Math.max(1, nPath - 1),
+        j / radialSegs);
     }
   }
   const wallSegs = closed ? nPath : nPath - 1;

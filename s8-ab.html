@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ece8e1" />
+    <title>Кику S8 · две рабочие нити</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <main>
+      <nav><a href="./">← Мастерская</a><a href="./lab.html#s8-kiku">Однонитевой образец</a><a href="./passport.html?sample=s8-ab">Паспорт образца A1/B1</a><a href="./design.html#motifs-corrected">Схема в дизайн-доке</a></nav>
+      <header>
+        <p class="eyebrow">Лаборатория · один полюс · первый проход</p>
+        <h1>Сначала A. Затем B.</h1>
+        <p class="intro">Две самостоятельные рабочие нити на Simple 8. Набор B рассчитывается рядом с уже уложенным A:
+          порядок рисования не заменяет проверку толщины. Это контрольный образец, не новая версия мастерской.</p>
+      </header>
+      <section class="spatial-workbench ab-workbench" aria-label="Контрольный образец A1 и B1">
+        <div>
+          <div id="ab-view" aria-label="Кику S8: две нити на сфере"></div>
+          <p class="gesture-note">Потяните шар, чтобы повернуть. Колесо или жест двумя пальцами: приблизить.</p>
+          <div class="buttons view-tools">
+            <button id="ab-top" type="button" aria-pressed="true">На полюс</button>
+            <button id="ab-side" type="button" aria-pressed="false">Косой вид</button>
+            <button id="ab-close" type="button" aria-pressed="false">Пересечения крупно</button>
+          </div>
+        </div>
+        <div class="controls">
+          <p class="badge">Фиксированный расчёт · без ожидания решателя</p>
+          <p id="ab-status" role="status">Загружается результат проверки…</p>
+          <div class="buttons">
+            <button id="ab-only-a" type="button" disabled>A1</button>
+            <button id="ab-both" type="button" disabled>A1 + B1</button>
+          </div>
+          <label>Последовательность <output id="ab-step-value">A1 → B1</output>
+            <input id="ab-step" type="range" min="0" max="16" step="1" value="16" disabled />
+          </label>
+          <p class="caption"><span class="legend-item"><span class="swatch" style="background:#963e44"></span>Нить A</span>
+            <span class="legend-item"><span class="swatch" style="background:#31546c"></span>Нить B</span>
+            <span class="legend-item"><span class="swatch" style="background:#705b40"></span>Дзивари</span></p>
+          <label class="check"><input id="ab-inside" type="checkbox" />Показать проходы внутри основы</label>
+          <dl><div><dt>Межнитевые пересечения</dt><dd id="ab-crossings">…</dd></div>
+            <div><dt>Граница зазора A/B</dt><dd id="ab-gap">…</dd></div></dl>
+          <p>Мари: <span id="ab-circumference">…</span> мм по экватору. Нить: диаметр <span id="ab-diameter">…</span> мм.
+            Размещение по <a href="https://www.temarikai.com/PatternsPages/Simple/GT14.html">GT14</a>;
+            сечение и размеры подхватов являются инженерными допущениями.</p>
+          <p>Здесь только A1 → B1. Вторые ряды, второй полюс, сжатие пряжи и силовое равновесие не заявляются.</p>
+          <details><summary>Численная проверка и ограничения</summary><pre id="ab-report"></pre></details>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/s8-ab-view.ts"></script>
+  </body>
+</html>

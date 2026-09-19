@@ -349,3 +349,41 @@ export function jiwariPins(division: Division): Pin[] {
 export function jiwariMarkColor(wrapColor: number) {
   return wrapColor === 1 ? 2 : 1;
 }
+
+/**
+ * Thread that reads on this wrap, so the first flower is visible: red -> light,
+ * gold -> dark, light -> red, dark -> light, blue -> light. Never the marking
+ * colour of that wrap, and never the wrap itself. Choosing tone on tone by hand
+ * stays possible.
+ */
+const CONTRAST_THREAD = [2, 3, 0, 2, 2];
+export function contrastThread(wrapColor: number) {
+  return CONTRAST_THREAD[wrapColor] ?? 2;
+}
+
+/**
+ * The second working thread of a kiku. The control pattern asks for two:
+ * «Pearl cotton #5 in 2 colors; a 3rd may be used as finish round»
+ * (G. Thompson / TemariKai.com, GT14), and names the sets Color A and Color B.
+ * Which hues is the maker's choice — GT14 does not say — so this is a starting
+ * pair that reads on the wrap, never the wrap itself and never the first thread:
+ * red -> gold, gold -> red, light -> dark, dark -> gold, blue -> gold.
+ */
+const SECOND_THREAD = [1, 0, 3, 1, 1];
+
+/** First and second working threads for a kiku on this wrap. */
+export function kikuThreads(wrapColor: number): [number, number] {
+  return [contrastThread(wrapColor), SECOND_THREAD[wrapColor] ?? 1];
+}
+
+/**
+ * The pair a new kiku starts from: the player's own two threads. Only a thread
+ * of the wrap's own colour is replaced by the starting pair's, because it would
+ * vanish on the ball. Starting over from kikuThreads used to throw away a colour
+ * picked before «Кику здесь», so the first four petals came out in a thread
+ * nobody chose.
+ */
+export function kikuThreadsFor(chosen: readonly [number, number], wrapColor: number): [number, number] {
+  const start = kikuThreads(wrapColor);
+  return [chosen[0] === wrapColor ? start[0] : chosen[0], chosen[1] === wrapColor ? start[1] : chosen[1]];
+}

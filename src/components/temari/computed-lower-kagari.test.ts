@@ -7,23 +7,48 @@ import type { PointMm } from './thread-path';
 
 const result = computeLowerKagari();
 const near = (a: number, b: number, tolerance = 1e-9) => assert.ok(Math.abs(a - b) < tolerance, `${a} != ${b}`);
-const pointNear = (a: PointMm, b: PointMm) => a.forEach((v, i) => near(v, b[i]));
+const pointNear = (a: PointMm, b: PointMm, tolerance = 1e-9) => a.forEach((v, i) => near(v, b[i], tolerance));
 const unit = (p: PointMm): PointMm => p.map(v => v / Math.hypot(...p)) as unknown as PointMm;
 
 describe('computed lower kagari: full-path and refinement acceptance', () => {
-  it('does not accept one successful discretisation when the finer physical path fails', () => {
+  it('accepts only a model-resolved ladder whose every resolution passes independent checks', () => {
     assert.equal(result.checks.seed.status, 'passed');
-    assert.deepEqual(result.checks.resolutions.map(c => c.controlCount), [10, 12]);
-    const [coarse, fine] = result.checks.resolutions;
-    assert.equal(coarse.result.status, 'converged'); assert.equal(coarse.validation.status, 'passed');
-    assert.ok(coarse.validation.maxCurvatureTimesRadius < 1);
-    assert.equal(fine.result.status, 'converged');
-    assert.ok(fine.validation.diagnostics.some(d => d.code === 'curvature-radius'));
-    assert.ok(fine.validation.maxCurvatureTimesRadius > 1);
-    assert.equal(result.status, 'rejected');
-    assert.equal(result.result, fine.result); assert.equal(result.checks.candidate, fine.validation);
-    // Do not silently fall back to the passing coarse curve for acceptance.
-    assert.equal(result.coupon.spans.filter(s => s.opId === 'lower-outgoing').length, 12 - 3);
+    // spans >= seed length / min bend radius, then x1.5 and x2: derived, not tuned.
+    const minimum = Math.ceil(result.metrics.seedLengthMm / result.metrics.minBendRadiusMm);
+    assert.equal(result.metrics.minimumSpans, minimum);
+    assert.deepEqual(result.checks.resolutions.map(c => c.controlCount), [1, 1.5, 2].map(f => Math.ceil(minimum * f) + 3));
+    for (const check of result.checks.resolutions) {
+      assert.ok(check.resolved);
+      assert.equal(check.result.status, 'converged');
+      assert.ok(check.restarts >= 1 && check.settleMoveMm <= 1e-4, `${check.restarts} ${check.settleMoveMm}`);
+      assert.equal(check.validation.status, 'passed', JSON.stringify(check.validation.diagnostics));
+      assert.equal(check.curvature.status, 'certified');
+      assert.ok(check.curvature.upper < 1 && check.validation.maxCurvatureTimesRadius < 1);
+      // The bend constraint is active, not vacuous: the exit port bends at the limit.
+      const limit = check.result.metrics.curvatureLimit;
+      near(limit, .8);
+      assert.ok(check.curvature.upper >= limit - 1e-3 && check.curvature.upper <= limit + .02);
+      assert.ok(check.result.reactions.some(r => r.kind === 'curvature' && r.parameter === 0));
+      assert.ok(check.result.metrics.minRelativeSpeedBound > .9);
+    }
+    assert.equal(result.status, 'accepted', result.diagnostics.join(' '));
+    assert.deepEqual(result.diagnostics, []);
+    const last = result.checks.resolutions.at(-1)!;
+    assert.equal(result.result, last.result); assert.equal(result.checks.candidate, last.validation);
+    assert.equal(result.coupon.spans.filter(s => s.opId === 'lower-outgoing').length, last.controlCount - 3);
+  });
+
+  it('flags the former 10/12-control meshes as under-resolved even though both now pass', () => {
+    // Before the thick-rope formulation 12 controls failed with r*kappa ~ 39.
+    const coarse = computeLowerKagari({}, { controlCounts: [10, 12] });
+    for (const check of coarse.checks.resolutions) {
+      assert.equal(check.result.status, 'converged');
+      assert.equal(check.validation.status, 'passed');
+      assert.ok(check.curvature.upper < 1);
+      assert.equal(check.resolved, false);
+    }
+    assert.equal(coarse.status, 'unresolved');
+    assert.ok(coarse.diagnostics.some(d => d.includes('under-resolved')));
   });
 
   it('preserves all incoming and needle geometry and checks the complete thread', () => {
@@ -57,7 +82,7 @@ describe('computed lower kagari: full-path and refinement acceptance', () => {
     for (const cross of crosses.filter(c => c.opId === 'lower-outgoing')) assert.deepEqual(cross.working,
       ids.map(spanId => ({ spanId, t0: 0, t1: 1 })));
     assert.ok(crosses.some(c => c.target.id === result.fixture.incomingTarget.id && c.pass === 'over'));
-    // Rejection is real section regularity/refinement, not a missing X recipe.
+    // The accepted candidate keeps every prescribed finite over/under crossing.
     assert.ok(!result.checks.candidate.diagnostics.some(d => d.code.startsWith('crossing-')));
   });
 
@@ -68,20 +93,38 @@ describe('computed lower kagari: full-path and refinement acceptance', () => {
     assert.equal(incoming.kind, 'arc'); near(incoming.radiusMm, .203);
     const curve = result.fixture.incoming[0]; assert.equal(curve.kind, 'arc');
     if (curve.kind === 'arc') { pointNear(incoming.fromMm, curve.from); pointNear(incoming.toMm, curve.to); }
-    const ramp = result.obstacles.filter(s => s.id.startsWith('incoming-2-capsule'));
-    assert.ok(ramp.length > 1 && ramp.every(s => s.kind === 'segment' && s.radiusMm >= .203
-      && s.radiusMm <= .203 + result.metrics.obstacleToleranceMm + 1e-12));
+    // The ramp is its own exact tube: no chord cover and no cover tolerance.
+    const ramp = result.obstacles.find(s => s.id === 'incoming-2')!, source = result.fixture.incoming[1];
+    assert.equal(ramp.kind, 'curve'); near(ramp.radiusMm, .203);
+    if (ramp.kind === 'curve' && source.kind === 'bezier') assert.deepEqual(ramp.piecesMm, [source.controls]);
     const marking = result.obstacles.find(s => s.id === result.fixture.markingSupport.id)!;
     near(marking.radiusMm, .083);
   });
 
-  it('reports refinement differences rather than treating similar screenshots as proof', () => {
-    const [coarse, fine] = result.checks.resolutions;
-    near(result.metrics.lengthDifferenceMm, Math.abs(coarse.result.lengthMm - fine.result.lengthMm));
-    assert.ok(result.metrics.lengthDifferenceMm > result.metrics.lengthToleranceMm);
-    assert.ok(Number.isFinite(result.metrics.maxShapeDifferenceMm) && result.metrics.maxShapeDifferenceMm > 0);
-    assert.ok(result.diagnostics.some(d => d.includes('length has not stabilised')));
-    assert.ok(result.diagnostics.some(d => d.includes('curvature-radius')));
+  it('reports successive refinement differences within tolerance rather than screenshots', () => {
+    const { refinements, resolutions } = result.checks;
+    assert.equal(refinements.length, resolutions.length - 1);
+    refinements.forEach((r, i) => {
+      assert.equal(r.from, resolutions[i].controlCount); assert.equal(r.to, resolutions[i + 1].controlCount);
+      near(r.lengthDifferenceMm, Math.abs(resolutions[i + 1].result.lengthMm - resolutions[i].result.lengthMm));
+      assert.ok(r.lengthDifferenceMm <= result.metrics.lengthToleranceMm);
+      assert.ok(r.shapeDifferenceMm > 0 && r.shapeDifferenceMm <= result.metrics.shapeToleranceMm);
+    });
+    near(result.metrics.lengthDifferenceMm, Math.max(...refinements.map(r => r.lengthDifferenceMm)));
+    near(result.metrics.maxShapeDifferenceMm, Math.max(...refinements.map(r => r.shapeDifferenceMm)));
+    // The computed outgoing branch is shorter than the raised engineering seed.
+    assert.ok(result.result.lengthMm < result.metrics.seedLengthMm);
+  });
+
+  it('is mirror-covariant: the opposite working direction gives the reflected stitch', () => {
+    const mirrored = computeLowerKagari({ handedness: -1 });
+    assert.equal(mirrored.status, 'accepted');
+    const q = result.fixture.frame.progress;
+    const reflect = (p: PointMm): PointMm => { const d = 2 * (p[0] * q[0] + p[1] * q[1] + p[2] * q[2]); return [p[0] - d * q[0], p[1] - d * q[1], p[2] - d * q[2]]; };
+    near(mirrored.result.lengthMm, result.result.lengthMm, 1e-9);
+    const a = result.coupon.spans.filter(s => s.opId === 'lower-outgoing'), b = mirrored.coupon.spans.filter(s => s.opId === 'lower-outgoing');
+    assert.equal(a.length, b.length);
+    a.forEach((span, i) => { for (const t of [0, .5, 1]) pointNear(reflect(evaluateCurve(span.curve, t)), evaluateCurve(b[i].curve, t), 1e-7); });
   });
 
   it('never accepts an unresolved capped refinement or a single/repeated mesh', () => {
@@ -90,5 +133,7 @@ describe('computed lower kagari: full-path and refinement acceptance', () => {
     assert.notEqual(capped.status, 'accepted');
     assert.throws(() => computeLowerKagari({}, { controlCounts: [10] }), RangeError);
     assert.throws(() => computeLowerKagari({}, { controlCounts: [10, 10] }), RangeError);
+    assert.throws(() => computeLowerKagari({}, { controlCounts: [60, 257] }), RangeError);
+    assert.throws(() => computeLowerKagari({}, { spansPerBendRadius: 0 }), RangeError);
   });
 });

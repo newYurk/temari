@@ -14,8 +14,10 @@ type Stage = "jiwari" | "kagari";
 const MARKINGS = [
   { id: "jiwari-off", division: "none", name: "Без сетки", detail: "Свои метки", note: "Булавки можно ставить в любом месте шара." },
   { id: "jiwari-simple", division: "simple", name: "S8 · простая", detail: "8 долей", note: "S8: восемь долей между двумя полюсами. Для первой кику." },
-  { id: "jiwari-c8", division: "c8", name: "C8", detail: "6 центров", note: "C8: шесть основных центров, по восемь лучей в каждом." },
-  { id: "jiwari-c10", division: "c10", name: "C10", detail: "12 центров", note: "C10: двенадцать основных центров, по десять лучей в каждом." },
+  { id: "jiwari-c8", division: "c8", name: "C8", detail: "6 центров", note: "C8: шесть основных центров. Узоры позже — кику шьётся на S8.",
+    help: "C8: шесть основных центров, по восемь лучей в каждом. Узоры для неё — позже; кику шьётся на S8." },
+  { id: "jiwari-c10", division: "c10", name: "C10", detail: "12 центров", note: "C10: двенадцать основных центров. Узоры позже — кику на S8.",
+    help: "C10: двенадцать основных центров, по десять лучей в каждом. Узоры для неё — позже; кику шьётся на S8." },
 ] as const;
 const MOTIFS = [
   { id: "motif-kiku", name: "Кику", detail: "Хризантема", icon: <IconKiku /> },
@@ -28,23 +30,57 @@ const COLOR_NAMES = ["Красная", "Золотая", "Светлая", "Тё
 const actionById = (id: string) => CRAFT_ACTIONS.find((action) => action.id === id)!;
 const focusStyle = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 
+/**
+ * What a chrysanthemum is made of, for the step where it is sewn. Source is the
+ * control pattern GT14 (Ginny T., TemariKai): two working threads alternate by
+ * rounds, each round of one set lying over the other.
+ */
+function KikuHelp() {
+  return (
+    <div className="mb-4 space-y-3 text-sm leading-relaxed">
+      <p>
+        Кику — хризантема. Её шьют <b>двумя нитями по четыре лепестка</b>: сначала первая
+        четвёрка, потом вторая — она ложится поверх первой там, где они встречаются.
+        Дальше каждый круг добавляет по ряду обеим: ряды идут от полюса к экватору, пока
+        остаётся место. Сколько уже лежит и сколько поместится, написано в подсказке над
+        кнопками.
+      </p>
+      <p>
+        Стежок — <b>увагакэ тидори</b>: у метки игла берёт маленький подхват намотки, и нить
+        идёт дальше поверх ранее уложенных. Метки ставятся на полюсе и на трети пути от
+        экватора к нему; булавки — временные, их вынимают по ходу работы, и в дошитом цветке
+        их не остаётся.
+      </p>
+      <p className="text-ink/75">
+        «Отменить» снимает <b>целую группу</b> лепестков, а не один стежок: нить не режут
+        посреди круга. «Дошить» доводит этот полюс до экватора одним шагом — это для проверки,
+        в настоящей работе каждый ряд кладут руками.
+      </p>
+    </div>
+  );
+}
+
 export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const s = useTemari(useShallow((s) => ({
     division: s.division, motif: s.motif, craft: s.craft, pins: s.pins,
     facingPole: s.facingPole, jiwariOn: s.jiwariOn, jiwariPhase: s.jiwariPhase,
     jiwariLaid: s.jiwariLaid, kagariPlan: s.kagariPlan, kagariLaid: s.kagariLaid,
+    kagariKept: s.kagariKept, kagariColors: s.kagariColors,
     kagariPlaying: s.kagariPlaying, kagariSet: s.kagariSet, kikuLayers: s.kikuLayers,
     kagariDir: s.kagariDir, kagariSpacing: s.kagariSpacing, mode: s.mode,
     layerDone: s.layerDone, history: s.history, sewnHistory: s.sewnHistory,
     pinHistory: s.pinHistory, pinNote: s.pinNote, selectedColor: s.selectedColor,
-    paletteId: s.paletteId, setColor: s.setColor,
+    paletteId: s.paletteId, setColor: s.setColor, kagariEdit: s.kagariEdit, editThread: s.editThread,
   })));
   const { division, motif, craft, pins, facingPole, jiwariOn, jiwariPhase, jiwariLaid,
-    kagariPlan, kagariLaid, kagariPlaying, kagariSet, kikuLayers, kagariDir, kagariSpacing } = s;
+    kagariPlan, kagariLaid, kagariKept, kagariColors, kagariPlaying, kagariSet, kikuLayers,
+    kagariDir, kagariSpacing } = s;
   const state = useMemo(() => getCraftState(), [s]);
   const [tip, setTip] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>(motif === "none" ? "jiwari" : "kagari");
   const help = useRef<HTMLDialogElement>(null);
+  const sewing = stage === "kagari";
+  const helpTitle = sewing ? "Как шьётся кику" : "Как читать разметку";
 
   useEffect(() => { if (motif !== "none") setStage("kagari"); }, [motif]);
   useEffect(() => { setTip(null); }, [division, motif, craft, pins, jiwariOn, kagariPlan, s.pinNote]);
@@ -70,13 +106,36 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const sewLabel = kagariPlaying ? "Вышиваем…" : secondGroup ? "Вторая группа" :
     complete ? "Следующий ряд" : kagariPlan.length ? "Продолжить" : "Начать кику";
 
+  // A kiku is sewn with two working threads that alternate by rounds (GT14 asks
+  // for two colours): «1» for the first four petals, «2» for the second four.
+  // The palette paints the one chosen there; by default the one in hand, which
+  // after the first group is already the second, as the store does.
+  const groupLaidOut = kagariPlan.length > 0 && kagariLaid >= kagariPlan.length;
+  const inHand: 0 | 1 = kagariSet === 0 && groupLaidOut ? 1 : kagariSet;
+  const sewingThread = motif === "kiku" && (kagariPlan.length > 0 || kagariKept.length > 0);
+  const editing: 0 | 1 = s.kagariEdit ?? inHand;
+  const otherThread = motif === "kiku" ? kagariColors[editing === 0 ? 1 : 0] : -1;
+  const threadName = (i: number) => {
+    const name = `${COLOR_NAMES[i]} нить`;
+    if (motif !== "kiku") return name;
+    if (i === kagariColors[editing]) return `${name} — нить ${editing + 1}`;
+    if (i === otherThread) return `${name} — нить ${editing === 0 ? 2 : 1}`;
+    return name;
+  };
+
   let instruction: string;
+  // A pole that already carries a flower: say so instead of asking for marks again.
+  const sewnHere = motif === "kiku" && kagariKept.some((stitch) =>
+    stitchPoleIndex(stitch, division, motif) === facingPole);
   if (motif === "kiku" && !marksReady) {
-    instruction = `Булавки: ${placed} из ${requiredPins.length}. Нажимайте на подсвеченные места шара.`;
+    instruction = sewnHere
+      ? "Здесь цветок уже вышит. Поверните шар к другому полюсу — или поставьте метки, чтобы начать этот заново."
+      : `Булавки: ${placed} из ${requiredPins.length}. Нажимайте на подсвеченные места шара.`;
   } else if (motif === "kiku" && kagariPlan.length) {
     instruction = kagariPhaseHint(motif, division, kagariDir, kagariLaid, kagariPlan.length,
       kagariPlaying, Math.max(0, stitchPoleIndex(kagariPlan[0]!, division, motif)), kagariSet,
-      kagariSet === 1 && kikuLayers < kikuSpec(division, kagariSpacing, "fit").capacity);
+      kagariSet === 1 && kikuLayers < kikuSpec(division, kagariSpacing, "fit").capacity,
+      kikuLayers, kikuSpec(division, kagariSpacing, "fit").capacity);
   } else if (motif === "kiku") {
     instruction = "Метки готовы. Нажмите «Начать кику».";
   } else if (jiwariOn && jiwariPhase !== "done") {
@@ -120,7 +179,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
                   <span aria-hidden className="text-xs opacity-60">{i + 1}</span>{label}
                 </button>)}
             </div>
-            <button type="button" aria-label="Как читать разметку" title="Как читать разметку"
+            <button type="button" aria-label={helpTitle} title={helpTitle}
               onClick={() => help.current?.showModal()}
               className={cn("flex size-10 shrink-0 items-center justify-center rounded-full text-ink/65 hover:bg-ink/5", focusStyle)}>
               <CircleHelp className="size-5" />
@@ -158,11 +217,25 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
                 </button>;
               })}
             </div>
+            {motif === "kiku" ? <div role="group" aria-label="Две нити кику"
+              className="flex min-h-9 items-center justify-center gap-1 px-1 py-0.5">
+              {([0, 1] as const).map((slot) => <button key={slot} type="button" aria-pressed={editing === slot}
+                aria-label={`Нить ${slot + 1}, ${slot === 0 ? "первая" : "вторая"} четвёрка: ${COLOR_NAMES[kagariColors[slot]]?.toLowerCase() ?? ""}`}
+                onClick={() => s.editThread(slot)}
+                className={cn("flex h-9 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs", focusStyle,
+                  editing === slot ? "bg-ink/8 font-medium ring-1 ring-ink/40" : "text-ink/70 hover:bg-ink/5")}>
+                <span aria-hidden>{slot + 1}</span>
+                <span aria-hidden className="size-4 rounded-full ring-1 ring-line"
+                  style={{ backgroundColor: THREAD_COLORS[kagariColors[slot]] }} />
+              </button>)}
+              <span className="min-w-0 text-[11px] leading-4 text-ink/70">
+                {sewingThread ? "Цвет — для выбранной нити. Пришитое не меняется." : "Четвёрки лепестков: 1 и 2. Выберите нить, затем цвет."}
+              </span>
+            </div> :
             <p className="min-h-9 px-2 py-1.5 text-center text-xs leading-4 text-ink/70">
-              {motif === "kiku" ? "Кику — хризантема. Метки: полюс и треть пути от экватора к нему." :
-                division !== "simple" && jiwariOn ? `Для кику выберите S8 в «Разметке». Рецепта ${division.toUpperCase()} ещё нет.` :
+              {division !== "simple" && jiwariOn ? `Для кику выберите S8 в «Разметке». Рецепта ${division.toUpperCase()} ещё нет.` :
                 "Начните с кику на S8. Эскиз — свободные линии между метками."}
-            </p>
+            </p>}
           </>}
 
           <div className="flex items-center justify-between gap-1 border-t border-line pt-1">
@@ -178,10 +251,14 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
               <option value="open">Реже</option><option value="even">Средне</option><option value="tight">Плотнее</option>
             </select> : <span className="mr-1 text-[11px] text-ink/65">Цвет</span>}
             <div className="flex flex-1 items-center gap-0.5 sm:gap-1" aria-label="Цвет нити">
-              {THREAD_COLORS.map((color, i) => <button key={color} type="button" aria-label={`${COLOR_NAMES[i]} нить`}
-                aria-pressed={s.selectedColor === i} title={`${COLOR_NAMES[i]} нить`}
+              {THREAD_COLORS.map((color, i) => <button key={color} type="button" aria-label={threadName(i)}
+                aria-pressed={s.selectedColor === i} title={threadName(i)}
                 onClick={() => s.setColor(i)} className={cn("flex h-10 min-w-0 flex-1 items-center justify-center rounded-lg", focusStyle)}>
-                <span className={cn("size-6 rounded-full ring-1 ring-line", s.selectedColor === i && "ring-2 ring-ink ring-offset-2 ring-offset-linen")}
+                <span className={cn("size-6 rounded-full ring-1 ring-line",
+                  // The thread being painted is ringed; the other working thread
+                  // keeps a quieter mark, so a kiku's pair is readable in one row.
+                  otherThread === i && s.selectedColor !== i && "ring-2 ring-ink/35",
+                  s.selectedColor === i && "ring-2 ring-ink ring-offset-2 ring-offset-linen")}
                   style={{ backgroundColor: color }} />
               </button>)}
             </div>
@@ -197,15 +274,16 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     <dialog ref={help} aria-labelledby="marking-help-title"
       className="fixed inset-0 m-auto max-h-[85dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-3xl border border-line bg-linen p-5 text-ink shadow-xl backdrop:bg-ink/30">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 id="marking-help-title" className="font-display text-2xl">Как читать разметку</h2>
+        <h2 id="marking-help-title" className="font-display text-2xl">{helpTitle}</h2>
         <button type="button" aria-label="Закрыть подсказку" onClick={() => help.current?.close()}
           className={cn("flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-ink/5", focusStyle)}><X className="size-5" /></button>
       </div>
+      {sewing ? <KikuHelp /> : null}
       <p className="mb-4 text-sm leading-relaxed">Разметка, или дзивари, — нити, которые делят поверхность шара и помогают расположить узор.</p>
       <div className="space-y-3">
         {MARKINGS.slice(1).map((item) => <div key={item.id} className="flex items-center gap-3">
           <MarkingDiagram division={item.division} className="size-20 shrink-0" />
-          <div><p className="text-sm font-medium">{item.name}</p><p className="mt-1 text-xs leading-relaxed text-ink/75">{item.note}</p></div>
+          <div><p className="text-sm font-medium">{item.name}</p><p className="mt-1 text-xs leading-relaxed text-ink/75">{"help" in item ? item.help : item.note}</p></div>
         </div>)}
       </div>
       <p className="mt-3 text-xs leading-relaxed text-ink/75">Точки на схемах — основные центры пересечения линий, в том числе на обратной стороне шара. Число лучей не равно числу лепестков.</p>
