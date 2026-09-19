@@ -13,6 +13,12 @@ const get = <T extends HTMLElement>(id: string) => document.getElementById(`ab-$
 const host = get('view'), step = get<HTMLInputElement>('step');
 let draw = () => {}, setView = (_mode: string) => {};
 
+// Perle #5 is a twisted cord: under tension on the sphere it flattens.
+// Render radius is scaled down from the geometric radius used in gap checks.
+// 0.75 gives a stack height of ~1.06 mm for two threads (vs theoretical 1.42 mm).
+// This is visual only — no geometry or acceptance values are changed.
+const VISUAL_FLATTEN = 0.75;
+
 async function init() {
   const response = await fetch('./fixtures/s8-ab.json');
   if (!response.ok) throw new Error(`Данные недоступны (${response.status})`);
@@ -57,7 +63,7 @@ async function init() {
   const tube = (curves: ThreadCurve[], radius: number, color: number) => {
     const path = new THREE.CurvePath<THREE.Vector3>();
     curves.forEach(c => path.add(new YarnCurve(c)));
-    return new THREE.Mesh(new THREE.TubeGeometry(path, Math.min(12000, Math.max(12, Math.ceil(path.getLength() / .04))), radius, 12, false),
+    return new THREE.Mesh(new THREE.TubeGeometry(path, Math.min(12000, Math.max(12, Math.ceil(path.getLength() / .04))), radius * VISUAL_FLATTEN, 12, false),
       new THREE.MeshStandardMaterial({ color, roughness: .6 }));
   };
   const guides = new THREE.Group(); scene.add(guides);
