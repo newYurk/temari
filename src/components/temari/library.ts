@@ -3,7 +3,7 @@
  *
  *   family     the pattern (kiku, hoshi, …) — what the player picks
  *   id         one implementation of that pattern on a division
- *   requires   which jiwari that implementation sews
+ *   compatibility  exact division claims and their evidence, not runtime support
  *   recipe     geometry / stitch order (compileKiku reads this)
  *   names      ja / reading / en / ru — never a book number
  *   note       sources, if any (TemariKai, Ozaki, Suess GT14 as a match)
@@ -15,6 +15,7 @@
 import { MARI_SIZES, STITCH_THREAD_MM, WRAP_THREAD_MM } from "./measure.ts";
 import { STITCH_THREADS, type ThreadKind } from "./thread.ts";
 import { KIKU_8_POINT, type Crossing, type PatternRecipe } from "./kagari.ts";
+import type { DivisionId } from "./division-config.ts";
 
 export type CatalogStatus = "now" | "v1" | "later";
 export type AppearsIn = "dock" | "variant-chip" | "data-only";
@@ -52,14 +53,14 @@ export type YarnEntry = {
 };
 
 export type DivisionEntry = {
-  id: string;
+  id: DivisionId;
   names: CatalogName;
   kind: "simple" | "combination" | "extra";
   poles?: number;
   /** Сколько лучей сходится в центре; у комбинированных — сорта центров. */
   rays?: string;
   /** Разметка, поверх которой эта строится. */
-  builtOn?: string;
+  builtOn?: DivisionId;
   status: CatalogStatus;
   appears: AppearsIn;
   note: string;
@@ -74,7 +75,29 @@ export type StitchEntry = {
   appears: AppearsIn;
 };
 
-/** One supported way to sew a pattern. Not a book recipe. */
+/**
+ * An evidence-backed claim is not implementation or human acceptance.
+ * Unlisted combinations are unknown, NOT impossible in the craft.
+ */
+export type DivisionCompatibility =
+  | {
+      state: "documented";
+      divisionIds: readonly [DivisionId, ...DivisionId[]];
+      sourceUrls: readonly [string, ...string[]];
+      note: string;
+    }
+  | {
+      state: "unverified";
+      divisionIds: readonly [DivisionId, ...DivisionId[]];
+      note: string;
+    }
+  | {
+      state: "unknown";
+      family?: "simple" | "combination" | "extra";
+      note: string;
+    };
+
+/** One catalogue variant. Only entries with a matching runtime recipe execute. */
 export type MotifEntry = {
   /** Implementation key (`kiku-8-point`). Never a Suess / GT id. */
   id: string;
@@ -82,8 +105,7 @@ export type MotifEntry = {
   family: MotifFamily;
   names: CatalogName;
   stitch: string;
-  /** Division this implementation actually sews. */
-  requires: "simple" | "c8" | "c10" | "any";
+  compatibility: DivisionCompatibility;
   skip?: 1 | 2;
   direction?: "outward" | "inward";
   crossing?: Crossing;
@@ -115,9 +137,9 @@ export const DIVISION_CATALOG: DivisionEntry[] = [
   { id: "s8", names: n("単純8等分", "tanjyun 8 toubun", "Simple 8", "простое 8"), kind: "simple", poles: 2, rays: "8 лучей у каждого полюса", status: "now", appears: "dock", note: "Два полюса, экватор, 8 лучей. Учебный старт." },
   { id: "c8", names: n("8等分の組み合わせ", "hachitobun no kumiawase", "C8", "C8"), kind: "combination", poles: 6, rays: "6 центров по 8 лучей и 8 центров по 6", builtOn: "s8", status: "now", appears: "dock", note: "6 восьмилучевых центров." },
   { id: "c10", names: n("10等分の組み合わせ", "jutobun no kumiawase", "C10", "C10"), kind: "combination", poles: 12, rays: "12 центров по 10 лучей", builtOn: "s10", status: "v1", appears: "dock", note: "12 десятилучевых. Серый, пока C8 честный." },
-  { id: "s4", names: n("単純4等分", "tanjyun 4 toubun", "Simple 4", "простое 4"), kind: "simple", poles: 2, rays: "4 луча у каждого полюса", status: "v1", appears: "data-only", note: "Suess Autumn Moon. Не кику." },
+  { id: "s4", names: n("単純4等分", "tanjyun 4 toubun", "Simple 4", "простое 4"), kind: "simple", poles: 2, rays: "4 луча у каждого полюса", status: "v1", appears: "data-only", note: "В каталоге указан Suess Autumn Moon. Это не ограничивает другие узоры на Simple 4." },
   { id: "s10", names: n("単純10等分", "tanjyun 10 toubun", "Simple 10", "простое 10"), kind: "simple", poles: 2, rays: "10 лучей у каждого полюса", status: "v1", appears: "data-only", note: "База для C10." },
-  { id: "s16", names: n("単純16等分", "tanjyun 16 toubun", "Simple 16", "простое 16"), kind: "simple", poles: 2, rays: "16 лучей у каждого полюса", status: "later", appears: "data-only", note: "16-слойное кику." },
+  { id: "s16", names: n("単純16等分", "tanjyun 16 toubun", "Simple 16", "простое 16"), kind: "simple", poles: 2, rays: "16 лучей у каждого полюса", status: "later", appears: "data-only", note: "Заявлено для «кику 16»; требуется сверка конкретного источника." },
   { id: "c6", names: n("6等分の組み合わせ", "combination 6", "C6", "C6"), kind: "combination", status: "later", appears: "data-only", note: "Suess workbook, не стандарт JTA." },
   { id: "double-c8", names: n("二重8組み合わせ", "double C8", "Double C8", "двойное C8"), kind: "combination", builtOn: "c8", status: "later", appears: "data-only", note: "Suess workbook." },
   { id: "tamentai", names: n("多面体", "tamentai", "multicenter marking", "таментай"), kind: "extra", status: "later", appears: "data-only", note: "Не этот этап (#54)." },
@@ -228,7 +250,12 @@ export const MOTIF_CATALOG: MotifEntry[] = [
     family: "kiku",
     names: n("菊かがり", "kiku kagari", "Chrysanthemum", "Кику"),
     stitch: "uwagake-chidori",
-    requires: "simple",
+    compatibility: {
+      state: "documented",
+      divisionIds: ["s8"],
+      sourceUrls: ["https://www.temarikai.com/PatternsPages/Simple/GT14.html"],
+      note: "Контрольный вариант на Simple 8. Другие разметки семейства кику этим рецептом не описаны.",
+    },
     skip: 2,
     direction: "outward",
     crossing: "over-all",
@@ -243,7 +270,10 @@ export const MOTIF_CATALOG: MotifEntry[] = [
     family: "kiku",
     names: n("菊（両極）", "kiku both poles", "kiku both poles", "кику оба полюса"),
     stitch: "uwagake-chidori",
-    requires: "simple",
+    compatibility: {
+      state: "unverified", divisionIds: ["s8"],
+      note: "Каталог описывает композицию на двух полюсах S8; отдельного рецепта этой строки нет.",
+    },
     skip: 2,
     direction: "outward",
     crossing: "over-all",
@@ -257,7 +287,10 @@ export const MOTIF_CATALOG: MotifEntry[] = [
     family: "kiku",
     names: n("逆さ菊", "sakasa kiku", "reverse kiku", "сакаса-кику"),
     stitch: "sakasa",
-    requires: "simple",
+    compatibility: {
+      state: "unknown", family: "simple",
+      note: "В старом каталоге было только семейство Simple; точное деление и рецепт не установлены.",
+    },
     skip: 2,
     direction: "inward",
     crossing: "over-all",
@@ -270,7 +303,10 @@ export const MOTIF_CATALOG: MotifEntry[] = [
     family: "kiku",
     names: n("下掛け菊", "shitagake kiku", "descending kiku", "ситагакэ-кику"),
     stitch: "shitagake",
-    requires: "simple",
+    compatibility: {
+      state: "unknown", family: "simple",
+      note: "В старом каталоге было только семейство Simple; точное деление и рецепт не установлены.",
+    },
     skip: 2,
     direction: "outward",
     crossing: "under",
@@ -283,7 +319,10 @@ export const MOTIF_CATALOG: MotifEntry[] = [
     family: "kiku",
     names: n("筋立て菊", "sujidagiku", "ribbed kiku", "судзидагику"),
     stitch: "sujidate",
-    requires: "simple",
+    compatibility: {
+      state: "unknown", family: "simple",
+      note: "В старом каталоге было только семейство Simple; точное деление и рецепт не установлены.",
+    },
     skip: 2,
     direction: "outward",
     crossing: "over-1",
@@ -296,7 +335,10 @@ export const MOTIF_CATALOG: MotifEntry[] = [
     family: "kiku",
     names: n("16段菊", "16-layered kiku", "16-layered kiku", "кику 16"),
     stitch: "uwagake-chidori",
-    requires: "simple",
+    compatibility: {
+      state: "unverified", divisionIds: ["s16"],
+      note: "S16 заявлено в заметке Suess 16-layered / Skip 1. Требуется сверка конкретного источника; это не готовый рецепт.",
+    },
     skip: 1,
     direction: "outward",
     crossing: "over-all",
@@ -309,7 +351,10 @@ export const MOTIF_CATALOG: MotifEntry[] = [
     family: "hoshi",
     names: n("星かがり", "hoshi kagari", "5-point star", "хоси"),
     stitch: "chidori",
-    requires: "c10",
+    compatibility: {
+      state: "unverified", divisionIds: ["c10"],
+      note: "C10 заявлено прежним каталогом; источник конкретного варианта и рецепт не проверены.",
+    },
     status: "v1",
     appears: "dock",
     note: "ход 1-3-5-2-4. Иконка — заглушка.",
@@ -319,7 +364,10 @@ export const MOTIF_CATALOG: MotifEntry[] = [
     family: "hishi",
     names: n("菱", "hishi", "diamond", "хиси"),
     stitch: "sankaku",
-    requires: "c8",
+    compatibility: {
+      state: "unverified", divisionIds: ["c8"],
+      note: "C8 заявлено прежним каталогом; источник конкретного варианта и рецепт не проверены.",
+    },
     status: "v1",
     appears: "dock",
     note: "Вложенный ромб по готовой грани. Заглушка.",
@@ -329,7 +377,10 @@ export const MOTIF_CATALOG: MotifEntry[] = [
     family: "obi",
     names: n("帯", "obi", "sash / equatorial band", "оби"),
     stitch: "maki-kagari",
-    requires: "any",
+    compatibility: {
+      state: "unknown",
+      note: "Прежнее any не задаёт ни разметку, ни границы полосы. Нужен конкретный вариант оби.",
+    },
     status: "v1",
     appears: "dock",
     note: "Малые круги у экватора.",
@@ -339,7 +390,10 @@ export const MOTIF_CATALOG: MotifEntry[] = [
     family: "shikaku",
     names: n("四角", "shikaku", "square", "сикаку"),
     stitch: "shikaku",
-    requires: "simple",
+    compatibility: {
+      state: "unverified", divisionIds: ["s4", "s8"],
+      note: "S4/S8 заявлены заметкой Honka; источник конкретного варианта и рецепт не проверены.",
+    },
     status: "v1",
     appears: "data-only",
     note: "Honka: квадрат на S4/S8.",
@@ -349,7 +403,10 @@ export const MOTIF_CATALOG: MotifEntry[] = [
     family: "asanoha",
     names: n("麻の葉", "asa no ha", "hemp leaf / flax leaf", "асаноха"),
     stitch: "kousa",
-    requires: "c8",
+    compatibility: {
+      state: "unverified", divisionIds: ["c8"],
+      note: "C8 заявлено прежним каталогом; источник конкретного варианта и рецепт не проверены.",
+    },
     status: "later",
     appears: "data-only",
     note: "Не этот этап (#54).",
@@ -359,7 +416,10 @@ export const MOTIF_CATALOG: MotifEntry[] = [
     family: "bara",
     names: n("薔薇", "bara", "rose", "бара"),
     stitch: "uwagake-chidori",
-    requires: "c10",
+    compatibility: {
+      state: "unverified", divisionIds: ["c10"],
+      note: "C10 заявлено прежним каталогом; источник конкретного варианта и рецепт не проверены.",
+    },
     status: "later",
     appears: "data-only",
     note: "Не этот этап (#54).",

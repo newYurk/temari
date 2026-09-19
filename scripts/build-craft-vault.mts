@@ -36,6 +36,9 @@
  *     бы ровно ту патологию, которую сняли 18.09: семь хабов на сорок шесть
  *     входящих. Имя строки плюс её состояние — это и есть работа панели, а до
  *     самой заметки один Ctrl+O.
+ *   Матрица «00 Совместимость узоров» также текстовая: подтверждённые рёбра,
+ *   кандидаты и отсутствие сведений не смешиваются. Рецепт сверяется с игрой
+ *   по точному divisionId, а не по подстановке simple → s8.
  *   — Мермейд-схема ссылок в индекс Obsidian не добавляет (это подмена DOM
  *     после отрисовки), поэтому кликабельность схемы графу ничего не стоит.
  *
@@ -52,33 +55,41 @@ import { readFile, writeFile, mkdir, readdir, rm } from 'node:fs/promises';
 import { join, dirname, resolve, relative } from 'node:path';
 import {
   DIVISION_CATALOG, MARI_CATALOG, MOTIF_CATALOG, STITCH_CATALOG, YARN_CATALOG,
-  type CatalogName, type CatalogStatus,
+  type CatalogName, type CatalogStatus, type MotifEntry,
 } from '../src/components/temari/library.ts';
-import { motifSupport, kikuWorkingPins, type MotifId } from '../src/components/temari/patterns.ts';
+import { kikuWorkingPins } from '../src/components/temari/patterns.ts';
+import {
+  declaredDivisions, confirmedDivisions, motifsForDivision,
+  catalogImplementation, validateCatalogCompatibility,
+} from '../src/components/temari/catalog-compatibility.ts';
+import { runtimeDivisionFor, type DivisionId } from '../src/components/temari/division-config.ts';
 import { CRAFT_ACTIONS } from '../src/components/temari/actions.ts';
 import { PUZZLES } from '../src/components/temari/puzzles.ts';
 import { SIMPLE_THREADS, C8_EXTRA } from '../src/components/temari/jiwari.ts';
 import { MARI_C_CM, STITCH_THREAD_MM, WRAP_THREAD_MM } from '../src/components/temari/measure.ts';
 import { THREAD_KINDS } from '../src/components/temari/thread.ts';
-import type { Division } from '../src/components/temari/division.ts';
+
+validateCatalogCompatibility();
 
 /**
  * Достижимость: что из каталога на самом деле выбирается в мастерской.
- * `appears` говорит, где узел показан, `motifSupport` — есть ли под ним рецепт,
- * а список действий — существует ли кнопка. Расхождение между «показано» и
+ * `appears` говорит, где узел запланирован, точный рецепт — что исполняется,
+ * а список действий — существует ли кнопка семейства. Расхождение между «показано» и
  * «шьётся» здесь видно сразу: именно оно однажды увело владельца на C8.
  */
 const ACTION_IDS = new Set(CRAFT_ACTIONS.map((a) => a.id));
 const UI_DIVISION: Record<string, string> = { s8: 'jiwari-simple', c8: 'jiwari-c8', c10: 'jiwari-c10' };
 const UI_MOTIF: Record<string, string> = { kiku: 'motif-kiku', hoshi: 'motif-hoshi', hishi: 'motif-hishi', obi: 'motif-obi' };
-/** Компилятор знает только эти семьи; остальные каталогу известны, игре — нет. */
-const KNOWN_MOTIFS = new Set(['kiku', 'hoshi', 'hishi', 'obi']);
-const supportOf = (division: string, family: string) => {
-  if (!KNOWN_MOTIFS.has(family)) return { supported: false as const, reason: 'семья вне компилятора узоров' };
-  const d = (division === 'simple' || division === 'any' ? 'simple' : division) as 'simple' | 'c8' | 'c10';
-  const got = motifSupport(d, family as MotifId);
-  return got.supported ? { supported: true as const, reason: '' } : { supported: false as const, reason: got.reason };
-};
+const implementationOf = (m: MotifEntry) => m.recipe
+  ? catalogImplementation(m, m.recipe.divisionId)
+  : { implemented: false, reason: 'у этой строки нет своего рецепта' };
+const compatibilityState = (m: MotifEntry) => ({
+  documented: 'подтверждено источником',
+  unverified: 'заявлено в каталоге, не проверено',
+  unknown: 'точная разметка не установлена',
+})[m.compatibility.state];
+const divisionName = (id: DivisionId) => DIVISION_CATALOG.find((d) => d.id === id)!.names.ru;
+const implementsOn = (m: MotifEntry, id: DivisionId) => catalogImplementation(m, id).implemented;
 /** Стежки, которые рецепт умеет назвать: тип RecipeStitch в kagari.ts. */
 const ENGINE_STITCHES = new Set(['uwagake-chidori', 'chidori', 'sakasa']);
 const shown = (appears: string) =>
@@ -189,8 +200,10 @@ const recipeMm = RECIPES.map((r) => STITCH_THREAD_MM[r.thread]);
 const markMm = STITCH_THREAD_MM.mark;
 const GAME_DIVISIONS = (Object.keys(UI_DIVISION) as string[])
   .filter((id) => ACTION_IDS.has(UI_DIVISION[id]!));
-const divisionArg = (id: string) => (id === 's8' ? 'simple' : id) as Division;
-const marksOf = (id: string) => kikuWorkingPins(divisionArg(id), 0).length;
+const marksOf = (id: string) => {
+  const runtime = runtimeDivisionFor(id as DivisionId);
+  return runtime ? kikuWorkingPins(runtime, 0).length : 0;
+};
 
 const MECHANICS: Mechanic[] = [
   {
@@ -238,7 +251,7 @@ const MECHANICS: Mechanic[] = [
     catalogTitle: 'Каталог: разметки',
     rows: DIVISION_CATALOG.map((d) => {
       const button = !!UI_DIVISION[d.id] && ACTION_IDS.has(UI_DIVISION[d.id]!);
-      const sewable = MOTIF_CATALOG.some((m) => m.recipe && m.recipe.requires === divisionArg(d.id));
+      const sewable = MOTIF_CATALOG.some((m) => implementsOn(m, d.id));
       return {
         name: d.names.ru,
         state: !button ? 'только данные, кнопки нет'
@@ -259,7 +272,7 @@ const MECHANICS: Mechanic[] = [
     what:
       '`motifSupport(разметка, семья)` спрашивают все кнопки узоров и обе кнопки шитья; без «да» кнопка гаснет с причиной.\n'
       + '`PatternRecipe` — не пересказ книги, а геометрия одной реализации: метки, доля пути от экватора, нить, перехлёст, растяжка, подхват.\n'
-      + 'Важная тонкость: `motifSupport` различает СЕМЬИ, а не строки каталога. Шесть строк кику он считает поддержанными, а компилятор собирает одну геометрию.',
+      + 'Важная тонкость: `motifSupport` различает СЕМЬИ, а не строки каталога. Карта сверяет точный `divisionId` и собственный рецепт строки с реально исполняемым рецептом; поддержка семьи не открывает её варианты.',
     needs: ['marking'],
     modules: ['src/components/temari/patterns.ts', 'src/components/temari/kagari.ts'],
     entry: { action: 'motif-kiku' },
@@ -267,10 +280,10 @@ const MECHANICS: Mechanic[] = [
     catalogTitle: 'Каталог: узоры',
     rows: MOTIF_CATALOG.map((m) => ({
       name: m.names.ru,
-      state: m.recipe ? 'рецепт есть — эта геометрия и шьётся'
-        : supportOf(m.requires, m.family).supported ? 'семья поддержана, своей геометрии нет'
-        : `рецепта нет — ${supportOf(m.requires, m.family).reason}`,
-      live: !!m.recipe,
+      state: `${compatibilityState(m)}; ${implementationOf(m).implemented
+        ? 'точный рецепт исполняется, полная приёмка открыта'
+        : implementationOf(m).reason}`,
+      live: implementationOf(m).implemented,
     })),
     limits: [
       `Поле \`recipe\` заполнено у ${RECIPES.length} строки из ${MOTIF_CATALOG.length}.`,
@@ -432,7 +445,7 @@ const liveOf = (m: Mechanic) => m.rows.filter((r) => r.live).length;
  * остаются «своими» ровно для того, чтобы `--write` их вычистил: убрать их из
  * списка совсем значило бы оставить в хранилище три заметки-сироты навсегда.
  */
-const OWNED_FILES = ['00 Карта ремесла.md'];
+const OWNED_FILES = ['00 Карта ремесла.md', '00 Совместимость узоров.md'];
 const OWNED_DIRS = ['01 Механики', '02 Узоры', '03 Разметки', '04 Стежки', '05 Нити', '06 Шары'];
 const RETIRED_DIRS = ['01 Этапы'];
 const owned = (path: string) =>
@@ -581,7 +594,8 @@ for (const m of MECHANICS) {
 
 // ── узоры ────────────────────────────────────────────────────────────────────
 for (const m of MOTIF_CATALOG) {
-  const division = DIVISION_CATALOG.find((d) => d.id === m.requires.replace('simple', 's8'));
+  const divisions = declaredDivisions(m);
+  const confirmed = confirmedDivisions(m);
   const stitch = STITCH_CATALOG.find((s) => s.id === m.stitch);
   /**
    * Нить узора — только из рецепта. Раньше связь считалась с другого конца, в
@@ -592,13 +606,20 @@ for (const m of MOTIF_CATALOG) {
   const yarn = m.recipe ? YARN_CATALOG.find((y) => y.kind && y.kind === m.recipe!.thread) : undefined;
   const lines = [
     ...frontmatter([
-      ...(division ? [['разметка', link(FOLDER.division, division.names.ru)] as [string, string]] : []),
+      ['разметка_статус', compatibilityState(m)],
+      ...(confirmed.length ? [['разметка', confirmed.map((id) => link(FOLDER.division, divisionName(id)))] as [string, string[]]] : []),
+      ...(m.compatibility.state === 'unverified'
+        ? [['разметка_кандидаты', [...divisions]] as [string, string[]]] : []),
+      ['реализация_строки', implementationOf(m).implemented ? 'есть' : 'нет'],
       ...(stitch ? [['стежок', link(FOLDER.stitch, stitch.names.ru)] as [string, string]] : []),
       ...(yarn ? [['нить', link(FOLDER.yarn, yarn.names.ru)] as [string, string]] : []),
     ]),
     `# ${title(m.names)}`, '', `*${head(m.names)}*`, '', m.note, '',
     '## Чем и на чём', '',
-    `- Разметка: ${division ? link(FOLDER.division, division.names.ru) : `любая (${m.requires})`}`,
+    `- Разметка: ${divisions.length ? divisions.map(divisionName).join(', ') : 'не установлена'} (${compatibilityState(m)})`,
+    `- Основание: ${m.compatibility.note}`,
+    ...(m.compatibility.state === 'documented'
+      ? m.compatibility.sourceUrls.map((url) => `- Источник совместимости: [ремесленное описание](${url})`) : []),
     `- Стежок: ${stitch ? link(FOLDER.stitch, stitch.names.ru) : m.stitch}`,
     `- Механика: ${MECHANICS.find((x) => x.key === 'recipe')!.title}`,
     `- Состояние: **${STATUS[m.status]}**`,
@@ -608,13 +629,36 @@ for (const m of MOTIF_CATALOG) {
   if (m.crossing) lines.push(`- Перехлёст: ${m.crossing}`);
   if (m.skip) lines.push(`- Через сколько лучей: ${m.skip}`);
   const uiMotif = UI_MOTIF[m.family];
-  const support = supportOf(m.requires, m.family);
+  const implementation = implementationOf(m);
   lines.push('', '## Достижимость в игре', '',
-    `- В интерфейсе: ${shown(m.appears)}${uiMotif && ACTION_IDS.has(uiMotif) ? ` (действие \`${uiMotif}\`)` : ''}`,
-    `- Семья поддержана компилятором: ${support.supported ? '**да**' : `**нет** — ${support.reason}`}`,
-    `- Своя геометрия (поле \`recipe\`): ${m.recipe ? '**есть**' : '**нет** — шьётся не эта строка'}`);
-  if (m.appears !== 'data-only' && !support.supported) {
-    lines.push('- ⚠️ кнопка есть, а шить нечем — это видно игроку.');
+    `- Место по каталогу: ${shown(m.appears)} (не доказательство наличия этой строки в интерфейсе)`,
+    `- Действие семейства: ${uiMotif && ACTION_IDS.has(uiMotif) ? `\`${uiMotif}\`; оно не выбирает все варианты семьи` : 'нет'}`,
+    `- Рецепт этой строки исполняется: **${implementation.implemented ? 'да' : 'нет'}**; ${implementation.reason}`,
+    `- Своя геометрия (поле \`recipe\`): ${m.recipe ? '**есть**' : '**нет**'}`,
+    `- Приёмка: ${implementation.implemented
+      ? 'полный узор не принят; лабораторные этапы и дефекты мастерской учитываются отдельно ([#94](https://github.com/newYurk/temari/issues/94)). Человеческая приёмка открыта.'
+      : 'исполняемый вариант этой строки не проверен'}`);
+  if (m.appears === 'dock' && !implementation.implemented) {
+    lines.push('- Кнопка семейства не означает готовый рецепт этой строки.');
+  }
+  lines.push('', '## Что требуется этому варианту', '');
+  {
+    const nodes = [{ id: 'M', label: title(m.names) }];
+    const edges: string[] = [];
+    if (divisions.length) {
+      divisions.forEach((id, i) => {
+        nodes.push({ id: `D${i}`, label: divisionName(id) });
+        edges.push(m.compatibility.state === 'documented'
+          ? `M -->|требует по источнику| D${i}`
+          : `M -.->|заявлено, проверить| D${i}`);
+      });
+    } else {
+      nodes.push({ id: 'U', label: 'Точное деление не установлено' });
+      edges.push('M -.->|вопрос, не запрет| U');
+    }
+    mermaid(lines, nodes, edges, `02 Узоры/${title(m.names)}.md`);
+    lines.push('', 'Сплошная стрелка: подтверждённое требование этого варианта. Пунктир: непроверенное утверждение или вопрос.',
+      'Это не порядок действий и не схема прохода нити. Неуказанные сочетания остаются неизвестными, а не запрещёнными.');
   }
   if (m.recipe) {
     lines.push('', '## Чем шьётся', '',
@@ -642,7 +686,9 @@ for (const m of MOTIF_CATALOG) {
 
 // ── разметки ─────────────────────────────────────────────────────────────────
 for (const d of DIVISION_CATALOG) {
-  const sewn = MOTIF_CATALOG.filter((m) => m.requires.replace('simple', 's8') === d.id);
+  const declared = motifsForDivision(d.id);
+  const confirmed = declared.filter((m) => confirmedDivisions(m).includes(d.id));
+  const candidates = declared.filter((m) => m.compatibility.state === 'unverified');
   const base = d.builtOn ? DIVISION_CATALOG.find((x) => x.id === d.builtOn) : undefined;
   const lines = [
     ...frontmatter(base ? [['основа', link(FOLDER.division, base.names.ru)]] : []),
@@ -656,14 +702,17 @@ for (const d of DIVISION_CATALOG) {
     `- Состояние: **${STATUS[d.status]}**`,
     // Обратное перечисление: то же самое слово в слово показывает панель
     // Backlinks, теперь наполняемая свойством «разметка» у самих узоров.
-    '', '## Что на ней шьётся', '',
-    ...(sewn.length ? sewn.map((m) => `- ${title(m.names)} — ${STATUS[m.status]}`) : ['- пока ничего']),
+    '', '## Варианты с подтверждённой совместимостью', '',
+    ...(confirmed.length ? confirmed.map((m) => `- ${title(m.names)}: ${implementationOf(m).implemented ? 'рецепт исполняется; приёмка открыта' : 'не реализовано'}`)
+      : ['- В каталоге нет подтверждённых вариантов. Это не запрет ремесла.']),
+    '', '## Заявлено в каталоге, нужно проверить', '',
+    ...(candidates.length ? candidates.map((m) => `- ${title(m.names)}: ${m.compatibility.note}`) : ['- Нет заявленных вариантов.']),
   ];
   const uiDivision = UI_DIVISION[d.id];
-  const sewable = sewn.filter((m) => !!m.recipe);
+  const sewable = declared.filter((m) => implementsOn(m, d.id));
   lines.push('', '## Достижимость в игре', '',
     `- В интерфейсе: ${shown(d.appears)}${uiDivision && ACTION_IDS.has(uiDivision) ? ` (действие \`${uiDivision}\`)` : ''}`,
-    `- Узоров со своей геометрией: ${sewable.length} из ${sewn.length}`);
+    `- Исполняемых вариантов на этой точной разметке: ${sewable.length} из ${declared.length} заявленных.`);
   if (d.appears === 'dock' && sewable.length === 0) {
     lines.push('- ⚠️ разметку выбрать можно, а узора под неё пока нет.');
   }
@@ -756,7 +805,7 @@ const stageRows: [string, string, string, string, string][] = [
     `${later(MOTIF_CATALOG)}`],
   ['разметки', `${DIVISION_CATALOG.length}`,
     `${dockDivisionButtons} (включая «без сетки»)`,
-    `**${DIVISION_CATALOG.filter((d) => MOTIF_CATALOG.some((m) => m.recipe && m.recipe.requires === divisionArg(d.id))).length}** — на остальных шить нечем`,
+    `**${DIVISION_CATALOG.filter((d) => MOTIF_CATALOG.some((m) => implementsOn(m, d.id))).length}** — на остальных шить нечем`,
     `${later(DIVISION_CATALOG)}`],
   ['стежки', `${STITCH_CATALOG.length}`, 'выбора нет — приходит с рецептом',
     `**${STITCH_CATALOG.filter((s) => recipeStitches.has(s.id)).length}** из ${ENGINE_STITCHES.size}, которые движок умеет назвать`,
@@ -780,6 +829,11 @@ const mapLines: string[] = [
   '',
   '> Игрок наматывает шар, размечает его нитями и вышивает по меткам. Тянет не сюжет, а то, что рука кладёт настоящую нить:',
   '> ряд ложится поверх ряда, и промах виден сразу — как в ремесле.',
+  '',
+  '## Что можно вышить на выбранной разметке',
+  '',
+  'Откройте [[00 Совместимость узоров]]: точные разметки, основания совместимости и реализация показаны отдельно.',
+  'Отсутствие рецепта в игре не означает невозможность узора в ремесле. Порядок механик ниже отвечает на другой вопрос.',
   '',
   '## Стадия',
   '',
@@ -826,7 +880,7 @@ mapLines.push('',
 {
   const noRecipe = MOTIF_CATALOG.length - RECIPES.length;
   const noSewable = DIVISION_CATALOG.length
-    - DIVISION_CATALOG.filter((d) => MOTIF_CATALOG.some((m) => m.recipe && m.recipe.requires === divisionArg(d.id))).length;
+    - DIVISION_CATALOG.filter((d) => MOTIF_CATALOG.some((m) => implementsOn(m, d.id))).length;
   const dark = MOTIF_CATALOG.filter((m) => m.appears === 'dock' && !m.recipe).length;
   mapLines.push(
     `- **Второй рецепт.** Без него ${noRecipe} строк узоров и ${noSewable} разметок стоят на месте, `
@@ -838,8 +892,8 @@ mapLines.push('',
     ...MECHANICS.filter((m) => STATE_OF.get(m.key) !== 'работает').map((m) =>
       `- **${(STATE_OF.get(m.key) ?? '').replace(/^./, (c) => c.toUpperCase())}: ${m.title.replace('Механика · ', '')}.** `
       + `${m.limits[m.limits.length - 1] ?? ''} Держит: ${link(FOLDER.mechanic, m.title)}.`),
-    `- **Каталог не читается игрой.** \`src/components/temari/library.ts\` импортируют только этот сборщик и собственный тест: `
-    + `в замыкании \`src/pages.tsx\` его нет. Значит каталог и игра могут разойтись, и \`--check\` этого не заметит — он сверяет хранилище с каталогом, а не каталог с игрой.`,
+    `- **Каталог не управляет игрой.** \`library.ts\` отсутствует в замыкании \`src/pages.tsx\`. `
+    + `Сборщик теперь сверяет точный рецепт строки с \`motifSupport\` и адаптером разметки, но это не доказывает исправность контактов или человеческую приёмку.`,
     '',
     '## Чего здесь нет',
     '',
@@ -850,6 +904,35 @@ mapLines.push('',
   );
 }
 put('00 Карта ремесла.md', mapLines.join('\n') + footer);
+
+// No wiki-links in the catalogue table: do not recreate a hub of dependencies.
+const compatibilityLines = [
+  '# Совместимость узоров',
+  '',
+  'Здесь три разных ответа: что известно о разметке, исполняется ли вариант в игре и пройдена ли приёмка.',
+  '«Не установлено» не означает «невозможно». Перечень разметок не исчерпывает возможности всего семейства кику.',
+  '',
+  '| Вариант | Точная разметка | Основание совместимости | Реализация этой строки |',
+  '| --- | --- | --- | --- |',
+  ...MOTIF_CATALOG.map((m) => `| ${title(m.names)} | ${declaredDivisions(m).map(divisionName).join(', ') || 'не установлена'} | ${compatibilityState(m)} | ${implementationOf(m).implemented ? 'рецепт исполняется; приёмка открыта' : 'нет своего исполняемого рецепта'} |`),
+  '',
+  '## Как читать связи',
+  '',
+  '- Подтверждено источником: у конкретного варианта есть ссылка на ремесленный источник. Только эти разметки становятся зависимостями `разметка` в графе заметок.',
+  '- Заявлено в каталоге: точное деление сохранено как кандидат, но источник ещё не сверён. Это не подтверждённая зависимость и не готовая игровая возможность.',
+  '- Не установлено: семейство Simple или прежнее `any` не позволяют выбрать точное деление.',
+  '- Реализация: собственный рецепт строки, его `divisionId` и реальный рецепт мастерской совпали. Поддержка другого варианта той же семьи не засчитывается.',
+  '- Приёмка: наличие кода и источника не означает проверку полного узора. Лабораторные результаты S8 не закрывают дефект мастерской [#94](https://github.com/newYurk/temari/issues/94); человеческая оценка остаётся отдельной.',
+  '',
+  '## Три вопроса вместо одного графа',
+  '',
+  '- Совместимость: подходит ли варианту разметка и выбранное место? Здесь показана только проверенная часть требований к разметке.',
+  '- Композиция: какие подготовительные элементы нужны и хватит ли места рядом с другими узорами? Общей проверки наложения пока нет.',
+  '- Путь нити: где проходить над, под и через основу? Это задача маршрута и контактов, не ссылок Obsidian.',
+  '',
+  'В заметке каждого узора есть небольшая схема требований. Каталог здесь оставлен текстом, чтобы не создавать новый узел-хаб.',
+];
+put('00 Совместимость узоров.md', compatibilityLines.join('\n') + footer);
 
 // ── проверка кликабельности схем ─────────────────────────────────────────────
 /**

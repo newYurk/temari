@@ -1,4 +1,5 @@
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
+import type { DivisionId } from "./division-config.ts";
 
 type Vec3 = [number, number, number];
 
@@ -13,6 +14,8 @@ export type RecipeStitch = "uwagake-chidori" | "chidori" | "sakasa";
 /** Geometry for one pattern implementation. Names live in library.ts, not here. */
 export type PatternRecipe = {
   id: string;
+  /** Exact configuration; `requires` below is only the legacy runtime adapter. */
+  divisionId: DivisionId;
   requires: "simple" | "c8" | "c10";
   stitch: RecipeStitch;
   /** facing-pole: sew the pole in frame; both is a finished teaching ball. */
@@ -44,6 +47,7 @@ export type PatternRecipe = {
 
 export const KIKU_8_POINT: PatternRecipe = {
   id: "kiku-8-point",
+  divisionId: "s8",
   requires: "simple",
   stitch: "uwagake-chidori",
   centers: "facing-pole",
