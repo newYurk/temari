@@ -27,13 +27,14 @@ import type { C8ThreadCoupon, ThreadCrossing, ThreadSpan } from './thread-path';
 export type ABGroup2 = 'A2' | 'B2';
 
 /**
- * Планировщик второго прохода — возвращает два сырых плана из planS8Kiku
- * (те же фазы, что у A1/B1). Реальные препятствия предыдущих нитей
- * добавляются в генераторе при запуске решателя.
+ * Планировщик второго прохода — возвращает планы со stage:'row2', что
+ * смещает порты на rowAdvanceMm (верхний) и lowerRowAdvanceMm (нижний)
+ * относительно первого прохода. Реальные препятствия A1+B1 добавляются
+ * в генераторе при запуске решателя.
  */
 export const planS8AB2 = () => ({
-  A2: planS8Kiku({ stage: 'round' }),           // фаза 0, как A1
-  B2: planS8Kiku({ stage: 'round', phase: 1 }), // фаза 1, как B1
+  A2: planS8Kiku({ stage: 'row2' }),           // фаза 0, порты смещены vs A1
+  B2: planS8Kiku({ stage: 'row2', phase: 1 }), // фаза 1, порты смещены vs B1
 });
 
 /**
