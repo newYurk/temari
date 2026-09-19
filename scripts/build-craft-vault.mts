@@ -430,40 +430,77 @@ async function onDisk() {
 
 /** Та же карта картинкой, чтобы посмотреть без Obsidian (папка игнорируется). */
 async function picture() {
-  const nodes = [...files.keys()].filter((f) => f.endsWith('.md') && owned(f));
+  /**
+   * ⚑ КАРТИНКА РИСУЕТ ЗАВИСИМОСТИ, А НЕ ВСЕ ССЫЛКИ (19.09).
+   * Этапы и карта — навигация, а не зависимость: принадлежность к разделу ничего не держит.
+   * Первая версия рисовала их наравне со всем, и три заметки этапов давали 34 ребра из 65 —
+   * больше половины графа уходило в хаб, а настоящая цепочка тонула. В графе Obsidian они
+   * уже спрятаны фильтром (`.obsidian/graph.json`, поле search); здесь то же исключение,
+   * чтобы картинка и граф показывали одно и то же.
+   * Подписи папок убраны намеренно: subgraph по папке тянет узлы в свою колонку и ломает
+   * укладку по цепочке — вместо неё цвет узла. Проверено: с подгруппами выходит лента 1:3.
+   */
+  const SKIP = (f: string) => f.startsWith('01 Этапы/') || f === '00 Карта ремесла.md';
+  const nodes = [...files.keys()].filter((f) => f.endsWith('.md') && owned(f) && !SKIP(f));
   const id = (f: string) => 'n' + f.replace(/[^a-zA-Zа-яА-Я0-9]/g, '_');
   const nameOf = (f: string) => f.split('/').pop()!.replace(/\.md$/, '');
   const byName = new Map(nodes.map((f) => [nameOf(f), f]));
-  const groups = new Map<string, string[]>();
-  for (const f of nodes) {
-    const dir = f.includes('/') ? f.split('/')[0]! : 'Карта';
-    groups.set(dir, [...(groups.get(dir) ?? []), f]);
-  }
   const edges = new Set<string>();
+  const hasIncoming = new Set<string>();
   for (const f of nodes) {
     for (const [, target] of (files.get(f) ?? '').matchAll(/\[\[([^\]]+)\]\]/g)) {
-      // `[[04 Стежки/сикаку|сикаку]]` — то же ребро, что и `[[сикаку]]`.
       const name = target.split('|')[0]!.split('#')[0]!.split('/').pop()!.trim();
       const to = byName.get(name);
-      if (to && to !== f) edges.add(`  ${id(f)} --> ${id(to)}`);
+      if (to && to !== f) { edges.add(`  ${id(f)} --> ${id(to)}`); hasIncoming.add(to); }
     }
   }
+  /** Узел, от которого ничего не зависит и который сам ни на чём не стоит, — тупик каталога. */
+  const lonely = (f: string) => !hasIncoming.has(f) &&
+    ![...edges].some((e) => e.startsWith(`  ${id(f)} -->`));
+  const CLASS: Record<string, string> = {
+    '02 Узоры': 'узор', '03 Разметки': 'разметка', '04 Стежки': 'стежок',
+    '05 Нити': 'нить', '06 Шары': 'шар',
+  };
   const mermaid = ['graph LR',
-    ...[...groups.entries()].map(([dir, fs]) => [
-      `  subgraph ${id(dir)}["${dir}"]`,
-      ...fs.map((f) => `    ${id(f)}["${nameOf(f)}"]`),
-      '  end'].join('\n')),
+    '  classDef узор fill:#fca5a5,stroke:#991b1b,color:#1c1917',
+    '  classDef разметка fill:#93c5fd,stroke:#1e40af,color:#1c1917',
+    '  classDef стежок fill:#d6d3d1,stroke:#44403c,color:#1c1917',
+    '  classDef нить fill:#fde68a,stroke:#b45309,color:#1c1917',
+    '  classDef шар fill:#bbf7d0,stroke:#166534,color:#1c1917',
+    '  classDef тупик fill:#f5f5f4,stroke:#d6d3d1,color:#a8a29e,stroke-dasharray:4 3',
+    ...nodes.filter((f) => !lonely(f)).map((f) =>
+      `  ${id(f)}["${nameOf(f)}"]:::${CLASS[f.split('/')[0]!] ?? 'стежок'}`),
     ...edges].join('\n');
   const out = 'screenshots/craft-graph';
   await mkdir(out, { recursive: true });
+  /**
+   * Тупики на схему НЕ ставятся: девятнадцать несвязанных коробочек встают в LR-укладке
+   * одной колонкой и растягивают картинку до 751×3220 — ленту, которую не прочесть.
+   * Список под схемой говорит то же самое и занимает пять строк.
+   */
+  const deadList = nodes.filter(lonely);
+  const dead = deadList.length;
+  const byDir = new Map<string, string[]>();
+  for (const f of deadList) {
+    const d = f.split('/')[0]!;
+    byDir.set(d, [...(byDir.get(d) ?? []), nameOf(f)]);
+  }
+  const deadHtml = [...byDir.entries()]
+    .map(([d, ns]) => `<li><b>${d.replace(/^\d+ /, '')}</b> — ${ns.join(', ')}</li>`).join('');
   await writeFile(join(out, 'craft-graph.html'), `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <title>Карта ремесла</title><style>body{margin:0;background:#efece6;color:#2a2420;font:15px/1.5 system-ui,sans-serif}
-h1{font:500 22px/1.2 Georgia,serif;margin:16px 20px 2px}p{margin:2px 20px 10px;color:#5a5149}.mermaid{padding:8px}</style></head><body>
-<h1>Карта ремесла</h1><p>${nodes.length} узлов, ${edges.size} связей. Собрано из каталога игры.</p>
+h1{font:500 22px/1.2 Georgia,serif;margin:16px 20px 2px}p{margin:2px 20px 10px;color:#5a5149}.mermaid{padding:8px}
+b{font-weight:600}</style></head><body>
+<h1>Карта ремесла</h1><p>${nodes.length} узлов, ${edges.size} зависимостей. Стрелка ведёт от того, что шьют,
+к тому, на чём это стоит. <b>Красное</b> — узоры, <b>синее</b> — разметки, <b>серое</b> — стежки,
+<b>жёлтое</b> — нити, <b>зелёное</b> — шары.
+Этапы и карта не показаны: принадлежность к разделу — не зависимость.</p>
 <pre class="mermaid">${mermaid.replace(/</g, '&lt;')}</pre>
+<p><b>Ни с чем не связаны — ${dead} из ${nodes.length}.</b> Они есть в каталоге, но ни один узор их не требует
+и они не требуют ничего: пока это не ремесло, а список.</p><ul>${deadHtml}</ul>
 <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
 mermaid.initialize({startOnLoad:true,theme:'base',themeVariables:{primaryColor:'#e4e0d8',primaryTextColor:'#2a2420',lineColor:'#8a8178',fontSize:'13px'}});</script></body></html>`);
-  console.log(JSON.stringify({ picture: join(out, 'craft-graph.html'), nodes: nodes.length, edges: edges.size }, null, 1));
+  console.log(JSON.stringify({ picture: join(out, 'craft-graph.html'), nodes: nodes.length, edges: edges.size, тупиков: dead }, null, 1));
 }
 
 const current = await onDisk();
