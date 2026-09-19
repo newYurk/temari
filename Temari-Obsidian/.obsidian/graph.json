@@ -1,10 +1,10 @@
 {
   "collapse-filter": false,
-  "search": "",
+  "search": "-file:\"Этап · \" -file:\"00 Карта ремесла\"",
   "showTags": false,
   "showAttachments": false,
   "hideUnresolved": true,
-  "showOrphans": false,
+  "showOrphans": true,
   "collapse-color-groups": false,
   "colorGroups": [
     {
@@ -45,14 +45,14 @@
   ],
   "collapse-display": false,
   "showArrow": true,
-  "textFadeMultiplier": -0.2,
-  "nodeSizeMultiplier": 1.3,
-  "lineSizeMultiplier": 1,
+  "textFadeMultiplier": -3,
+  "nodeSizeMultiplier": 1.2,
+  "lineSizeMultiplier": 0.7,
   "collapse-forces": false,
-  "centerStrength": 0.5,
-  "repelStrength": 10,
-  "linkStrength": 1,
-  "linkDistance": 190,
-  "scale": 1,
+  "centerStrength": 0.15,
+  "repelStrength": 15,
+  "linkStrength": 0.4,
+  "linkDistance": 420,
+  "scale": 0.9409928231902496,
   "close": false
 }
