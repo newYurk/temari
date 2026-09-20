@@ -78,6 +78,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const state = useMemo(() => getCraftState(), [s]);
   const [tip, setTip] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>(motif === "none" ? "jiwari" : "kagari");
+  const [sewHow, setSewHow] = useState<1 | 2 | 3 | "all">(1);
   const help = useRef<HTMLDialogElement>(null);
   const sewing = stage === "kagari";
   const helpTitle = sewing ? "Как шьётся кику" : "Как читать разметку";
@@ -102,9 +103,62 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const marksReady = motif === "kiku" && kikuMarksReady(pins, division, facingPole);
   const complete = kagariPlan.length > 0 && kagariLaid >= kagariPlan.length;
   const secondGroup = complete && kagariSet === 0;
+  const kikuFit = kikuSpec(division, kagariSpacing, "fit").capacity;
+  const canPickRows = motif === "kiku" && complete && kagariSet === 1 && kikuLayers < kikuFit && !kagariPlaying;
+  const remaining = Math.max(0, kikuFit - kikuLayers);
   const sewId = secondGroup ? "motif-kiku" : "fill";
   const sewLabel = kagariPlaying ? "Вышиваем…" : secondGroup ? "Вторая группа" :
+    canPickRows && sewHow === "all" ? "До экватора" :
+    canPickRows && sewHow !== "all" && sewHow > 1 ? `${sewHow} ряда` :
     complete ? "Следующий ряд" : kagariPlan.length ? "Продолжить" : "Начать кику";
+  function runSew() {
+    if (secondGroup) {
+      run("motif-kiku");
+      return;
+    }
+    if (canPickRows && sewHow !== 1) {
+      const action = actionById("kiku-rows");
+      if (!action.canExecute(getCraftState())) {
+        setTip(action.getDisabledReason(getCraftState()));
+        return;
+      }
+      setTip(null);
+      dispatchCommand("kiku-rows", sewHow);
+      return;
+    }
+    run(sewId);
+  }
+  function rowPicker(className = "") {
+    if (!canPickRows) return null;
+    const choices: Array<1 | 2 | 3 | "all"> =
+      remaining >= 3 ? [1, 2, 3, "all"] : remaining === 2 ? [1, 2, "all"] : [1, "all"];
+    return (
+      <div
+        role="group"
+        aria-label="Сколько рядов вышить"
+        className={cn(
+          "pointer-events-auto flex items-center gap-0.5 rounded-2xl border border-line bg-linen/95 p-1",
+          className,
+        )}
+      >
+        {choices.map((n) => (
+          <button
+            key={String(n)}
+            type="button"
+            aria-pressed={sewHow === n}
+            onClick={() => setSewHow(n)}
+            className={cn(
+              "min-h-9 min-w-9 rounded-xl px-2 text-xs tabular-nums",
+              focusStyle,
+              sewHow === n ? "bg-ink text-linen" : "text-ink/70 hover:bg-ink/5",
+            )}
+          >
+            {n === "all" ? "всё" : n}
+          </button>
+        ))}
+      </div>
+    );
+  }
 
   // A kiku is sewn with two working threads that alternate by rounds (GT14 asks
   // for two colours): «1» for the first four petals, «2» for the second four.
@@ -147,7 +201,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   }
   const hint = tip ?? s.pinNote ?? instruction;
 
-  function verb(id: string, label: string, icon: ReactNode, primary = false) {
+  function verb(id: string, label: string, icon: ReactNode, primary = false, onClick?: () => void) {
     const action = actionById(id);
     const available = action.canExecute(state) && !(primary && kagariPlaying);
     const active = action.isActive?.(state) ?? false;
@@ -157,7 +211,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
         aria-label={label}
         aria-pressed={primary ? undefined : active}
         aria-disabled={!available}
-        onClick={() => run(id)}
+        onClick={() => (onClick ? onClick() : run(id))}
         title={action.getDisabledReason(state) ?? label}
         className={cn(
           "flex items-center gap-2 rounded-2xl text-sm transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
@@ -180,7 +234,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const sewVerb = () =>
     motif === "none"
       ? verb("stitch", "Линии", <PencilLine className="size-4" />)
-      : verb(sewId, sewLabel, <IconNeedle className="size-4" />, true);
+      : verb(sewId, sewLabel, <IconNeedle className="size-4" />, true, runSew);
   const arc = [
     { key: "sew", node: sewVerb(), mobile: false },
     { key: "pin", node: verb("pin", "Булавки", <Pin className="size-4" />), mobile: true },
@@ -266,6 +320,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
         aria-label="Действия на мари"
         className="pointer-events-none absolute top-1/2 right-0 z-20 h-[min(22rem,48dvh)] w-[min(11rem,38vw)] -translate-y-1/2 md:w-52"
       >
+        {rowPicker("absolute -top-12 right-4 hidden md:flex")}
         <div className="relative size-full">
           {arc.map((item, i, list) => {
             const shown = list.filter((entry) => entry.mobile).length;
@@ -306,7 +361,10 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
         className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[max(0.6rem,calc(env(safe-area-inset-bottom)+0.35rem))]"
       >
         <div className="pointer-events-auto mx-auto w-full max-w-lg">
-          <div className="mb-2 flex justify-center md:hidden [&>button]:min-w-48 [&>button]:justify-center">{sewVerb()}</div>
+          <div className="mb-2 flex flex-col items-center gap-2 md:hidden">
+            {rowPicker()}
+            <div className="[&>button]:min-w-48 [&>button]:justify-center">{sewVerb()}</div>
+          </div>
           <div className="rounded-3xl border border-line bg-linen/95 p-2 shadow-[0_4px_24px_#0c0b0906]">
             <div className="mb-1 flex items-center gap-1">
               <div className="flex flex-1 gap-1" aria-label="Этап работы">

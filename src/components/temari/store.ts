@@ -271,6 +271,8 @@ type TemariState = {
    * one kai of the first four, then of the second four, and so on. One undo.
    */
   finishKiku: () => void;
+  /** Grow this pole by `count` kais, or to the equator. Plays the stitches. */
+  sewKikuRows: (count: number | "all") => void;
   setStartPin: (local: Vec3) => void;
   setFacingPole: (index: number) => void;
   showExample: () => void;
@@ -1346,18 +1348,7 @@ export const useTemari = create<TemariState>((set, get) => ({
         const spec = kikuSpec(state.division, state.kagariSpacing, "fit");
         if (state.kagariSet === 0) return;
         if (state.kikuLayers >= spec.capacity) return;
-        const nextL = state.kikuLayers + 1;
-        const extra = kikuExtra(state, nextL);
-        if (extra.length === 0) return;
-        feel.stitch();
-        set({
-          kikuLayers: nextL,
-          kagariHistory: pushKagari(state),
-          kagariPlan: [...state.kagariPlan, ...extra],
-          kagariPlaying: true,
-          kagariFocus: stitchFocus(extra[0], state.division, "kiku"),
-        });
-        rememberStudio(get());
+        get().sewKikuRows(1);
         return;
       }
       get().startKagari();
@@ -1415,20 +1406,28 @@ export const useTemari = create<TemariState>((set, get) => ({
     });
   },
   finishKiku: () => {
+    get().sewKikuRows("all");
+  },
+  sewKikuRows: (count) => {
     const state = get();
     if (state.mode !== "studio" || !state.layerDone) return;
     if (state.motif !== "kiku" || state.kagariPlaying) return;
     if (!kikuMarksReady(state.pins, state.division, state.facingPole)) return;
-    // Both groups must be standing, and the row under the needle finished.
     if (state.kagariSet === 0 || state.kagariPlan.length === 0) return;
-    if (state.kagariLaid < state.kagariPlan.length) return;
+    if (state.kagariLaid < state.kagariPlan.length) {
+      set({ kagariPlaying: true });
+      return;
+    }
     const spec = kikuSpec(state.division, state.kagariSpacing, "fit");
     if (state.kikuLayers >= spec.capacity) return;
-    const extra = kikuExtra(state, spec.capacity);
+    const add = count === "all" ? spec.capacity - state.kikuLayers : Math.max(1, Math.floor(count));
+    const toLayer = Math.min(spec.capacity, state.kikuLayers + add);
+    if (toLayer <= state.kikuLayers) return;
+    const extra = kikuExtra(state, toLayer);
     if (extra.length === 0) return;
     feel.stitch();
     set({
-      kikuLayers: spec.capacity,
+      kikuLayers: toLayer,
       kagariHistory: pushKagari(state),
       kagariPlan: [...state.kagariPlan, ...extra],
       kagariPlaying: true,

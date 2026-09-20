@@ -640,6 +640,24 @@ describe("quick kiku: marking and pins at the facing pole in one tap", () => {
     assert.deepEqual(back.pins, two.pins, "undo puts the marks back with the rows");
   });
 
+  it("sews two kais when asked, and still plays the stitches", () => {
+    dispatchCommand("quick-kiku");
+    dispatchCommand("fill");
+    finishPlan();
+    dispatchCommand("motif-kiku");
+    finishPlan();
+    const before = useTemari.getState().kikuLayers;
+    assert.equal(action("kiku-rows").canExecute(getCraftState()), true);
+    dispatchCommand("kiku-rows", 2);
+    const mid = useTemari.getState();
+    assert.equal(mid.kikuLayers, before + 2);
+    assert.equal(mid.kagariPlaying, true);
+    assert.ok(mid.kagariLaid < mid.kagariPlan.length);
+    finishPlan();
+    assert.equal(useTemari.getState().kikuLayers, before + 2);
+    assert.equal(useTemari.getState().kagariPlaying, false);
+  });
+
   it("turns the working pole to the eye instead of leaving it on the silhouette", () => {
     useTemari.setState({ facingPole: 1, viewPole: 0, poseDirty: true });
     const nonce = useTemari.getState().viewNonce;

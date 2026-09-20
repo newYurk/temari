@@ -254,10 +254,39 @@ function KagariGuide() {
     const reduce =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const id = window.setTimeout(advance, reduce ? 0 : 110);
+    const id = window.setTimeout(advance, reduce ? 0 : 160);
     return () => window.clearTimeout(id);
   }, [advance, laid, playing]);
   return null;
+}
+
+/** Next prick while a row is being sewn — a quiet pulse, not a HUD ring. */
+function StitchPulse() {
+  const playing = useTemari((s) => s.kagariPlaying);
+  const laid = useTemari((s) => s.kagariLaid);
+  const plan = useTemari((s) => s.kagariPlan);
+  const mesh = useRef<THREE.Mesh>(null);
+  const stitch = playing ? plan[laid] : undefined;
+  useFrame(({ clock }) => {
+    const node = mesh.current;
+    if (!node) return;
+    const k = 0.7 + Math.sin(clock.elapsedTime * 7) * 0.18;
+    node.scale.setScalar(k);
+  });
+  if (!stitch || stitch.kind !== "arc") return null;
+  const p = stitch.b;
+  const len = Math.hypot(p[0], p[1], p[2]) || 1;
+  const r = 1.028;
+  return (
+    <mesh
+      ref={mesh}
+      position={[ (p[0] / len) * r, (p[1] / len) * r, (p[2] / len) * r ]}
+      renderOrder={22}
+    >
+      <sphereGeometry args={[0.016, 16, 12]} />
+      <meshBasicMaterial color="#0c0b09" transparent opacity={0.72} depthTest={false} />
+    </mesh>
+  );
 }
 
 function WrapSurface({ color, width }: { color: string; width: number }) {
@@ -1107,6 +1136,7 @@ export function Ball() {
       {mode === "studio" && layerDone && jiwariOn ? <VRuler /> : null}
       {mode === "studio" && layerDone ? <JiwariGuide /> : null}
       {mode === "studio" && layerDone ? <KagariGuide /> : null}
+      {mode === "studio" && layerDone ? <StitchPulse /> : null}
 
       {markStitches.length > 0 ? (
         <ThreadLayer
