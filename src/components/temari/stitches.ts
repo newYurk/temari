@@ -6,7 +6,7 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
-import { stackBump, scoopAway, scoopRadius, innerBiteJoin as innerBiteJoinVec } from "./kagari";
+import { stackBump, scoopAway, scoopRadius } from "./kagari";
 
 const ARC_SEGS = 32;
 /**
@@ -244,51 +244,88 @@ function sameMarkDir(a: THREE.Vector3, b: THREE.Vector3) {
 }
 
 /**
- * Outer point: the thread turns and the return sits on the approach —
- * a fold, then a tiny tuck. A U under the wrap is the hole; a symmetric
- * V is a drawing, not a stitch.
+ * Needle at a mark: in on the far side of the jiwari, short run under
+ * the wrap, out on the near side. A V on the mari never goes in.
  */
+function jiwariPorts(
+  mark: THREE.Vector3,
+  from: THREE.Vector3,
+  enter?: [number, number, number],
+  exit?: [number, number, number],
+) {
+  const m = mark.clone().normalize();
+  let a: THREE.Vector3;
+  let b: THREE.Vector3;
+  if (enter && exit) {
+    a = new THREE.Vector3(enter[0], enter[1], enter[2]).normalize();
+    b = new THREE.Vector3(exit[0], exit[1], exit[2]).normalize();
+  } else {
+    const pole = new THREE.Vector3(0, m.y >= 0 ? 1 : -1, 0);
+    const across = new THREE.Vector3().crossVectors(m, pole);
+    if (across.lengthSq() < 1e-12) across.set(1, 0, 0);
+    across.normalize();
+    const half = unitFromMm(0.71) * 0.5;
+    a = m.clone().addScaledVector(across, -half).normalize();
+    b = m.clone().addScaledVector(across, half).normalize();
+  }
+  const f = from.clone().normalize();
+  // In on the far side of the guideline, out on the near side.
+  if (f.distanceToSquared(a) < f.distanceToSquared(b)) return { inn: b, out: a };
+  return { inn: a, out: b };
+}
+
+export function sewKagariBite(
+  from: THREE.Vector3,
+  mark: THREE.Vector3,
+  to: THREE.Vector3,
+  kind: ThreadKind,
+  enter?: [number, number, number],
+  exit?: [number, number, number],
+): THREE.Vector3[] {
+  const half = unitFromMm(kindMm(kind)) * 0.5;
+  const fromR = from.length();
+  const toR = to.length();
+  const { inn, out } = jiwariPorts(mark, from, enter, exit);
+  const buried = scoopRadius(1, Math.min(fromR, toR), half);
+  const n = 8;
+  const pts: THREE.Vector3[] = [];
+  for (let i = 1; i <= n; i++) {
+    const t = i / n;
+    slerpUnit(from, inn, t, _a);
+    pts.push(_a.clone().multiplyScalar(scoopRadius(t, fromR, half)));
+  }
+  for (let i = 1; i <= n; i++) {
+    const t = i / n;
+    slerpUnit(inn, out, t, _a);
+    pts.push(_a.clone().multiplyScalar(buried));
+  }
+  for (let i = 1; i <= n; i++) {
+    const t = i / n;
+    slerpUnit(out, to, t, _a);
+    pts.push(_a.clone().multiplyScalar(scoopRadius(1 - t, toR, half)));
+  }
+  return pts;
+}
+
+/** @deprecated tests; same needle as sewKagariBite. */
 export function outerBackbite(
   from: THREE.Vector3,
   mark: THREE.Vector3,
   to: THREE.Vector3,
   kind: ThreadKind,
-): THREE.Vector3[] {
-  const half = unitFromMm(kindMm(kind)) * 0.5;
-  const pearl = half * 2;
-  const fromR = from.length();
-  const toR = to.length();
-  const n = 10;
-  const out: THREE.Vector3[] = [];
-  for (let i = 1; i <= n; i++) {
-    const t = i / n;
-    slerpUnit(from, mark, t, _a);
-    const tuck = t < 0.82 ? 0 : (t - 0.82) / 0.18;
-    out.push(_a.clone().multiplyScalar(scoopRadius(tuck * 0.4, fromR, half)));
-  }
-  for (let i = 1; i <= n; i++) {
-    const t = i / n;
-    slerpUnit(mark, to, t, _a);
-    const tuck = t < 0.18 ? (0.18 - t) / 0.18 : 0;
-    const sit = Math.exp(-Math.pow((t - 0.2) / 0.26, 2));
-    const r = scoopRadius(tuck * 0.4, toR, half) + pearl * 0.7 * sit;
-    out.push(_a.clone().multiplyScalar(r));
-  }
-  return out;
+) {
+  return sewKagariBite(from, mark, to, kind);
 }
 
-/**
- * Inner: V on the stack (uwagake). Outer: reverse pickup, then a short bite.
- */
 function joinAroundMark(
   pts: THREE.Vector3[],
   piece: THREE.Vector3[],
   mark: THREE.Vector3,
   pearl: number,
   kind: ThreadKind,
+  bite?: { enter: [number, number, number]; exit: [number, number, number] },
 ) {
-  const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
-  const keep = pearl * (inner ? 1.05 : 1.45);
+  const keep = pearl * 1.8;
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
@@ -311,18 +348,7 @@ function joinAroundMark(
   const from = atKeep(fromRaw);
   const to = atKeep(toRaw);
   pts.push(from);
-  if (inner) {
-    const join = innerBiteJoinVec(
-      [from.x, from.y, from.z],
-      [mark.x, mark.y, mark.z],
-      [to.x, to.y, to.z],
-      pearl,
-      12,
-    );
-    for (const p of join) pts.push(new THREE.Vector3(p[0], p[1], p[2]));
-  } else {
-    for (const p of outerBackbite(from, mark, to, kind)) pts.push(p);
-  }
+  for (const p of sewKagariBite(from, mark, to, kind, bite?.enter, bite?.exit)) pts.push(p);
   const toDist = to.distanceToSquared(mark);
   let k = i;
   while (k < piece.length && piece[k]!.distanceToSquared(mark) <= toDist + 1e-8) k++;
@@ -469,6 +495,7 @@ function stackedArcChainParts(
   };
   let pts: THREE.Vector3[] = [];
   let kai0 = chain[0]?.kai;
+  let prevBite: { enter: [number, number, number]; exit: [number, number, number] } | undefined;
   const joinPiece = (piece: THREE.Vector3[]) => {
     if (pts.length === 0) {
       pts.push(...piece);
@@ -477,9 +504,7 @@ function stackedArcChainParts(
     const mark = pts[pts.length - 1]!;
     const next0 = piece[0]!;
     if (sameMarkDir(mark, next0) && pts.length > 1 && piece.length > 1) {
-      // One working thread: the V turns on the mari. Splitting here buried
-      // both flanks and left a knob at every inner (and outer) mark.
-      joinAroundMark(pts, piece, mark, unitFromMm(kindMm(kind)), kind);
+      joinAroundMark(pts, piece, mark, unitFromMm(kindMm(kind)), kind, prevBite);
       return;
     }
     const start = nearVec(mark, next0) ? 1 : 0;
@@ -491,10 +516,12 @@ function stackedArcChainParts(
       flush(pts);
       pts = [];
       kai0 = s.kai;
+      prevBite = undefined;
     }
     const piece = arcPath(s, kind);
     if (piece.length < 2) continue;
     joinPiece(piece);
+    prevBite = s.bite;
   }
   if (pts.length >= 2) flush(pts);
   return parts.filter((g) => (g.getAttribute("position")?.count ?? 0) > 0);
