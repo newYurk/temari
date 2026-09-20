@@ -405,41 +405,6 @@ export function clampNotPastPole(p: Vec3, mark: Vec3): Vec3 {
   ];
 }
 
-/**
- * Outer reverse pickup stays on the pole side of the mark. Walking
- * equator-ward of it is the stitch landing in front of the pin.
- */
-export function clampNotPastEquator(p: Vec3, mark: Vec3): Vec3 {
-  const pole: Vec3 = mark[1] >= 0 ? [0, 1, 0] : [0, -1, 0];
-  const pu = normalize(p);
-  const mu = normalize(mark);
-  if (dot(pu, pole) >= dot(mu, pole) - 1e-6) return p;
-  const along = dot(pu, pole);
-  let radial: Vec3 = [
-    pu[0] - pole[0] * along,
-    pu[1] - pole[1] * along,
-    pu[2] - pole[2] * along,
-  ];
-  if (hypot3(radial) < 1e-8) {
-    const mAlong = dot(mu, pole);
-    radial = [
-      mu[0] - pole[0] * mAlong,
-      mu[1] - pole[1] * mAlong,
-      mu[2] - pole[2] * mAlong,
-    ];
-  }
-  if (hypot3(radial) < 1e-8) return mark;
-  radial = normalize(radial);
-  const ct = dot(mu, pole);
-  const st = Math.sqrt(Math.max(0, 1 - ct * ct));
-  const r = hypot3(p) || 1;
-  return [
-    (pole[0] * ct + radial[0] * st) * r,
-    (pole[1] * ct + radial[1] * st) * r,
-    (pole[2] * ct + radial[2] * st) * r,
-  ];
-}
-
 /** Quadratic Bézier on the sphere. Does not cusp at the control point. */
 export function sphereBezier(a: Vec3, b: Vec3, c: Vec3, n: number): Vec3[] {
   const out: Vec3[] = [];

@@ -6,7 +6,7 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns.ts";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 import { WRAP_LAYERS } from "./craft.ts";
-import { stackBump, scoopAway, scoopRadius, KAGARI_SCOOP_MM, clampNotPastPole, clampNotPastEquator } from "./kagari.ts";
+import { stackBump, scoopAway, scoopRadius, KAGARI_SCOOP_MM, clampNotPastPole } from "./kagari.ts";
 
 const ARC_SEGS = 32;
 /**
@@ -293,13 +293,13 @@ function smooth01(t: number) {
 }
 
 /**
- * Visible needle only: down on the far side of the jiwari, up on the near
- * side. The hidden run under the wrap is not drawn — a U there is a hole
- * with a loop, not kagari.
+ * Visible needle only. Outer reverse pickup: flanks meet as a V at the
+ * tip on the pole side of the pin, leaving over arriving. A short hop to
+ * the far port then dives under that cross. Slerping a whole flank to a
+ * far port is a diagonal that bulges past the pin — a knot, not kagari.
  *
- * Both flanks stay on the mari until they cross (leaving over arriving).
- * Outer then dives; inner uwagake stays on the stack — the same dive
- * swallowed the small crosses at the pole.
+ * Inner uwagake is the same V on the stack, no hop, no dive. A span
+ * between inn and out was a chopped hole at the pole.
  */
 function sewKagariLegs(
   from: THREE.Vector3,
@@ -314,77 +314,49 @@ function sewKagariLegs(
   const pearl = half * 2;
   const fromR = from.length();
   const toR = to.length();
-  let { inn, out } = jiwariPorts(mark, from, enter, exit);
   const m = mark.clone().normalize();
   const pole = new THREE.Vector3(0, m.y >= 0 ? 1 : -1, 0);
   const towardPole = pole.clone().addScaledVector(m, -pole.dot(m));
   if (towardPole.lengthSq() < 1e-12) towardPole.set(1, 0, 0);
   towardPole.normalize();
-  const across = inn.clone().sub(out);
-  if (across.lengthSq() > 1e-12) {
-    across.normalize();
-    const mid = inn.clone().add(out).multiplyScalar(0.5);
-    // Stitch sits against the pin on the pole side, not a millimetre away.
-    if (!onStack) mid.addScaledVector(towardPole, unitFromMm(0.18));
-    const span = unitFromMm(onStack ? 0.85 : 1.05);
-    inn = mid.clone().addScaledVector(across, span).normalize();
-    out = mid.clone().addScaledVector(across, -span).normalize();
-  }
-  let tIn = 0.67;
-  let tOut = 0.33;
-  let best = 1e9;
-  const samples = 12;
-  for (let i = 1; i < samples; i++) {
-    slerpUnit(from, inn, i / samples, _a);
-    for (let j = 1; j < samples; j++) {
-      slerpUnit(out, to, j / samples, _radial);
-      const d = _a.distanceToSquared(_radial);
-      if (d < best) {
-        best = d;
-        tIn = i / samples;
-        tOut = j / samples;
-      }
+  const tip = m.clone();
+  if (!onStack) tip.addScaledVector(towardPole, unitFromMm(0.18)).normalize();
+  let inn = tip.clone();
+  if (!onStack) {
+    const ports = jiwariPorts(mark, from, enter, exit);
+    const across = ports.inn.clone().sub(ports.out);
+    if (across.lengthSq() > 1e-12) {
+      across.normalize();
+      inn = tip.clone().addScaledVector(across, unitFromMm(0.16)).normalize();
     }
   }
   const n = 10;
+  const hopAt = 8;
   const buriedIn = scoopRadius(1, fromR, half);
-  const buriedOut = scoopRadius(1, toR, half);
-  // Stay on the mari through the cross; a dive from tIn ate the tip.
-  const diveStart = Math.max(tIn + 0.2, 0.8);
   const inPts: THREE.Vector3[] = [];
   for (let i = 1; i <= n; i++) {
-    const t = i / n;
-    slerpUnit(from, inn, t, _a);
+    if (onStack || i <= hopAt) {
+      slerpUnit(from, tip, onStack ? i / n : i / hopAt, _a);
+    } else {
+      slerpUnit(tip, inn, (i - hopAt) / (n - hopAt), _a);
+    }
     if (onStack) {
       const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
       _a.set(c[0], c[1], c[2]).normalize();
-    } else {
-      const c = clampNotPastEquator([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
-      _a.set(c[0], c[1], c[2]).normalize();
     }
-    const dive = onStack ? 0 : smooth01((t - diveStart) / Math.max(0.08, 1 - diveStart));
+    const dive = onStack ? 0 : smooth01((i - hopAt) / Math.max(1, n - hopAt));
     inPts.push(_a.clone().multiplyScalar(fromR + (buriedIn - fromR) * dive));
   }
   const outPts: THREE.Vector3[] = [];
   for (let i = 0; i < n; i++) {
     const t = i / n;
-    slerpUnit(out, to, t, _a);
+    slerpUnit(tip, to, t, _a);
     if (onStack) {
       const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
       _a.set(c[0], c[1], c[2]).normalize();
-    } else {
-      const c = clampNotPastEquator([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
-      _a.set(c[0], c[1], c[2]).normalize();
     }
-    const u = (t - tOut) / 0.22;
-    const lift = Math.exp(-u * u);
-    let r: number;
-    if (onStack) {
-      r = toR + pearl * STACK_LIFT * 1.2 * lift;
-    } else {
-      const emerge = smooth01(t / Math.max(0.12, tOut * 0.45));
-      r = buriedOut + (toR - buriedOut) * emerge + pearl * STACK_LIFT * 1.35 * lift * emerge;
-    }
+    const lift = Math.exp(-(t / 0.22) * (t / 0.22));
+    const r = toR + pearl * STACK_LIFT * (onStack ? 1.2 : 1.35) * lift;
     outPts.push(_a.clone().multiplyScalar(r));
   }
   return { inPts, outPts };

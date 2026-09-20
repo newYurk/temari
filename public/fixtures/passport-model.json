@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "id": "s8-a1-b1-control",
-  "sourceDigest": "22e737d18afe87471603d3902b71e550420fc8fff3de64eb71505372b1fcbe4c",
-  "snapshotDigest": "68114a5c6dfc1d60c15e276bf74f6ddcb8920df74754ca60e4a72a3eb7388fcc",
+  "sourceDigest": "f72fe9c3886d90d26df808c2fbe138c2e3d29215385c04f60cba8fca2b178320",
+  "snapshotDigest": "d1bac3268b798096db0437ac8b20e9f7dc01dd4d161d64d8a92fabea9aff8e5b",
   "status": "accepted",
   "calibrated": false,
   "circumferenceMm": 230.00000000000003,
