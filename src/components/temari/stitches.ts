@@ -9,14 +9,15 @@ import { WRAP_LAYERS } from "./craft";
 import { stackBump, scoopAway, scoopRadius, innerBiteJoin as innerBiteJoinVec, outerBiteJoin as outerBiteJoinVec } from "./kagari";
 
 const ARC_SEGS = 32;
-/** Almost one pearl so the over cord clears; a hair less so it nestles, not a tent. */
 /**
- * Rise over one thread underneath, in diameters. The model declares a circular
- * section that does not compress, and two such cords touch when their centres
- * are one diameter apart — so this is 1, not a coefficient to taste. Compression
- * is a separate question with no source yet (issue #93).
+ * Rise over one thread underneath, in diameters of a round pearl.
+ * Real kagari compresses: the working thread nestles into the one below,
+ * it does not sit as a second garden hose. A full diameter was the pile
+ * at the inner star.
  */
-const STACK_LIFT = 1;
+const STACK_LIFT = 0.42;
+/** Cross-section height / width. Pearl cotton lies on the mari, not a pipe. */
+const STITCH_FLAT = 0.5;
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -355,9 +356,11 @@ function tubeKey(
   taperEnds: boolean,
   closed: boolean,
   uPerUnit: number,
+  heightScale: number,
 ) {
   const parts: string[] = [
-    radius.toFixed(5), taperEnds ? "t" : "-", closed ? "c" : "-", uPerUnit.toFixed(4),
+    radius.toFixed(5), taperEnds ? "t" : "-", closed ? "c" : "-",
+    uPerUnit.toFixed(4), heightScale.toFixed(2),
   ];
   for (const p of pts) parts.push(`${p.x.toFixed(4)},${p.y.toFixed(4)},${p.z.toFixed(4)}`);
   return parts.join("|");
@@ -369,8 +372,9 @@ function cachedTube(
   taperEnds = false,
   closed = false,
   uPerUnit = 0,
+  heightScale = STITCH_FLAT,
 ) {
-  const key = tubeKey(pts, radius, taperEnds, closed, uPerUnit);
+  const key = tubeKey(pts, radius, taperEnds, closed, uPerUnit, heightScale);
   const hit = tubeCache.get(key);
   if (hit) {
     // Touch: the oldest entry is the first to go when the cache is full.
@@ -378,7 +382,7 @@ function cachedTube(
     tubeCache.set(key, hit);
     return hit;
   }
-  const geo = tubeOnSphere(pts, radius, taperEnds, closed, uPerUnit);
+  const geo = tubeOnSphere(pts, radius, taperEnds, closed, uPerUnit, heightScale);
   geo.userData.cached = true;
   tubeCache.set(key, geo);
   while (tubeCache.size > TUBE_CACHE_MAX) {
@@ -801,6 +805,8 @@ function tubeOnSphere(
    * short one carry the same twist.
    */
   uPerUnit = 0,
+  /** 1 = round cord (wrap). <1 flattens onto the mari (kagari). */
+  heightScale = 1,
 ) {
   if (pts.length < 2) return new THREE.BufferGeometry();
   const path: THREE.Vector3[] = [];
@@ -858,18 +864,21 @@ function tubeOnSphere(
     _side.normalize();
     _mid.crossVectors(_t, _side).normalize();
     const r = radius * scaleAt(along[i] ?? 0);
-    // One circular physical section along the supplied path. The renderer
-    // must not flatten it or push its centreline into the mari near a pole.
+    const h = Math.max(0.2, heightScale);
     for (let j = 0; j <= radialSegs; j++) {
       const ang = (j / radialSegs) * Math.PI * 2;
       const c = Math.cos(ang);
       const s = Math.sin(ang);
-      const nx = (_side.x * c + _mid.x * s) * r;
-      const ny = (_side.y * c + _mid.y * s) * r;
-      const nz = (_side.z * c + _mid.z * s) * r;
+      // `_side` is off the mari; `_mid` is across the stitch. Flatten height.
+      const nx = (_side.x * c * h + _mid.x * s) * r;
+      const ny = (_side.y * c * h + _mid.y * s) * r;
+      const nz = (_side.z * c * h + _mid.z * s) * r;
       pos.push(p.x + nx, p.y + ny, p.z + nz);
-      const nl = Math.hypot(nx, ny, nz) || 1;
-      nrm.push(nx / nl, ny / nl, nz / nl);
+      const gx = _side.x * c / h + _mid.x * s;
+      const gy = _side.y * c / h + _mid.y * s;
+      const gz = _side.z * c / h + _mid.z * s;
+      const nl = Math.hypot(gx, gy, gz) || 1;
+      nrm.push(gx / nl, gy / nl, gz / nl);
       uv.push(uPerUnit > 0 ? (along[i] ?? 0) * uPerUnit : i / Math.max(1, nPath - 1),
         j / radialSegs);
     }
