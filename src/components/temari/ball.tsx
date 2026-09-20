@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import { arcsToStitches, getWrapBuffer, pinHit, MariWinder, strokePx, toVec3, type WrapBuffer } from "./craft";
@@ -243,6 +243,17 @@ function JiwariGuide() {
     return () => window.clearTimeout(id);
   }, [advance, division, laid, on, phase]);
   return null;
+}
+
+function GhostPulse({ children, active }: { children: ReactNode; active: boolean }) {
+  const ref = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    const g = ref.current;
+    if (!g) return;
+    const s = active ? 0.9 + Math.sin(clock.elapsedTime * 3.2) * 0.12 : 1;
+    g.scale.setScalar(s);
+  });
+  return <group ref={ref}>{children}</group>;
 }
 
 function KagariGuide() {
@@ -1180,6 +1191,7 @@ export function Ball() {
       ) : null}
 
       {/* Where a pin of this flower still has to go. Fixed colours: they must read on any wrap. */}
+      <GhostPulse active={kikuTargets.length > 0}>
       <instancedMesh
         ref={targetRims}
         args={[undefined, undefined, 16]}
@@ -1189,7 +1201,7 @@ export function Ball() {
         renderOrder={14}
         raycast={() => {}}
       >
-        <sphereGeometry args={[0.038, 20, 14]} />
+        <sphereGeometry args={[0.046, 20, 14]} />
         <meshBasicMaterial color="#1c1714" side={THREE.BackSide} toneMapped={false} />
       </instancedMesh>
       <instancedMesh
@@ -1201,9 +1213,10 @@ export function Ball() {
         renderOrder={15}
         raycast={() => {}}
       >
-        <sphereGeometry args={[0.03, 20, 14]} />
+        <sphereGeometry args={[0.036, 20, 14]} />
         <meshBasicMaterial color="#fbf6ec" toneMapped={false} />
       </instancedMesh>
+      </GhostPulse>
 
       <mesh ref={needle} visible={false}>
         <sphereGeometry args={[0.018, 12, 10]} />

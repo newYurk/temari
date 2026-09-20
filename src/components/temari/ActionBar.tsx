@@ -4,7 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { THREAD_COLORS } from "./palettes";
 import { jiwariPhaseHint } from "./jiwari";
-import { kagariPhaseHint, kikuMarksReady, kikuSpec, kikuWorkingPins, stitchPoleIndex } from "./patterns";
+import { kagariPhaseHint, kikuMarksReady, kikuPinHint, kikuSpec, kikuWorkingPins, stitchPoleIndex } from "./patterns";
 import { useTemari } from "./store";
 import { CRAFT_ACTIONS, dispatchCommand, getCraftState } from "./actions";
 import { IconHishi, IconHoshi, IconKiku, IconNeedle, IconObi } from "./icons";
@@ -184,7 +184,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   if (motif === "kiku" && !marksReady) {
     instruction = sewnHere
       ? "Здесь цветок уже вышит. Поверните шар к другому полюсу — или поставьте метки, чтобы начать этот заново."
-      : `Булавки: ${placed} из ${requiredPins.length}. Нажимайте на подсвеченные места шара.`;
+      : kikuPinHint(placed, requiredPins.length);
   } else if (motif === "kiku" && kagariPlan.length) {
     instruction = kagariPhaseHint(motif, division, kagariDir, kagariLaid, kagariPlan.length,
       kagariPlaying, Math.max(0, stitchPoleIndex(kagariPlan[0]!, division, motif)), kagariSet,

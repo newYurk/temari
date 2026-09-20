@@ -31,6 +31,7 @@ import {
   kikuWorkingPins,
   kikuMarksReady,
   snapToKikuMark,
+  kikuPinHint,
   KIKU_PIN_MISS,
   sameFocus,
   slotKey,
@@ -721,7 +722,16 @@ export const useTemari = create<TemariState>((set, get) => ({
       const next = state.jiwariLaid + 1;
       feel.stitch();
       if (next >= 5) {
-        set({ jiwariPhase: "done", jiwariLaid: 5, pins: simplePins("done") });
+        const marks = kikuWorkingPins("simple", state.facingPole);
+        set({
+          jiwariPhase: "done",
+          jiwariLaid: 5,
+          pins: [],
+          motif: "kiku",
+          craft: "pin",
+          activePin: null,
+          pinNote: kikuPinHint(0, marks.length),
+        });
       } else {
         set({ jiwariLaid: next });
       }
@@ -832,7 +842,9 @@ export const useTemari = create<TemariState>((set, get) => ({
       pins: pinningKiku ? [] : get().jiwariOn && get().motif !== "none"
         ? withKikuMarks(get(), id) : get().pins,
       pinArcs: pinningKiku ? [] : get().pinArcs,
-      pinNote: null,
+      pinNote: pinningKiku
+        ? kikuPinHint(0, kikuWorkingPins(get().division, get().facingPole).length)
+        : null,
       activePin: null,
       ...idleKagari(),
     });
@@ -976,10 +988,18 @@ export const useTemari = create<TemariState>((set, get) => ({
       ? state.pins.filter((_, i) => i !== hit)
       : [...state.pins, { id: mark?.id ?? `p-${Date.now().toString(36)}-${state.pins.length}`, p }];
     feel.pin();
+    const note = state.motif === "kiku"
+      ? kikuPinHint(
+          kikuWorkingPins(state.division, state.facingPole).filter((m) =>
+            pins.some((pin) => pin.p[0] * m.p[0] + pin.p[1] * m.p[1] + pin.p[2] * m.p[2] > 0.995),
+          ).length,
+          kikuWorkingPins(state.division, state.facingPole).length,
+        )
+      : null;
     set({
       pins,
       activePin: null,
-      pinNote: null,
+      pinNote: note,
       pinHistory: [...state.pinHistory, snap].slice(-40),
     });
     rememberStudio(get());
@@ -1173,7 +1193,7 @@ export const useTemari = create<TemariState>((set, get) => ({
             pins: [],
             craft: "pin" as const,
             activePin: null,
-            pinNote: null,
+            pinNote: kikuPinHint(0, kikuWorkingPins(state.division, next).length),
             kagariSet: 0 as const,
             kikuLayers: 1,
             kagariPlan: [],

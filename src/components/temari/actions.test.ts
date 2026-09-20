@@ -247,6 +247,25 @@ describe("recipe compatibility in studio actions and state", () => {
     assert.deepEqual(useTemari.getState().pinArcs, [arc]);
   });
 
+  it("S8 marking leaves an empty pole: the player places the nine kiku marks", () => {
+    useTemari.setState({
+      jiwariOn: true, jiwariPhase: "meridians", jiwariLaid: 4, motif: "none", pins: [],
+    });
+    useTemari.getState().advanceJiwari();
+    const after = useTemari.getState();
+    assert.equal(after.jiwariPhase, "done");
+    assert.equal(after.motif, "kiku");
+    assert.equal(after.craft, "pin");
+    assert.deepEqual(after.pins, []);
+    assert.equal(getCraftState().kikuMarksReady, false);
+    assert.equal(action("fill").canExecute(getCraftState()), false);
+    for (const pin of kikuWorkingPins("simple", 0)) useTemari.getState().placePin(pin.p);
+    assert.equal(useTemari.getState().pins.length, 9);
+    assert.equal(getCraftState().kikuMarksReady, true);
+    assert.match(useTemari.getState().pinNote ?? "", /Можно шить/);
+    assert.equal(action("fill").canExecute(getCraftState()), true);
+  });
+
   it("keeps the pin tool selected when the ninth GT14 mark is placed", () => {
     useTemari.getState().setMotif("kiku");
     for (const pin of kikuWorkingPins("simple", 0)) useTemari.getState().placePin(pin.p);
