@@ -160,22 +160,33 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
         onClick={() => run(id)}
         title={action.getDisabledReason(state) ?? label}
         className={cn(
-          "flex items-center gap-2 rounded-full text-sm transition-[background-color,color,box-shadow] duration-150",
+          "flex items-center gap-2 rounded-2xl text-sm transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
           focusStyle,
           primary
-            ? cn("min-h-12 pl-4 pr-3", available ? "bg-ink text-linen" : "bg-ink/10 text-ink/55")
+            ? cn("min-h-12 pl-4 pr-3", available ? "bg-cinnabar text-linen" : "bg-ink/10 text-ink/55")
             : cn(
-                "min-h-11 bg-linen/90 pl-3 pr-2.5 ring-1 ring-line",
+                "min-h-11 bg-linen/95 pl-3 pr-2.5 ring-1 ring-line",
                 active ? "font-medium ring-ink/40" : "hover:bg-ink/5",
                 !available && "text-ink/45",
               ),
         )}
       >
-        <span className="hidden max-w-[9rem] truncate sm:inline">{label}</span>
+        <span className="hidden max-w-[9rem] truncate md:inline">{label}</span>
         <span className="flex size-8 shrink-0 items-center justify-center [&>svg]:size-4">{icon}</span>
       </button>
     );
   }
+
+  const sewVerb = () =>
+    motif === "none"
+      ? verb("stitch", "Линии", <PencilLine className="size-4" />)
+      : verb(sewId, sewLabel, <IconNeedle className="size-4" />, true);
+  const arc = [
+    { key: "sew", node: sewVerb(), mobile: false },
+    { key: "pin", node: verb("pin", "Булавки", <Pin className="size-4" />), mobile: true },
+    { key: "undo", node: verb("undo", "Распустить", <Undo2 className="size-4" />), mobile: true },
+    { key: "reset", node: verb("reset", "Сброс", <RotateCcw className="size-4" />), mobile: true },
+  ];
 
   if (!s.layerDone) {
     return (
@@ -197,7 +208,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
 
       <aside
         aria-label="Рабочие нити"
-        className="pointer-events-none absolute bottom-[calc(var(--temari-chrome-bottom,6rem)+0.5rem)] left-3 z-20 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 md:left-6"
+        className="pointer-events-none absolute top-1/2 left-3 z-20 -translate-y-1/2 md:left-6"
       >
         <div className="pointer-events-auto flex flex-col gap-2 rounded-3xl border border-line bg-linen/90 p-2 shadow-[0_4px_24px_#0c0b0908]">
           {motif === "kiku" ? (
@@ -210,7 +221,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
                   aria-label={`Нить ${slot + 1}, ${slot === 0 ? "первая" : "вторая"} четвёрка: ${COLOR_NAMES[kagariColors[slot]]?.toLowerCase() ?? ""}`}
                   onClick={() => s.editThread(slot)}
                   className={cn(
-                    "flex h-11 items-center gap-2 rounded-2xl px-2.5 text-sm",
+                    "flex h-10 items-center gap-2 rounded-2xl px-2 text-sm",
                     focusStyle,
                     editing === slot ? "bg-ink/8 font-medium ring-1 ring-ink/40" : "text-ink/70 hover:bg-ink/5",
                   )}
@@ -221,14 +232,12 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
                     className="size-5 rounded-full ring-1 ring-line"
                     style={{ backgroundColor: THREAD_COLORS[kagariColors[slot]] }}
                   />
-                  <span className="hidden pr-1 sm:inline">Нить</span>
+                  <span className="hidden pr-1 lg:inline">Нить</span>
                 </button>
               ))}
             </div>
-          ) : (
-            <p className="max-w-[9.5rem] px-2 py-1 text-[11px] leading-4 text-ink/70">Цвет эскиза</p>
-          )}
-          <div className="grid grid-cols-2 gap-1 sm:grid-cols-1" aria-label="Цвет нити">
+          ) : null}
+          <div className="flex flex-col gap-1" aria-label="Цвет нити">
             {THREAD_COLORS.map((color, i) => (
               <button
                 key={color}
@@ -237,7 +246,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
                 aria-pressed={s.selectedColor === i}
                 title={threadName(i)}
                 onClick={() => s.setColor(i)}
-                className={cn("flex h-10 items-center justify-center rounded-xl", focusStyle)}
+                className={cn("flex size-10 items-center justify-center rounded-xl", focusStyle)}
               >
                 <span
                   className={cn(
@@ -255,15 +264,40 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
 
       <nav
         aria-label="Действия на мари"
-        className="pointer-events-none absolute bottom-[calc(var(--temari-chrome-bottom,6rem)+0.5rem)] right-3 z-20 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 md:right-6"
+        className="pointer-events-none absolute top-1/2 right-0 z-20 h-[min(22rem,48dvh)] w-[min(11rem,38vw)] -translate-y-1/2 md:w-52"
       >
-        <div className="pointer-events-auto flex flex-col items-end gap-2">
-          {motif === "none"
-            ? verb("stitch", "Линии", <PencilLine className="size-4" />)
-            : verb(sewId, sewLabel, <IconNeedle className="size-4" />, true)}
-          {verb("pin", "Булавки", <Pin className="size-4" />)}
-          {verb("undo", "Распустить", <Undo2 className="size-4" />)}
-          {verb("reset", "Сброс", <RotateCcw className="size-4" />)}
+        <div className="relative size-full">
+          {arc.map((item, i, list) => {
+            const shown = list.filter((entry) => entry.mobile).length;
+            const mobileIndex = list.slice(0, i).filter((entry) => entry.mobile).length;
+            const t = (n: number, k: number) => (n <= 1 ? 0.5 : k / (n - 1));
+            const place = (k: number, n: number) => {
+              const ang = (-50 + t(n, k) * 100) * (Math.PI / 180);
+              return {
+                left: `${18 + Math.cos(ang) * 62}%`,
+                top: `${50 + Math.sin(ang) * 44}%`,
+              };
+            };
+            const desk = place(i, list.length);
+            const mob = place(item.mobile ? mobileIndex : i, item.mobile ? shown : list.length);
+            return (
+              <div
+                key={item.key}
+                className={cn(
+                  "pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 left-[var(--arc-mx)] top-[var(--arc-my)] md:left-[var(--arc-dx)] md:top-[var(--arc-dy)]",
+                  item.mobile ? "max-md:block" : "hidden md:block",
+                )}
+                style={{
+                  ["--arc-dx" as string]: desk.left,
+                  ["--arc-dy" as string]: desk.top,
+                  ["--arc-mx" as string]: mob.left,
+                  ["--arc-my" as string]: mob.top,
+                }}
+              >
+                {item.node}
+              </div>
+            );
+          })}
         </div>
       </nav>
 
@@ -272,6 +306,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
         className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[max(0.6rem,calc(env(safe-area-inset-bottom)+0.35rem))]"
       >
         <div className="pointer-events-auto mx-auto w-full max-w-lg">
+          <div className="mb-2 flex justify-center md:hidden [&>button]:min-w-48 [&>button]:justify-center">{sewVerb()}</div>
           <div className="rounded-3xl border border-line bg-linen/95 p-2 shadow-[0_4px_24px_#0c0b0906]">
             <div className="mb-1 flex items-center gap-1">
               <div className="flex flex-1 gap-1" aria-label="Этап работы">
