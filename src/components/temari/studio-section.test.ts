@@ -32,7 +32,9 @@ describe('studio thread section', () => {
     } finally { geometry.dispose(); }
   });
 
-  it('keeps the stated circular radius through the pole and along the flank', () => {
+  it('lies on the mari as a flattened pearl, not a round pipe', () => {
+    // Kagari pearl cotton is oval: half as tall as it is wide (STITCH_FLAT).
+    const flat = 0.5;
     for (const kind of ['pearl5', 'pearl8'] as ThreadKind[]) {
       const radius = stitchRadius(kind), geometry = createMotifGeometry([arc()], 0, kind)!;
       try {
@@ -43,8 +45,9 @@ describe('studio thread section', () => {
           // The central portion is a known great-circle centreline of radius
           // 1+r in the XY plane. Exclude the explicitly buried end passages.
           if (Math.abs(Math.atan2(x, y)) > .9) continue;
-          const sectionRadius = Math.hypot(Math.hypot(x, y) - (1 + radius), z);
-          assert.ok(Math.abs(sectionRadius - radius) < 2e-7, `${kind}: section ${sectionRadius}`);
+          const radial = Math.hypot(x, y) - (1 + radius);
+          const q = Math.hypot(radial / (radius * flat), z / radius);
+          assert.ok(Math.abs(q - 1) < 5e-5, `${kind}: section ${q}`);
           assert.ok(Math.hypot(x, y, z) >= 1 - 2e-7, 'surface yarn does not enter the mari');
           checked++;
         }
