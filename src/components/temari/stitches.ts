@@ -236,6 +236,13 @@ function nearVec(a: THREE.Vector3, b: THREE.Vector3) {
   return a.distanceToSquared(b) < 1.6e-4;
 }
 
+function sameMarkDir(a: THREE.Vector3, b: THREE.Vector3) {
+  const da = a.length();
+  const db = b.length();
+  if (da < 1e-9 || db < 1e-9) return false;
+  return a.dot(b) / (da * db) > 0.999;
+}
+
 /**
  * Replace the cusp at `mark` with a V-turn on the mari.
  * Inner: on the mark, not a W across the jiwari and not a loop into the cap.
@@ -248,9 +255,9 @@ function joinAroundMark(
   pearl: number,
 ) {
   const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
-  // Inner: keep the V's approach. A wide trim made a 180° U the size of a pearl
-  // — a knob. Outer can sit closer to the pin.
-  const keep = pearl * (inner ? 0.28 : 0.5);
+  // Fillet wider than the cord. Tighter than a pearl, the tube intersects
+  // itself and reads as a cut (the ragged inner corners).
+  const keep = pearl * (inner ? 1.05 : 0.7);
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
@@ -261,13 +268,6 @@ function joinAroundMark(
   const toRaw = piece[i];
   if (!fromRaw || !toRaw) {
     for (let k = i; k < piece.length; k++) pts.push(piece[k]!);
-    return;
-  }
-  if (fromRaw.distanceToSquared(toRaw) < pearl * pearl * 0.05) {
-    for (let k = i; k < piece.length; k++) {
-      if (k === 0 && nearVec(fromRaw, piece[k]!)) continue;
-      pts.push(piece[k]!);
-    }
     return;
   }
   const atKeep = (p: THREE.Vector3) => {
@@ -296,7 +296,10 @@ function joinAroundMark(
         12,
       );
   for (const p of join) pts.push(new THREE.Vector3(p[0], p[1], p[2]));
-  for (let k = i + 1; k < piece.length; k++) pts.push(piece[k]!);
+  const toDist = to.distanceToSquared(mark);
+  let k = i;
+  while (k < piece.length && piece[k]!.distanceToSquared(mark) <= toDist + 1e-8) k++;
+  for (; k < piece.length; k++) pts.push(piece[k]!);
 }
 
 /**
@@ -312,12 +315,17 @@ function scoopOnPath(
 ): THREE.Vector3[] {
   const half = unitFromMm(kindMm(kind)) * 0.5;
   const surfaceR = at.length();
-  const guide = from;
+  const inner = Math.abs(at.y) / (at.length() || 1) > 0.75;
+  // Inner park: dive back under the stitch. Walking past the mark toward
+  // the pole is the stub in the cap.
+  const guide = inner
+    ? _t.copy(at).multiplyScalar(2).sub(from)
+    : from;
   const units = scoopAway(
     [at.x, at.y, at.z],
     [guide.x, guide.y, guide.z],
     8,
-    undefined,
+    inner ? 1.2 : undefined,
   );
   const n = units.length;
   if (n === 0) return [];
@@ -441,7 +449,7 @@ function stackedArcChainParts(
     }
     const mark = pts[pts.length - 1]!;
     const next0 = piece[0]!;
-    if (nearVec(mark, next0) && pts.length > 1 && piece.length > 1) {
+    if (sameMarkDir(mark, next0) && pts.length > 1 && piece.length > 1) {
       // One working thread: the V turns on the mari. Splitting here buried
       // both flanks and left a knob at every inner (and outer) mark.
       joinAroundMark(pts, piece, mark, unitFromMm(kindMm(kind)));
