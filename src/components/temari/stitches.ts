@@ -421,21 +421,13 @@ function stackedArcChainParts(
     const one = stackedArcCord(chain[0]!, kind);
     return (one.getAttribute("position")?.count ?? 0) > 0 ? [one] : [];
   }
-  const pearl = unitFromMm(kindMm(kind));
   const parts: THREE.BufferGeometry[] = [];
-  const isInner = (p: THREE.Vector3) => Math.abs(p.y) / (p.length() || 1) > 0.75;
-  const flush = (pts: THREE.Vector3[], parks: boolean) => {
+  const flush = (pts: THREE.Vector3[]) => {
     if (pts.length < 2) return;
-    // A closed kai returns to the first inner mark. That is still a kagari:
-    // the last petal dives. parks-only would leave two petals (last of A, last
-    // of B) sitting on the cap.
-    const dive = !parks || isInner(pts[pts.length - 1]!);
-    const path = dive ? buryWorkingEnds(pts, kind) : buryWorkingStart(pts, kind);
-    parts.push(cachedTube(path, stitchRadius(kind), false, false, twistPerUnit(kind)));
+    parts.push(cachedTube(buryWorkingEnds(pts, kind), stitchRadius(kind), false, false, twistPerUnit(kind)));
   };
   let pts: THREE.Vector3[] = [];
   let kai0 = chain[0]?.kai;
-  let headA = chain[0]?.a;
   const joinPiece = (piece: THREE.Vector3[]) => {
     if (pts.length === 0) {
       pts.push(...piece);
@@ -444,39 +436,27 @@ function stackedArcChainParts(
     const mark = pts[pts.length - 1]!;
     const next0 = piece[0]!;
     if (nearVec(mark, next0) && pts.length > 1 && piece.length > 1) {
-      // Inner uwagake: the needle goes under the wrap. Keep one cord around
-      // the outer V; at the inner mark the pearl dives and the next petal
-      // comes up. Welding those corners left a braid sitting on the cap.
-      const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
-      if (inner) {
-        flush(pts, false);
-        pts = [...piece];
-        return;
-      }
-      pts.pop();
-      joinAroundMark(pts, piece, mark, pearl);
-    } else {
-      const start = nearVec(mark, next0) ? 1 : 0;
-      for (let k = start; k < piece.length; k++) pts.push(piece[k]!);
+      // One flank, then kagari: the pearl dives under the wrap and the next
+      // ray comes up. Welding inner or outer left a braid on the mari.
+      flush(pts);
+      pts = [...piece];
+      return;
     }
+    const start = nearVec(mark, next0) ? 1 : 0;
+    for (let k = start; k < piece.length; k++) pts.push(piece[k]!);
   };
   for (let i = 0; i < chain.length; i++) {
     const s = chain[i]!;
     if (s.kai !== kai0 && pts.length) {
-      const prev = chain[i - 1]!;
-      flush(pts, !!(headA && sameMark(headA, prev.b)));
+      flush(pts);
       pts = [];
       kai0 = s.kai;
-      headA = s.a;
     }
     const piece = arcPath(s, kind);
     if (piece.length < 2) continue;
     joinPiece(piece);
   }
-  if (pts.length >= 2) {
-    const last = chain[chain.length - 1]!;
-    flush(pts, !!(headA && sameMark(headA, last.b)));
-  }
+  if (pts.length >= 2) flush(pts);
   return parts.filter((g) => (g.getAttribute("position")?.count ?? 0) > 0);
 }
 
