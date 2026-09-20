@@ -185,5 +185,13 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
       }
     }
     assert.ok(bR > aR, `inner leaving does not sit on arriving (${bR.toFixed(3)} vs ${aR.toFixed(3)})`);
+    const pole = new THREE.Vector3(0, 1, 0);
+    const markDot = mark.clone().normalize().dot(pole);
+    for (const p of pts) {
+      assert.ok(
+        p.clone().normalize().dot(pole) <= markDot + 0.02,
+        "inner bite walked into the cap",
+      );
+    }
   });
 });

@@ -447,7 +447,6 @@ export function Ball() {
   const group = useRef<THREE.Group>(null);
   const shafts = useRef<THREE.InstancedMesh>(null);
   const heads = useRef<THREE.InstancedMesh>(null);
-  const rims = useRef<THREE.InstancedMesh>(null);
   const targets = useRef<THREE.InstancedMesh>(null);
   const targetRims = useRef<THREE.InstancedMesh>(null);
   const needle = useRef<THREE.Mesh>(null);
@@ -678,16 +677,11 @@ export function Ball() {
       dummy.scale.setScalar(i === activePin ? 1.28 : 1);
       dummy.updateMatrix();
       head.setMatrixAt(i, dummy.matrix);
-      rims.current?.setMatrixAt(i, dummy.matrix);
     });
     shaft.count = pins.length;
     head.count = pins.length;
     shaft.instanceMatrix.needsUpdate = true;
     head.instanceMatrix.needsUpdate = true;
-    if (rims.current) {
-      rims.current.count = pins.length;
-      rims.current.instanceMatrix.needsUpdate = true;
-    }
   }, [activePin, dummy, pins]);
 
   useLayoutEffect(() => {
@@ -958,9 +952,10 @@ export function Ball() {
       },
       startAt: (x: number, y: number, z: number) => useTemari.getState().setStartPin([x, y, z]),
       fillKiku: () => useTemari.getState().fillKiku(),
-      packKiku: () => {
+      packKiku: (wanted = 6) => {
         const s = useTemari.getState();
-        const plan = generateMotif("simple", "kiku", "out", "even", 0, s.selectedColor, 6, "all");
+        const n = typeof wanted === "number" && wanted > 0 ? wanted : 6;
+        const plan = generateMotif("simple", "kiku", "out", "even", 0, s.selectedColor, n, "all");
         useTemari.setState({
           division: "simple",
           facingPole: 0,
@@ -969,7 +964,7 @@ export function Ball() {
           kagariPlan: plan,
           kagariLaid: plan.length,
           kagariPlaying: false,
-          kikuLayers: 6,
+          kikuLayers: n,
           kagariSet: 1,
           kagariFocus: null,
         });
@@ -1409,19 +1404,6 @@ export function Ball() {
       >
         <sphereGeometry args={[0.03, 24, 16]} />
         <meshStandardMaterial color="#f4efe6" roughness={0.16} metalness={0.12} />
-      </instancedMesh>
-      {/* A dark rim keeps the head visible on a light wrap. */}
-      <instancedMesh
-        ref={rims}
-        args={[undefined, undefined, 80]}
-        frustumCulled={false}
-        visible={mode === "studio" && pins.length > 0}
-        count={pins.length}
-        renderOrder={20}
-        raycast={() => {}}
-      >
-        <sphereGeometry args={[0.038, 20, 14]} />
-        <meshBasicMaterial color="#181411" side={THREE.BackSide} toneMapped={false} />
       </instancedMesh>
     </group>
   );
