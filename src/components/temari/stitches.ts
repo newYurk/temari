@@ -243,37 +243,6 @@ function samePin(a: THREE.Vector3, b: THREE.Vector3) {
   return _ua.distanceToSquared(_ub) < 4e-5;
 }
 
-/**
- * Needle at a mark: in on the far side of the jiwari, short run under
- * the wrap, out on the near side. A V on the mari never goes in.
- */
-function jiwariPorts(
-  mark: THREE.Vector3,
-  from: THREE.Vector3,
-  enter?: [number, number, number],
-  exit?: [number, number, number],
-) {
-  const m = mark.clone().normalize();
-  let a: THREE.Vector3;
-  let b: THREE.Vector3;
-  if (enter && exit) {
-    a = new THREE.Vector3(enter[0], enter[1], enter[2]).normalize();
-    b = new THREE.Vector3(exit[0], exit[1], exit[2]).normalize();
-  } else {
-    const pole = new THREE.Vector3(0, m.y >= 0 ? 1 : -1, 0);
-    const across = new THREE.Vector3().crossVectors(m, pole);
-    if (across.lengthSq() < 1e-12) across.set(1, 0, 0);
-    across.normalize();
-    const half = unitFromMm(0.71) * 0.5;
-    a = m.clone().addScaledVector(across, -half).normalize();
-    b = m.clone().addScaledVector(across, half).normalize();
-  }
-  const f = from.clone().normalize();
-  // In on the far side of the guideline, out on the near side.
-  if (f.distanceToSquared(a) < f.distanceToSquared(b)) return { inn: b, out: a };
-  return { inn: a, out: b };
-}
-
 export function sewKagariBite(
   from: THREE.Vector3,
   mark: THREE.Vector3,
@@ -287,27 +256,22 @@ export function sewKagariBite(
   return [...inPts, ...outPts];
 }
 
-function smooth01(t: number) {
-  const u = Math.min(1, Math.max(0, t));
-  return u * u * (3 - 2 * u);
-}
-
 /**
  * Visible needle only. Outer reverse pickup: flanks meet as a V at the
- * tip on the pole side of the pin, leaving over arriving. A short hop to
- * the far port then dives under that cross. Slerping a whole flank to a
- * far port is a diagonal that bulges past the pin — a knot, not kagari.
+ * tip on the pole side of the pin, leaving over arriving. The hidden
+ * run under the wrap is not drawn — a hop or a dive here sits on the
+ * pin as a stub.
  *
- * Inner uwagake is the same V on the stack, no hop, no dive. A span
- * between inn and out was a chopped hole at the pole.
+ * Inner uwagake is the same V on the stack. A span between inn and out
+ * was a chopped hole at the pole.
  */
 function sewKagariLegs(
   from: THREE.Vector3,
   mark: THREE.Vector3,
   to: THREE.Vector3,
   kind: ThreadKind,
-  enter?: [number, number, number],
-  exit?: [number, number, number],
+  _enter?: [number, number, number],
+  _exit?: [number, number, number],
   onStack = false,
 ): { inPts: THREE.Vector3[]; outPts: THREE.Vector3[] } {
   const half = unitFromMm(kindMm(kind)) * 0.5;
@@ -321,31 +285,15 @@ function sewKagariLegs(
   towardPole.normalize();
   const tip = m.clone();
   if (!onStack) tip.addScaledVector(towardPole, unitFromMm(0.18)).normalize();
-  let inn = tip.clone();
-  if (!onStack) {
-    const ports = jiwariPorts(mark, from, enter, exit);
-    const across = ports.inn.clone().sub(ports.out);
-    if (across.lengthSq() > 1e-12) {
-      across.normalize();
-      inn = tip.clone().addScaledVector(across, unitFromMm(0.16)).normalize();
-    }
-  }
   const n = 10;
-  const hopAt = 8;
-  const buriedIn = scoopRadius(1, fromR, half);
   const inPts: THREE.Vector3[] = [];
   for (let i = 1; i <= n; i++) {
-    if (onStack || i <= hopAt) {
-      slerpUnit(from, tip, onStack ? i / n : i / hopAt, _a);
-    } else {
-      slerpUnit(tip, inn, (i - hopAt) / (n - hopAt), _a);
-    }
+    slerpUnit(from, tip, i / n, _a);
     if (onStack) {
       const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
       _a.set(c[0], c[1], c[2]).normalize();
     }
-    const dive = onStack ? 0 : smooth01((i - hopAt) / Math.max(1, n - hopAt));
-    inPts.push(_a.clone().multiplyScalar(fromR + (buriedIn - fromR) * dive));
+    inPts.push(_a.clone().multiplyScalar(fromR));
   }
   const outPts: THREE.Vector3[] = [];
   for (let i = 0; i < n; i++) {
@@ -380,9 +328,9 @@ function atKeep(mark: THREE.Vector3, p: THREE.Vector3, keep: number) {
 }
 
 /**
- * Cut the working thread at the mark: the laid flank dives in, a new
- * tube comes out the other side. Drawing the buried bite as one cord
- * was the hole-and-loop at the tip.
+ * Cut the working thread at the mark: two tubes meet as a V, leaving
+ * over arriving. Drawing the buried bite as one cord was the
+ * hole-and-loop at the tip.
  */
 function splitJoinAroundMark(
   pts: THREE.Vector3[],
@@ -1096,28 +1044,8 @@ function tubeOnSphere(
       idx.push(a, a + 1, b, b, a + 1, b + 1);
     }
   }
-  if (!taperEnds && !closed) {
-    const first = path[0]!;
-    const last = path[nPath - 1]!;
-    // Working enter/exit sit under the wrap cover. A disk there reads as a
-    // coin on a shallow scoop; skip caps once the ends have dived in.
-    if (first.length() >= 1.0 && last.length() >= 1.0) {
-      const c0 = nPath * ring;
-      const c1 = c0 + 1;
-      const t0 = tangents[0]!;
-      const t1 = tangents[tangents.length - 1]!;
-      pos.push(first.x, first.y, first.z);
-      nrm.push(-t0.x, -t0.y, -t0.z);
-      uv.push(0, 0.5);
-      pos.push(last.x, last.y, last.z);
-      nrm.push(t1.x, t1.y, t1.z);
-      uv.push(1, 0.5);
-      for (let j = 0; j < radialSegs; j++) {
-        idx.push(c0, j + 1, j);
-        idx.push(c1, (nPath - 1) * ring + j, (nPath - 1) * ring + j + 1);
-      }
-    }
-  }
+  // No end caps. A disk on a kagari join faces the pin and sits on it
+  // as a coin; working ends have already dived under the wrap.
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
