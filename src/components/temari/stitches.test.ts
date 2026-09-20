@@ -134,7 +134,7 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     for (const p of pts) {
       const d = p.clone().normalize().dot(new THREE.Vector3(0, 1, 0));
       const past = Math.acos(Math.min(1, Math.max(-1, d))) - Math.acos(Math.min(1, Math.max(-1, markDot)));
-      assert.ok(past < pearl * 0.35, "outer bite walked past the pin");
+      assert.ok(past < pearl * 0.12, "outer bite walked past the pin");
     }
     const mid = Math.floor(pts.length / 2);
     const arriving = pts.slice(0, mid);
@@ -193,5 +193,23 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
         "inner bite walked into the cap",
       );
     }
+  });
+
+  it("working start/stop tucks back under the stitch, not past the outer pin", async () => {
+    const THREE = await import("three");
+    const { workingThreadScoop } = await import("./stitches.ts");
+    const at = new THREE.Vector3(0, 0.5, 0.87).normalize();
+    const from = new THREE.Vector3(0, 0.62, 0.78).normalize();
+    const pts = workingThreadScoop(at, from, "pearl5");
+    assert.ok(pts.length >= 4, "scoop is a short dive, not a missing end");
+    const pole = new THREE.Vector3(0, 1, 0);
+    const atDot = at.dot(pole);
+    for (const p of pts) {
+      const d = p.clone().normalize().dot(pole);
+      const past = Math.acos(Math.min(1, Math.max(-1, d))) - Math.acos(Math.min(1, Math.max(-1, atDot)));
+      assert.ok(past < 0.002, "outer scoop walked past the pin toward the equator");
+    }
+    const last = pts[pts.length - 1]!;
+    assert.ok(last.length() < 0.995, "end sits under the wrap");
   });
 });

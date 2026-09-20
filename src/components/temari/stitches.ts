@@ -1,12 +1,12 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
-import type { Stitch } from "./patterns";
-import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
-import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
-import { STITCH_THREAD_MM, unitFromMm } from "./measure";
-import { WRAP_LAYERS } from "./craft";
-import { stackBump, scoopAway, scoopRadius, KAGARI_SCOOP_MM, clampNotPastPole } from "./kagari";
+import type { Stitch } from "./patterns.ts";
+import { annotateSetCrossings, groupWorkingThreads } from "./patterns.ts";
+import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread.ts";
+import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
+import { WRAP_LAYERS } from "./craft.ts";
+import { stackBump, scoopAway, scoopRadius, KAGARI_SCOOP_MM, clampNotPastPole, clampNotPastEquator } from "./kagari.ts";
 
 const ARC_SEGS = 32;
 /**
@@ -358,6 +358,9 @@ function sewKagariLegs(
     if (onStack) {
       const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
       _a.set(c[0], c[1], c[2]).normalize();
+    } else {
+      const c = clampNotPastEquator([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
+      _a.set(c[0], c[1], c[2]).normalize();
     }
     const dive = onStack ? 0 : smooth01((t - diveStart) / Math.max(0.08, 1 - diveStart));
     inPts.push(_a.clone().multiplyScalar(fromR + (buriedIn - fromR) * dive));
@@ -368,6 +371,9 @@ function sewKagariLegs(
     slerpUnit(out, to, t, _a);
     if (onStack) {
       const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
+      _a.set(c[0], c[1], c[2]).normalize();
+    } else {
+      const c = clampNotPastEquator([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
       _a.set(c[0], c[1], c[2]).normalize();
     }
     const u = (t - tOut) / 0.22;
@@ -440,9 +446,10 @@ function splitJoinAroundMark(
 
 /**
  * TemariKai: start comes up from the wrap; end goes back in.
- * Walks away from the laid stitch, dropping under the cover (r=1).
- * A parked round emerges at the start and sits on the mari at the end —
- * a closed drawing is not the thread joining itself.
+ * Tucks back under the working stitch, dropping under the cover (r=1).
+ * Walking past an outer pin toward the equator is a second knot; walking
+ * into the cap is a stub. A parked round emerges at the start and sits
+ * on the mari at the end — a closed drawing is not the thread joining itself.
  */
 function scoopOnPath(
   at: THREE.Vector3,
@@ -452,11 +459,8 @@ function scoopOnPath(
   const half = unitFromMm(kindMm(kind)) * 0.5;
   const surfaceR = at.length();
   const inner = Math.abs(at.y) / (at.length() || 1) > 0.75;
-  // Inner park: dive back under the stitch. Walking past the mark toward
-  // the pole is the stub in the cap.
-  const guide = inner
-    ? _t.copy(at).multiplyScalar(2).sub(from)
-    : from;
+  // Reflect `from` over `at`: scoopAway then walks back under the stitch.
+  const guide = _t.copy(at).multiplyScalar(2).sub(from);
   const units = scoopAway(
     [at.x, at.y, at.z],
     [guide.x, guide.y, guide.z],
@@ -469,6 +473,15 @@ function scoopOnPath(
     const r = scoopRadius((i + 1) / n, surfaceR, half);
     return new THREE.Vector3(p[0] * r, p[1] * r, p[2] * r);
   });
+}
+
+/** Start/stop of a working thread. Tests. */
+export function workingThreadScoop(
+  at: THREE.Vector3,
+  from: THREE.Vector3,
+  kind: ThreadKind,
+) {
+  return scoopOnPath(at, from, kind);
 }
 
 function buryWorkingEnds(pts: THREE.Vector3[], kind: ThreadKind): THREE.Vector3[] {
