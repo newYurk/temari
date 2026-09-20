@@ -256,22 +256,57 @@ export function sewKagariBite(
   return [...inPts, ...outPts];
 }
 
+function smooth01(t: number) {
+  const u = Math.min(1, Math.max(0, t));
+  return u * u * (3 - 2 * u);
+}
+
+/**
+ * Far and near sides of the jiwari at the tip. Needle in on the far
+ * side, out on the near — across the guideline, not toward the pin.
+ */
+function reversePorts(
+  tip: THREE.Vector3,
+  from: THREE.Vector3,
+  enter?: [number, number, number],
+  exit?: [number, number, number],
+): { inn: THREE.Vector3; out: THREE.Vector3 } {
+  const t = tip.clone().normalize();
+  const across = new THREE.Vector3();
+  if (enter && exit) {
+    across.set(exit[0] - enter[0], exit[1] - enter[1], exit[2] - enter[2]);
+    across.addScaledVector(t, -across.dot(t));
+  }
+  if (across.lengthSq() < 1e-12) {
+    const pole = new THREE.Vector3(0, t.y >= 0 ? 1 : -1, 0);
+    across.crossVectors(t, pole);
+  }
+  if (across.lengthSq() < 1e-12) across.set(1, 0, 0);
+  across.normalize();
+  const half = unitFromMm(0.71) * 0.5;
+  const a = t.clone().addScaledVector(across, -half).normalize();
+  const b = t.clone().addScaledVector(across, half).normalize();
+  const f = from.clone().normalize();
+  if (f.distanceToSquared(a) < f.distanceToSquared(b)) return { inn: b, out: a };
+  return { inn: a, out: b };
+}
+
 /**
  * Visible needle only. Outer reverse pickup: flanks meet as a V at the
- * tip on the pole side of the pin, leaving over arriving. The hidden
- * run under the wrap is not drawn — a hop or a dive here sits on the
- * pin as a stub.
+ * tip on the pole side of the pin. Arrive on the mari, go in on the far
+ * side of the jiwari, come out the near side over arriving. The hidden
+ * run is not drawn. A hop toward the pin is a stub; a tube end facing
+ * the pin is a chopped pipe.
  *
- * Inner uwagake is the same V on the stack. A span between inn and out
- * was a chopped hole at the pole.
+ * Inner uwagake is one V on the stack — not two tubes meeting as a cut.
  */
 function sewKagariLegs(
   from: THREE.Vector3,
   mark: THREE.Vector3,
   to: THREE.Vector3,
   kind: ThreadKind,
-  _enter?: [number, number, number],
-  _exit?: [number, number, number],
+  enter?: [number, number, number],
+  exit?: [number, number, number],
   onStack = false,
 ): { inPts: THREE.Vector3[]; outPts: THREE.Vector3[] } {
   const half = unitFromMm(kindMm(kind)) * 0.5;
@@ -287,25 +322,47 @@ function sewKagariLegs(
   if (!onStack) tip.addScaledVector(towardPole, unitFromMm(0.18)).normalize();
   const n = 10;
   const inPts: THREE.Vector3[] = [];
-  for (let i = 1; i <= n; i++) {
-    slerpUnit(from, tip, i / n, _a);
-    if (onStack) {
+  const outPts: THREE.Vector3[] = [];
+  if (onStack) {
+    for (let i = 1; i <= n; i++) {
+      slerpUnit(from, tip, i / n, _a);
       const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
       _a.set(c[0], c[1], c[2]).normalize();
+      inPts.push(_a.clone().multiplyScalar(fromR));
     }
+    for (let i = 0; i < n; i++) {
+      const t = i / n;
+      slerpUnit(tip, to, t, _a);
+      const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
+      _a.set(c[0], c[1], c[2]).normalize();
+      const lift = Math.exp(-(t / 0.22) * (t / 0.22));
+      const r = toR + pearl * STACK_LIFT * 1.2 * lift;
+      outPts.push(_a.clone().multiplyScalar(r));
+    }
+    return { inPts, outPts };
+  }
+  const { inn, out } = reversePorts(tip, from, enter, exit);
+  const buried = scoopRadius(1, fromR, half);
+  const k = 4;
+  const lift0 = pearl * STACK_LIFT * 1.35;
+  for (let i = 1; i <= n; i++) {
+    slerpUnit(from, tip, i / n, _a);
     inPts.push(_a.clone().multiplyScalar(fromR));
   }
-  const outPts: THREE.Vector3[] = [];
+  for (let i = 1; i <= k; i++) {
+    slerpUnit(tip, inn, i / k, _a);
+    const dive = smooth01(i / k);
+    inPts.push(_a.clone().multiplyScalar(fromR + (buried - fromR) * dive));
+  }
+  for (let i = 0; i < k; i++) {
+    slerpUnit(out, tip, i / k, _a);
+    outPts.push(_a.clone().multiplyScalar(toR + lift0));
+  }
   for (let i = 0; i < n; i++) {
     const t = i / n;
     slerpUnit(tip, to, t, _a);
-    if (onStack) {
-      const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
-      _a.set(c[0], c[1], c[2]).normalize();
-    }
     const lift = Math.exp(-(t / 0.22) * (t / 0.22));
-    const r = toR + pearl * STACK_LIFT * (onStack ? 1.2 : 1.35) * lift;
-    outPts.push(_a.clone().multiplyScalar(r));
+    outPts.push(_a.clone().multiplyScalar(toR + lift0 * lift));
   }
   return { inPts, outPts };
 }
@@ -327,19 +384,11 @@ function atKeep(mark: THREE.Vector3, p: THREE.Vector3, keep: number) {
   return _a.clone();
 }
 
-/**
- * Cut the working thread at the mark: two tubes meet as a V, leaving
- * over arriving. Drawing the buried bite as one cord was the
- * hole-and-loop at the tip.
- */
-function splitJoinAroundMark(
+function clipAroundMark(
   pts: THREE.Vector3[],
   piece: THREE.Vector3[],
   mark: THREE.Vector3,
-  kind: ThreadKind,
-  bite?: { enter: [number, number, number]; exit: [number, number, number] },
-  onStack = false,
-): { head: THREE.Vector3[]; tail: THREE.Vector3[]; outPts: THREE.Vector3[] } {
+): { from: THREE.Vector3; to: THREE.Vector3; k: number } | null {
   const keep = unitFromMm(KAGARI_SCOOP_MM);
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
@@ -349,19 +398,41 @@ function splitJoinAroundMark(
   while (i < piece.length - 2 && piece[i]!.distanceToSquared(mark) < keep2) i++;
   const fromRaw = pts[pts.length - 1];
   const toRaw = piece[i];
-  if (!fromRaw || !toRaw) {
-    return { head: pts, tail: piece.slice(i), outPts: [] };
-  }
+  if (!fromRaw || !toRaw) return null;
   const from = atKeep(mark, fromRaw, keep);
   const to = atKeep(mark, toRaw, keep);
   pts.pop();
-  const { inPts, outPts } = sewKagariLegs(from, mark, to, kind, bite?.enter, bite?.exit, onStack);
-  const head = [...pts, from, ...inPts];
   const toDist = to.distanceToSquared(mark);
   let k = i;
   while (k < piece.length && piece[k]!.distanceToSquared(mark) <= toDist + 1e-8) k++;
-  const tail = [...outPts, to, ...piece.slice(k)];
-  return { head, tail, outPts };
+  return { from, to, k };
+}
+
+/**
+ * Cut the working thread at an outer mark: arriving dives across the
+ * jiwari, leaving comes out over it. Drawing the buried bite as one
+ * cord was the hole-and-loop at the tip. Inner marks stay one cord.
+ */
+function splitJoinAroundMark(
+  pts: THREE.Vector3[],
+  piece: THREE.Vector3[],
+  mark: THREE.Vector3,
+  kind: ThreadKind,
+  bite?: { enter: [number, number, number]; exit: [number, number, number] },
+  onStack = false,
+): { head: THREE.Vector3[]; tail: THREE.Vector3[]; outPts: THREE.Vector3[] } {
+  const clip = clipAroundMark(pts, piece, mark);
+  if (!clip) {
+    return { head: pts, tail: piece, outPts: [] };
+  }
+  const { inPts, outPts } = sewKagariLegs(
+    clip.from, mark, clip.to, kind, bite?.enter, bite?.exit, onStack,
+  );
+  return {
+    head: [...pts, clip.from, ...inPts],
+    tail: [...outPts, clip.to, ...piece.slice(clip.k)],
+    outPts,
+  };
 }
 
 /**
@@ -570,6 +641,21 @@ function stackedArcChainParts(
     const mark = pts[pts.length - 1]!;
     const next0 = piece[0]!;
     if (samePin(mark, next0) && pts.length > 1 && piece.length > 1) {
+      const onStack = prevTip === "inner"
+        || (prevTip !== "outer" && Math.abs(mark.y) / (mark.length() || 1) > 0.75);
+      if (onStack) {
+        const clip = clipAroundMark(pts, piece, mark);
+        if (clip) {
+          const { inPts, outPts } = sewKagariLegs(
+            clip.from, mark, clip.to, kind, prevBite?.enter, prevBite?.exit, true,
+          );
+          pts.push(clip.from, ...inPts, ...outPts, clip.to, ...piece.slice(clip.k));
+        } else {
+          pts.push(...piece);
+        }
+        emerge = false;
+        return;
+      }
       const { head, tail } = joinAt(piece);
       if (pending === null) pending = head;
       else tube(head, false, false);

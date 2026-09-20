@@ -119,7 +119,7 @@ describe("kiku mark turn is a V on the mari, not a zipper or a tail", () => {
 });
 
 describe("kagari bite goes in one side of the jiwari and out the other", () => {
-  it("stays on the mari through the cross, and does not walk past the outer pin", async () => {
+  it("stays on the mari through the cross, then goes in across the jiwari, not toward the pin", async () => {
     const THREE = await import("three");
     const { sewKagariBite } = await import("./stitches.ts");
     const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
@@ -128,8 +128,6 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     const from = new THREE.Vector3(0.12, 0.55, 0.82).normalize().multiplyScalar(r);
     const to = new THREE.Vector3(-0.12, 0.55, 0.82).normalize().multiplyScalar(r);
     const pts = sewKagariBite(from, mark, to, "pearl5");
-    const floor = Math.min(...pts.map((p) => p.length()));
-    assert.ok(floor >= 0.995, `outer reverse pickup dives through the wrap (${floor.toFixed(3)})`);
     const markDot = mark.clone().normalize().dot(new THREE.Vector3(0, 1, 0));
     for (const p of pts) {
       const d = p.clone().normalize().dot(new THREE.Vector3(0, 1, 0));
@@ -139,11 +137,16 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     const mid = Math.floor(pts.length / 2);
     const arriving = pts.slice(0, mid);
     const leaving = pts.slice(mid);
+    const arrivingSurf = arriving.filter((p) => p.length() >= 0.995);
+    const leavingSurf = leaving.filter((p) => p.length() >= 0.995);
+    assert.ok(arrivingSurf.length >= 8, `outer V dives before the cross (${arrivingSurf.length})`);
+    const lastIn = arriving[arriving.length - 1]!;
+    assert.ok(lastIn.length() < 0.995, `needle does not go in across the jiwari (${lastIn.length().toFixed(3)})`);
     let best = Infinity;
     let aR = 0;
     let bR = 0;
-    for (const a of arriving) {
-      for (const b of leaving) {
+    for (const a of arrivingSurf) {
+      for (const b of leavingSurf) {
         const d = a.distanceToSquared(b);
         if (d < best) {
           best = d;
