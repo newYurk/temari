@@ -6,7 +6,7 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
-import { stackBump, scoopAway, scoopRadius } from "./kagari";
+import { stackBump, scoopAway, scoopRadius, KAGARI_SCOOP_MM } from "./kagari";
 
 const ARC_SEGS = 32;
 /**
@@ -244,11 +244,11 @@ function sameMarkDir(a: THREE.Vector3, b: THREE.Vector3) {
 }
 
 /**
- * One kagari bite: the working thread dives under the wrap at the mark
- * and comes up the other flank. A surface V sits on the mari; two buried
- * ends were the knobs at the pole.
+ * One kagari bite: the working thread dives under the wrap ~2 mm before
+ * the mark and comes up the other flank. A surface V sits on the mari;
+ * two buried ends were the knobs at the pole.
  */
-function stitchDive(
+export function stitchDive(
   from: THREE.Vector3,
   mark: THREE.Vector3,
   to: THREE.Vector3,
@@ -257,17 +257,19 @@ function stitchDive(
   const half = unitFromMm(kindMm(kind)) * 0.5;
   const fromR = from.length();
   const toR = to.length();
-  const n = 8;
+  const n = 10;
   const out: THREE.Vector3[] = [];
+  // Fully under the cover by halfway, so the tip is hidden and the last
+  // visible pearl is the scoop — not a point sitting on the maki.
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     slerpUnit(from, mark, t, _a);
-    out.push(_a.clone().multiplyScalar(scoopRadius(t, fromR, half)));
+    out.push(_a.clone().multiplyScalar(scoopRadius(Math.min(1, t / 0.45), fromR, half)));
   }
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     slerpUnit(mark, to, t, _a);
-    out.push(_a.clone().multiplyScalar(scoopRadius(1 - t, toR, half)));
+    out.push(_a.clone().multiplyScalar(scoopRadius(Math.min(1, (1 - t) / 0.45), toR, half)));
   }
   return out;
 }
@@ -284,7 +286,7 @@ function joinAroundMark(
   pearl: number,
   kind: ThreadKind,
 ) {
-  const keep = pearl * 1.15;
+  const keep = unitFromMm(KAGARI_SCOOP_MM) + pearl * 0.5;
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
