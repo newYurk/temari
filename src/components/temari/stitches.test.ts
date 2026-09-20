@@ -119,7 +119,7 @@ describe("kiku mark turn is a V on the mari, not a zipper or a tail", () => {
 });
 
 describe("kagari bite goes in one side of the jiwari and out the other", () => {
-  it("centerline dives under the wrap and does not walk past the outer pin", async () => {
+  it("stays on the mari through the cross, then dives, and does not walk past the outer pin", async () => {
     const THREE = await import("three");
     const { sewKagariBite } = await import("./stitches.ts");
     const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
@@ -136,10 +136,54 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
       const past = Math.acos(Math.min(1, Math.max(-1, d))) - Math.acos(Math.min(1, Math.max(-1, markDot)));
       assert.ok(past < pearl * 0.35, "outer bite walked past the pin");
     }
-    // Hidden inn→out is not in the path: a surface U at the mark was the hole.
-    const near = pts.filter((p) => p.distanceTo(mark) < pearl * 0.8);
-    for (const p of near) {
-      assert.ok(p.length() < 1, "bite at the pin still sits on the mari");
+    const mid = Math.floor(pts.length / 2);
+    const arriving = pts.slice(0, mid);
+    const leaving = pts.slice(mid);
+    let best = Infinity;
+    let aR = 0;
+    let bR = 0;
+    for (const a of arriving) {
+      for (const b of leaving) {
+        const d = a.distanceToSquared(b);
+        if (d < best) {
+          best = d;
+          aR = a.length();
+          bR = b.length();
+        }
+      }
     }
+    assert.ok(aR >= 1, `arriving is already under the wrap at the cross (${aR.toFixed(3)})`);
+    assert.ok(bR >= 1, `leaving is under the wrap at the cross (${bR.toFixed(3)})`);
+    assert.ok(bR > aR, `leaving does not sit on arriving at the cross (${bR.toFixed(3)} vs ${aR.toFixed(3)})`);
+  });
+
+  it("inner uwagake stays on the stack and still crosses, leaving over arriving", async () => {
+    const THREE = await import("three");
+    const { sewKagariBite } = await import("./stitches.ts");
+    const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
+    const r = 1 + pearl * 0.5;
+    const mark = new THREE.Vector3(0.04, 0.99, 0.12).normalize().multiplyScalar(r);
+    const from = new THREE.Vector3(0.055, 0.987, 0.14).normalize().multiplyScalar(r);
+    const to = new THREE.Vector3(0.025, 0.987, 0.155).normalize().multiplyScalar(r);
+    const pts = sewKagariBite(from, mark, to, "pearl5", undefined, undefined, true);
+    const floor = Math.min(...pts.map((p) => p.length()));
+    assert.ok(floor >= 1, `inner uwagake dives through the cover (${floor.toFixed(3)})`);
+    const mid = Math.floor(pts.length / 2);
+    const arriving = pts.slice(0, mid);
+    const leaving = pts.slice(mid);
+    let best = Infinity;
+    let aR = 0;
+    let bR = 0;
+    for (const a of arriving) {
+      for (const b of leaving) {
+        const d = a.distanceToSquared(b);
+        if (d < best) {
+          best = d;
+          aR = a.length();
+          bR = b.length();
+        }
+      }
+    }
+    assert.ok(bR > aR, `inner leaving does not sit on arriving (${bR.toFixed(3)} vs ${aR.toFixed(3)})`);
   });
 });

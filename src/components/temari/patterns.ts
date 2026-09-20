@@ -73,6 +73,8 @@ export type Stitch =
       /** Later kai sitting on earlier opposite-set threads at real crossings. */
       sitAts?: { t: number; n: number }[];
       bite?: { enter: Vec3; exit: Vec3 };
+      /** Inner uwagake sits on the stack; outer is a reverse pickup. */
+      tip?: "inner" | "outer";
       via?: Vec3[];
       /** Working thread: one cord per pole+set, parked between kai. */
       set?: 0 | 1;
@@ -855,6 +857,7 @@ function kikuPetal(
       set,
       pole: poleIndex,
       kai: ring,
+      tip: "outer",
     },
     {
       kind: "arc",
@@ -869,6 +872,7 @@ function kikuPetal(
       set,
       pole: poleIndex,
       kai: ring,
+      tip: "inner",
     },
   ];
 }
@@ -1005,6 +1009,7 @@ export function stitchesFromOps(ops: KagariOp[]): Stitch[] {
       set: op.set,
       pole: op.pole,
       kai: op.kai,
+      tip: op.mark.t,
     };
   });
   return annotateSetCrossings(stitches);
