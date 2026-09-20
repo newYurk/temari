@@ -136,5 +136,10 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
       const past = Math.acos(Math.min(1, Math.max(-1, d))) - Math.acos(Math.min(1, Math.max(-1, markDot)));
       assert.ok(past < pearl * 0.35, "outer bite walked past the pin");
     }
+    // Hidden inn→out is not in the path: a surface U at the mark was the hole.
+    const near = pts.filter((p) => p.distanceTo(mark) < pearl * 0.8);
+    for (const p of near) {
+      assert.ok(p.length() < 1, "bite at the pin still sits on the mari");
+    }
   });
 });

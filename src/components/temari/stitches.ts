@@ -6,7 +6,7 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
-import { stackBump, scoopAway, scoopRadius } from "./kagari";
+import { stackBump, scoopAway, scoopRadius, KAGARI_SCOOP_MM } from "./kagari";
 
 const ARC_SEGS = 32;
 /**
@@ -282,29 +282,41 @@ export function sewKagariBite(
   enter?: [number, number, number],
   exit?: [number, number, number],
 ): THREE.Vector3[] {
+  const { inPts, outPts } = sewKagariLegs(from, mark, to, kind, enter, exit);
+  return [...inPts, ...outPts];
+}
+
+/**
+ * Visible needle only: down on the far side of the jiwari, up on the near
+ * side. The hidden run under the wrap is not drawn — a U there is a hole
+ * with a loop, not kagari.
+ */
+function sewKagariLegs(
+  from: THREE.Vector3,
+  mark: THREE.Vector3,
+  to: THREE.Vector3,
+  kind: ThreadKind,
+  enter?: [number, number, number],
+  exit?: [number, number, number],
+): { inPts: THREE.Vector3[]; outPts: THREE.Vector3[] } {
   const half = unitFromMm(kindMm(kind)) * 0.5;
   const fromR = from.length();
   const toR = to.length();
   const { inn, out } = jiwariPorts(mark, from, enter, exit);
-  const buried = scoopRadius(1, Math.min(fromR, toR), half);
   const n = 8;
-  const pts: THREE.Vector3[] = [];
+  const inPts: THREE.Vector3[] = [];
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     slerpUnit(from, inn, t, _a);
-    pts.push(_a.clone().multiplyScalar(scoopRadius(t, fromR, half)));
+    inPts.push(_a.clone().multiplyScalar(scoopRadius(t, fromR, half)));
   }
-  for (let i = 1; i <= n; i++) {
-    const t = i / n;
-    slerpUnit(inn, out, t, _a);
-    pts.push(_a.clone().multiplyScalar(buried));
-  }
-  for (let i = 1; i <= n; i++) {
+  const outPts: THREE.Vector3[] = [];
+  for (let i = 0; i < n; i++) {
     const t = i / n;
     slerpUnit(out, to, t, _a);
-    pts.push(_a.clone().multiplyScalar(scoopRadius(1 - t, toR, half)));
+    outPts.push(_a.clone().multiplyScalar(scoopRadius(1 - t, toR, half)));
   }
-  return pts;
+  return { inPts, outPts };
 }
 
 /** @deprecated tests; same needle as sewKagariBite. */
@@ -317,15 +329,26 @@ export function outerBackbite(
   return sewKagariBite(from, mark, to, kind);
 }
 
-function joinAroundMark(
+function atKeep(mark: THREE.Vector3, p: THREE.Vector3, keep: number) {
+  const d = p.distanceTo(mark);
+  if (d <= keep || d < 1e-9) return p.clone();
+  slerp(mark, p, keep / d, _a);
+  return _a.clone();
+}
+
+/**
+ * Cut the working thread at the mark: the laid flank dives in, a new
+ * tube comes out the other side. Drawing the buried bite as one cord
+ * was the hole-and-loop at the tip.
+ */
+function splitJoinAroundMark(
   pts: THREE.Vector3[],
   piece: THREE.Vector3[],
   mark: THREE.Vector3,
-  pearl: number,
   kind: ThreadKind,
   bite?: { enter: [number, number, number]; exit: [number, number, number] },
-) {
-  const keep = pearl * 1.8;
+): { head: THREE.Vector3[]; tail: THREE.Vector3[] } {
+  const keep = unitFromMm(KAGARI_SCOOP_MM);
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
@@ -335,24 +358,18 @@ function joinAroundMark(
   const fromRaw = pts[pts.length - 1];
   const toRaw = piece[i];
   if (!fromRaw || !toRaw) {
-    for (let k = i; k < piece.length; k++) pts.push(piece[k]!);
-    return;
+    return { head: pts, tail: piece.slice(i) };
   }
-  const atKeep = (p: THREE.Vector3) => {
-    const d = p.distanceTo(mark);
-    if (d <= keep || d < 1e-9) return p.clone();
-    slerp(mark, p, keep / d, _a);
-    return _a.clone();
-  };
+  const from = atKeep(mark, fromRaw, keep);
+  const to = atKeep(mark, toRaw, keep);
   pts.pop();
-  const from = atKeep(fromRaw);
-  const to = atKeep(toRaw);
-  pts.push(from);
-  for (const p of sewKagariBite(from, mark, to, kind, bite?.enter, bite?.exit)) pts.push(p);
+  const { inPts, outPts } = sewKagariLegs(from, mark, to, kind, bite?.enter, bite?.exit);
+  const head = [...pts, from, ...inPts];
   const toDist = to.distanceToSquared(mark);
   let k = i;
   while (k < piece.length && piece[k]!.distanceToSquared(mark) <= toDist + 1e-8) k++;
-  for (; k < piece.length; k++) pts.push(piece[k]!);
+  const tail = [...outPts, to, ...piece.slice(k)];
+  return { head, tail };
 }
 
 /**
@@ -389,18 +406,26 @@ function scoopOnPath(
 }
 
 function buryWorkingEnds(pts: THREE.Vector3[], kind: ThreadKind): THREE.Vector3[] {
-  if (pts.length < 2) return pts;
-  const head = scoopOnPath(pts[0]!, pts[1]!, kind);
-  const tail = scoopOnPath(pts[pts.length - 1]!, pts[pts.length - 2]!, kind);
-  if (head.length === 0 && tail.length === 0) return pts;
-  return [...head.reverse(), ...pts, ...tail];
+  return buryEnds(pts, kind, true, true);
 }
 
-function buryWorkingStart(pts: THREE.Vector3[], kind: ThreadKind): THREE.Vector3[] {
+function buryEnds(
+  pts: THREE.Vector3[],
+  kind: ThreadKind,
+  start: boolean,
+  stop: boolean,
+): THREE.Vector3[] {
   if (pts.length < 2) return pts;
-  const head = scoopOnPath(pts[0]!, pts[1]!, kind);
-  if (head.length === 0) return pts;
-  return [...head.reverse(), ...pts];
+  let out = pts;
+  if (start) {
+    const head = scoopOnPath(out[0]!, out[1]!, kind);
+    if (head.length) out = [...head.reverse(), ...out];
+  }
+  if (stop && out.length >= 2) {
+    const tail = scoopOnPath(out[out.length - 1]!, out[out.length - 2]!, kind);
+    if (tail.length) out = [...out, ...tail];
+  }
+  return out;
 }
 
 /**
@@ -489,13 +514,20 @@ function stackedArcChainParts(
     return (one.getAttribute("position")?.count ?? 0) > 0 ? [one] : [];
   }
   const parts: THREE.BufferGeometry[] = [];
-  const flush = (pts: THREE.Vector3[]) => {
+  const tube = (pts: THREE.Vector3[], buryStart: boolean, buryStop: boolean) => {
     if (pts.length < 2) return;
-    parts.push(cachedTube(buryWorkingEnds(pts, kind), stitchRadius(kind), false, false, twistPerUnit(kind)));
+    parts.push(cachedTube(
+      buryEnds(pts, kind, buryStart, buryStop),
+      stitchRadius(kind),
+      false,
+      false,
+      twistPerUnit(kind),
+    ));
   };
   let pts: THREE.Vector3[] = [];
   let kai0 = chain[0]?.kai;
   let prevBite: { enter: [number, number, number]; exit: [number, number, number] } | undefined;
+  let buryStart = true;
   const joinPiece = (piece: THREE.Vector3[]) => {
     if (pts.length === 0) {
       pts.push(...piece);
@@ -504,7 +536,10 @@ function stackedArcChainParts(
     const mark = pts[pts.length - 1]!;
     const next0 = piece[0]!;
     if (sameMarkDir(mark, next0) && pts.length > 1 && piece.length > 1) {
-      joinAroundMark(pts, piece, mark, unitFromMm(kindMm(kind)), kind, prevBite);
+      const { head, tail } = splitJoinAroundMark(pts, piece, mark, kind, prevBite);
+      tube(head, buryStart, false);
+      pts = tail;
+      buryStart = false;
       return;
     }
     const start = nearVec(mark, next0) ? 1 : 0;
@@ -513,8 +548,9 @@ function stackedArcChainParts(
   for (let i = 0; i < chain.length; i++) {
     const s = chain[i]!;
     if (s.kai !== kai0 && pts.length) {
-      flush(pts);
+      tube(pts, buryStart, true);
       pts = [];
+      buryStart = true;
       kai0 = s.kai;
       prevBite = undefined;
     }
@@ -523,7 +559,7 @@ function stackedArcChainParts(
     joinPiece(piece);
     prevBite = s.bite;
   }
-  if (pts.length >= 2) flush(pts);
+  if (pts.length >= 2) tube(pts, buryStart, true);
   return parts.filter((g) => (g.getAttribute("position")?.count ?? 0) > 0);
 }
 
