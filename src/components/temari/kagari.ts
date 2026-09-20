@@ -454,116 +454,29 @@ export function smallCircleJoin(from: Vec3, to: Vec3, pole: Vec3, n: number): Ve
 }
 
 /**
- * Inner uwagake: a pearl bite *across* the jiwari.
- * A small-circle around the pole is a 90° noodle on the cap — macaroni from above.
- * The visible bead is one pearl, not a loop.
+ * Inner uwagake: the V turns on the mark, on top of the stack.
+ * A dash across the jiwari kinks into a W. A loop toward the pole is
+ * macaroni on the cap. The scoop under the wrap is not drawn.
  */
-export function innerBiteJoin(from: Vec3, mark: Vec3, to: Vec3, pearl: number, n = 4): Vec3[] {
-  const m = normalize(mark);
-  const pole: Vec3 = m[1] >= 0 ? [0, 1, 0] : [0, -1, 0];
-  let across = cross(m, pole);
-  if (hypot3(across) < 1e-8) across = [1, 0, 0];
-  across = normalize(across);
+export function innerBiteJoin(from: Vec3, mark: Vec3, to: Vec3, pearl: number, n = 12): Vec3[] {
   const r = 0.5 * ((hypot3(from) || 1) + (hypot3(to) || 1));
-  const half = pearl * 0.45;
-  const mk = (s: number): Vec3 => {
-    const q = normalize([m[0] + across[0] * s, m[1] + across[1] * s, m[2] + across[2] * s]);
-    return [q[0] * r, q[1] * r, q[2] * r];
-  };
-  let enter = mk(-half);
-  let exit = mk(half);
-  const d = (a: Vec3, b: Vec3) => {
-    const dx = a[0] - b[0];
-    const dy = a[1] - b[1];
-    const dz = a[2] - b[2];
-    return dx * dx + dy * dy + dz * dz;
-  };
-  if (d(from, exit) + d(to, enter) < d(from, enter) + d(to, exit)) {
-    const tmp = enter;
-    enter = exit;
-    exit = tmp;
-  }
-  const out: Vec3[] = [];
-  const cap = Math.abs(m[1]);
-  const push = (a: Vec3, b: Vec3, steps: number) => {
-    for (let i = 1; i <= steps; i++) {
-      let p = slerp3(a, b, i / steps);
-      const L = hypot3(p) || 1;
-      if (Math.abs(p[1]) / L > cap) {
-        const rho = Math.sqrt(Math.max(0, 1 - cap * cap));
-        const pr = Math.hypot(p[0], p[2]) || 1e-9;
-        p = [(p[0] / pr) * rho * L, Math.sign(p[1]) * cap * L, (p[2] / pr) * rho * L];
-      }
-      out.push(p);
-    }
-  };
-  // Visible bead on top of the bundle. The scoop under the wrap is not drawn.
-  push(from, enter, n);
-  push(enter, exit, Math.max(2, n));
-  push(exit, to, n);
-  return out;
+  const m = normalize(mark);
+  const tip: Vec3 = [m[0] * r, m[1] * r, m[2] * r];
+  const steps = Math.max(8, n);
+  return sphereBezier(from, tip, to, steps).map((p) => clampNotPastPole(p, mark));
 }
 
 /**
- * Outer kiku point: a pearl bite *across* the jiwari, just below the pin.
- * A U past the mark is a tail that keeps going toward the equator — the
- * flower ends here. The stitch scoops wrap+mark and the working thread
- * turns back up the next meridian.
+ * Outer kiku point: the two flanks meet as a V at the mark.
+ * A dash across the meridian is a zipper of rungs down the petal.
+ * A U past the mark is a tail toward the equator.
  */
-export function outerBiteJoin(from: Vec3, mark: Vec3, to: Vec3, pearl: number, n = 3): Vec3[] {
-  const m = normalize(mark);
-  const pole: Vec3 = m[1] >= 0 ? [0, 1, 0] : [0, -1, 0];
-  const along = dot(m, pole);
-  let radial: Vec3 = [
-    m[0] - pole[0] * along,
-    m[1] - pole[1] * along,
-    m[2] - pole[2] * along,
-  ];
-  if (hypot3(radial) < 1e-8) radial = [1, 0, 0];
-  radial = normalize(radial);
-  // Just under the pin — a hair toward the equator, not a loop and not a tail.
-  const below = pearl * 0.12;
-  const center = normalize([
-    m[0] + radial[0] * below,
-    m[1] + radial[1] * below,
-    m[2] + radial[2] * below,
-  ]);
-  let across = cross(center, pole);
-  if (hypot3(across) < 1e-8) across = [1, 0, 0];
-  across = normalize(across);
+export function outerBiteJoin(from: Vec3, mark: Vec3, to: Vec3, pearl: number, n = 12): Vec3[] {
   const r = 0.5 * ((hypot3(from) || 1) + (hypot3(to) || 1));
-  const half = pearl * 0.45;
-  const mk = (s: number): Vec3 => {
-    const q = normalize([
-      center[0] + across[0] * s,
-      center[1] + across[1] * s,
-      center[2] + across[2] * s,
-    ]);
-    return [q[0] * r, q[1] * r, q[2] * r];
-  };
-  let enter = mk(-half);
-  let exit = mk(half);
-  const d2 = (a: Vec3, b: Vec3) => {
-    const dx = a[0] - b[0];
-    const dy = a[1] - b[1];
-    const dz = a[2] - b[2];
-    return dx * dx + dy * dy + dz * dz;
-  };
-  if (d2(from, exit) + d2(to, enter) < d2(from, enter) + d2(to, exit)) {
-    const tmp = enter;
-    enter = exit;
-    exit = tmp;
-  }
-  const out: Vec3[] = [];
-  const push = (a: Vec3, b: Vec3, steps: number) => {
-    for (let i = 1; i <= steps; i++) out.push(slerp3(a, b, i / steps));
-  };
-  // Visible kagari at the pin. The run under the wrap is not drawn — a buried
-  // tube still reads as a thin tail through the cover.
-  push(from, enter, n);
-  push(enter, exit, Math.max(2, n));
-  push(exit, to, n);
-  return out;
+  const pole: Vec3 = mark[1] >= 0 ? [0, 1, 0] : [0, -1, 0];
+  const tip = shiftTowardPole(pole, normalize(mark), pearl * 0.08);
+  const b: Vec3 = [tip[0] * r, tip[1] * r, tip[2] * r];
+  return sphereBezier(from, b, to, Math.max(8, n));
 }
 
 /**

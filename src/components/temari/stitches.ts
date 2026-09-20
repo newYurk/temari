@@ -236,9 +236,9 @@ function nearVec(a: THREE.Vector3, b: THREE.Vector3) {
 }
 
 /**
- * Replace the cusp at `mark` with a pearl bite across the jiwari.
- * Inner uwagake: the bite sits on the open side and must not enter the polar cap.
- * Outer kiku: the flower ends at the pin — a dash across, not a U past it.
+ * Replace the cusp at `mark` with a V-turn on the mari.
+ * Inner: on the mark, not a W across the jiwari and not a loop into the cap.
+ * Outer: the two flanks meet at the pin — not a dash (zipper) and not a tail.
  */
 function joinAroundMark(
   pts: THREE.Vector3[],
@@ -283,14 +283,14 @@ function joinAroundMark(
         [mark.x, mark.y, mark.z],
         [to.x, to.y, to.z],
         pearl,
-        3,
+        12,
       )
     : outerBiteJoinVec(
         [from.x, from.y, from.z],
         [mark.x, mark.y, mark.z],
         [to.x, to.y, to.z],
         pearl,
-        3,
+        12,
       );
   for (const p of join) pts.push(new THREE.Vector3(p[0], p[1], p[2]));
   for (let k = i + 1; k < piece.length; k++) pts.push(piece[k]!);
