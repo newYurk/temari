@@ -6,7 +6,7 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
-import { stackBump, scoopAway, scoopRadius, innerBiteJoin as innerBiteJoinVec, outerBiteJoin as outerBiteJoinVec } from "./kagari";
+import { stackBump, scoopAway, scoopRadius } from "./kagari";
 
 const ARC_SEGS = 32;
 /**
@@ -244,7 +244,36 @@ function sameMarkDir(a: THREE.Vector3, b: THREE.Vector3) {
 }
 
 /**
- * Replace the cusp at `mark` with a V-turn on the mari.
+ * One kagari bite: the working thread dives under the wrap at the mark
+ * and comes up the other flank. A surface V sits on the mari; two buried
+ * ends were the knobs at the pole.
+ */
+function stitchDive(
+  from: THREE.Vector3,
+  mark: THREE.Vector3,
+  to: THREE.Vector3,
+  kind: ThreadKind,
+): THREE.Vector3[] {
+  const half = unitFromMm(kindMm(kind)) * 0.5;
+  const fromR = from.length();
+  const toR = to.length();
+  const n = 8;
+  const out: THREE.Vector3[] = [];
+  for (let i = 1; i <= n; i++) {
+    const t = i / n;
+    slerpUnit(from, mark, t, _a);
+    out.push(_a.clone().multiplyScalar(scoopRadius(t, fromR, half)));
+  }
+  for (let i = 1; i <= n; i++) {
+    const t = i / n;
+    slerpUnit(mark, to, t, _a);
+    out.push(_a.clone().multiplyScalar(scoopRadius(1 - t, toR, half)));
+  }
+  return out;
+}
+
+/**
+ * Replace the cusp at `mark` with a bite under the wrap.
  * Inner: on the mark, not a W across the jiwari and not a loop into the cap.
  * Outer: the two flanks meet at the pin — not a dash (zipper) and not a tail.
  */
@@ -253,11 +282,9 @@ function joinAroundMark(
   piece: THREE.Vector3[],
   mark: THREE.Vector3,
   pearl: number,
+  kind: ThreadKind,
 ) {
-  const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
-  // Fillet wider than the cord. Tighter than a pearl, the tube intersects
-  // itself and reads as a cut (the ragged inner corners).
-  const keep = pearl * (inner ? 1.05 : 0.7);
+  const keep = pearl * 1.15;
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
@@ -280,22 +307,7 @@ function joinAroundMark(
   const from = atKeep(fromRaw);
   const to = atKeep(toRaw);
   pts.push(from);
-  const join = inner
-    ? innerBiteJoinVec(
-        [from.x, from.y, from.z],
-        [mark.x, mark.y, mark.z],
-        [to.x, to.y, to.z],
-        pearl,
-        12,
-      )
-    : outerBiteJoinVec(
-        [from.x, from.y, from.z],
-        [mark.x, mark.y, mark.z],
-        [to.x, to.y, to.z],
-        pearl,
-        12,
-      );
-  for (const p of join) pts.push(new THREE.Vector3(p[0], p[1], p[2]));
+  for (const p of stitchDive(from, mark, to, kind)) pts.push(p);
   const toDist = to.distanceToSquared(mark);
   let k = i;
   while (k < piece.length && piece[k]!.distanceToSquared(mark) <= toDist + 1e-8) k++;
@@ -452,7 +464,7 @@ function stackedArcChainParts(
     if (sameMarkDir(mark, next0) && pts.length > 1 && piece.length > 1) {
       // One working thread: the V turns on the mari. Splitting here buried
       // both flanks and left a knob at every inner (and outer) mark.
-      joinAroundMark(pts, piece, mark, unitFromMm(kindMm(kind)));
+      joinAroundMark(pts, piece, mark, unitFromMm(kindMm(kind)), kind);
       return;
     }
     const start = nearVec(mark, next0) ? 1 : 0;
