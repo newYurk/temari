@@ -6,7 +6,7 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
-import { stackBump, scoopAway, scoopRadius } from "./kagari";
+import { stackBump, scoopAway, scoopRadius, innerBiteJoin as innerBiteJoinVec } from "./kagari";
 
 const ARC_SEGS = 32;
 /**
@@ -252,37 +252,57 @@ function plunge(t: number) {
 }
 
 /**
- * One kagari bite: flanks meet as a V, then the tip tucks under the wrap.
- * A 2 mm scoop along each flank opened two tongues. A surface V sat on the maki.
+ * Outer reverse pickup (uwagake-chidori): arrive −q, enter +q, short
+ * run under the wrap, leave −q. The outgoing flank sits on the incoming
+ * one — a small overlap — then the needle. A symmetric V is a hole.
  */
-export function stitchDive(
+export function outerBackbite(
   from: THREE.Vector3,
   mark: THREE.Vector3,
   to: THREE.Vector3,
   kind: ThreadKind,
 ): THREE.Vector3[] {
   const half = unitFromMm(kindMm(kind)) * 0.5;
+  const pearl = half * 2;
+  const m = mark.clone().normalize();
+  const pole = new THREE.Vector3(0, m.y >= 0 ? 1 : -1, 0);
+  const towardPole = pole.clone().addScaledVector(m, -pole.dot(m));
+  if (towardPole.lengthSq() < 1e-12) towardPole.set(1, 0, 0);
+  towardPole.normalize();
+  const v = towardPole.negate();
+  const q = new THREE.Vector3().crossVectors(m, v).normalize();
+  if (from.clone().normalize().dot(q) > 0) q.negate();
+  const bite = pearl * 0.38;
+  const enterU = m.clone().addScaledVector(q, bite).normalize();
+  const exitU = m.clone().addScaledVector(q, -bite).normalize();
   const fromR = from.length();
   const toR = to.length();
-  const n = 10;
+  const buried = scoopRadius(1, fromR, half);
+  const n = 8;
   const out: THREE.Vector3[] = [];
   for (let i = 1; i <= n; i++) {
     const t = i / n;
-    slerpUnit(from, mark, t, _a);
+    slerpUnit(from, enterU, t, _a);
     out.push(_a.clone().multiplyScalar(scoopRadius(plunge(t), fromR, half)));
   }
   for (let i = 1; i <= n; i++) {
     const t = i / n;
-    slerpUnit(mark, to, t, _a);
-    out.push(_a.clone().multiplyScalar(scoopRadius(plunge(1 - t), toR, half)));
+    slerpUnit(enterU, exitU, t, _a);
+    out.push(_a.clone().multiplyScalar(buried));
+  }
+  for (let i = 1; i <= n; i++) {
+    const t = i / n;
+    slerpUnit(exitU, to, t, _a);
+    const emerge = Math.min(1, t / 0.18);
+    const lift = Math.exp(-Math.pow((t - 0.34) / 0.22, 2));
+    const r = buried + (toR - buried) * emerge + pearl * STACK_LIFT * lift * emerge;
+    out.push(_a.clone().multiplyScalar(r));
   }
   return out;
 }
 
 /**
- * Replace the cusp at `mark` with a bite under the wrap.
- * Inner: on the mark, not a W across the jiwari and not a loop into the cap.
- * Outer: the two flanks meet at the pin — not a dash (zipper) and not a tail.
+ * Inner: V on the stack (uwagake). Outer: reverse pickup, then a short bite.
  */
 function joinAroundMark(
   pts: THREE.Vector3[],
@@ -291,7 +311,8 @@ function joinAroundMark(
   pearl: number,
   kind: ThreadKind,
 ) {
-  const keep = pearl * 1.3;
+  const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
+  const keep = pearl * (inner ? 1.05 : 1.75);
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
@@ -314,7 +335,18 @@ function joinAroundMark(
   const from = atKeep(fromRaw);
   const to = atKeep(toRaw);
   pts.push(from);
-  for (const p of stitchDive(from, mark, to, kind)) pts.push(p);
+  if (inner) {
+    const join = innerBiteJoinVec(
+      [from.x, from.y, from.z],
+      [mark.x, mark.y, mark.z],
+      [to.x, to.y, to.z],
+      pearl,
+      12,
+    );
+    for (const p of join) pts.push(new THREE.Vector3(p[0], p[1], p[2]));
+  } else {
+    for (const p of outerBackbite(from, mark, to, kind)) pts.push(p);
+  }
   const toDist = to.distanceToSquared(mark);
   let k = i;
   while (k < piece.length && piece[k]!.distanceToSquared(mark) <= toDist + 1e-8) k++;

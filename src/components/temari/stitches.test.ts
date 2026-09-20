@@ -121,13 +121,13 @@ describe("kiku mark turn is a V on the mari, not a zipper or a tail", () => {
 describe("kagari bite dives under the wrap at the mark", () => {
   it("centerline goes under the cover and does not walk past the outer pin", async () => {
     const THREE = await import("three");
-    const { stitchDive } = await import("./stitches.ts");
+    const { outerBackbite } = await import("./stitches.ts");
     const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
     const r = 1 + pearl * 0.5;
     const mark = new THREE.Vector3(0, 0.5, 0.87).normalize().multiplyScalar(r);
     const from = new THREE.Vector3(0.12, 0.55, 0.82).normalize().multiplyScalar(r);
     const to = new THREE.Vector3(-0.12, 0.55, 0.82).normalize().multiplyScalar(r);
-    const pts = stitchDive(from, mark, to, "pearl5");
+    const pts = outerBackbite(from, mark, to, "pearl5");
     const floor = Math.min(...pts.map((p) => p.length()));
     assert.ok(floor < 0.995, `bite stays on the maki (${floor.toFixed(3)})`);
     const markDot = mark.clone().normalize().dot(new THREE.Vector3(0, 1, 0));
@@ -136,5 +136,8 @@ describe("kagari bite dives under the wrap at the mark", () => {
       const past = Math.acos(Math.min(1, Math.max(-1, d))) - Math.acos(Math.min(1, Math.max(-1, markDot)));
       assert.ok(past < pearl * 0.2, "outer bite walked past the pin");
     }
+    const mid = pts[Math.floor(pts.length * 0.75)]!;
+    const incoming = pts[Math.floor(pts.length * 0.2)]!;
+    assert.ok(mid.length() > incoming.length(), "outgoing sits on the incoming flank");
   });
 });
