@@ -193,13 +193,6 @@ export function scoopRadius(t: number, surfaceR: number, half: number): number {
   return surfaceR + (Math.max(floor, buried) - surfaceR) * h;
 }
 
-/** Pull a surface point under the wrap cover. `amount` 0 = on the mari, 1 = buried. */
-function diveUnder(p: Vec3, amount: number, surfaceR: number, threadHalf: number): Vec3 {
-  const L = scoopRadius(amount, surfaceR, threadHalf);
-  const n = hypot3(p) || 1;
-  return [(p[0] / n) * L, (p[1] / n) * L, (p[2] / n) * L];
-}
-
 function shiftTowardPole(pole: Vec3, mark: Vec3, along: number): Vec3 {
   const theta = Math.acos(Math.min(1, Math.max(-1, dot(pole, mark))));
   const t = Math.max(0, theta - along);
@@ -492,26 +485,22 @@ export function innerBiteJoin(from: Vec3, mark: Vec3, to: Vec3, pearl: number, n
   }
   const out: Vec3[] = [];
   const cap = Math.abs(m[1]);
-  const threadHalf = pearl * 0.5;
-  const push = (a: Vec3, b: Vec3, steps: number, bury: "arrive" | "under" | "leave" | "surface") => {
+  const push = (a: Vec3, b: Vec3, steps: number) => {
     for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      let p = slerp3(a, b, t);
+      let p = slerp3(a, b, i / steps);
       const L = hypot3(p) || 1;
       if (Math.abs(p[1]) / L > cap) {
         const rho = Math.sqrt(Math.max(0, 1 - cap * cap));
         const pr = Math.hypot(p[0], p[2]) || 1e-9;
         p = [(p[0] / pr) * rho * L, Math.sign(p[1]) * cap * L, (p[2] / pr) * rho * L];
       }
-      const amount =
-        bury === "under" ? 1 : bury === "arrive" ? t : bury === "leave" ? 1 - t : 0;
-      out.push(amount > 0 ? diveUnder(p, amount, r, threadHalf) : p);
+      out.push(p);
     }
   };
-  // Needle goes in, scoops wrap, comes out. The across is inside the maki.
-  push(from, enter, n, "arrive");
-  push(enter, exit, Math.max(2, n), "under");
-  push(exit, to, n, "leave");
+  // Visible bead on top of the bundle. The scoop under the wrap is not drawn.
+  push(from, enter, n);
+  push(enter, exit, Math.max(2, n));
+  push(exit, to, n);
   return out;
 }
 
@@ -532,8 +521,8 @@ export function outerBiteJoin(from: Vec3, mark: Vec3, to: Vec3, pearl: number, n
   ];
   if (hypot3(radial) < 1e-8) radial = [1, 0, 0];
   radial = normalize(radial);
-  // Just below the pin — a fraction of a pearl toward the equator, not a loop.
-  const below = pearl * 0.35;
+  // Just under the pin — a hair toward the equator, not a loop and not a tail.
+  const below = pearl * 0.12;
   const center = normalize([
     m[0] + radial[0] * below,
     m[1] + radial[1] * below,
@@ -566,18 +555,14 @@ export function outerBiteJoin(from: Vec3, mark: Vec3, to: Vec3, pearl: number, n
     exit = tmp;
   }
   const out: Vec3[] = [];
-  const threadHalf = pearl * 0.5;
-  const push = (a: Vec3, b: Vec3, steps: number, bury: "arrive" | "under" | "leave") => {
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const p = slerp3(a, b, t);
-      const amount = bury === "under" ? 1 : bury === "arrive" ? t : 1 - t;
-      out.push(diveUnder(p, amount, r, threadHalf));
-    }
+  const push = (a: Vec3, b: Vec3, steps: number) => {
+    for (let i = 1; i <= steps; i++) out.push(slerp3(a, b, i / steps));
   };
-  push(from, enter, n, "arrive");
-  push(enter, exit, Math.max(2, n), "under");
-  push(exit, to, n, "leave");
+  // Visible kagari at the pin. The run under the wrap is not drawn — a buried
+  // tube still reads as a thin tail through the cover.
+  push(from, enter, n);
+  push(enter, exit, Math.max(2, n));
+  push(exit, to, n);
   return out;
 }
 

@@ -58,7 +58,7 @@ describe("kiku mark turn is a bite across the jiwari, not a U past it", () => {
     }
     const past = Math.acos(Math.min(1, Math.max(-1, minDot))) - Math.acos(Math.min(1, Math.max(-1, markDot)));
     assert.ok(past > 0, "stitch is just below the pin");
-    assert.ok(past < pearl * 1.2, `outer join walked ${past.toFixed(3)} past the mark — a tail, not a kagari`);
+    assert.ok(past < pearl * 0.4, `outer join walked ${past.toFixed(3)} past the mark — a tail, not a kagari`);
   });
 
   it("outer bite is a dash across the meridian, not a loop down the ray", () => {
@@ -79,19 +79,16 @@ describe("kiku mark turn is a bite across the jiwari, not a U past it", () => {
     assert.ok(span < 0.35, `outer join spanned ${(span * 180) / Math.PI}° — a U, not a bite`);
   });
 
-  it("bite across sits under the wrap, not on top of the flower", () => {
+  it("hidden run under the wrap is not drawn", () => {
     const mark = v(0, 0.5, 0.87);
     const from = v(0.08, 0.52, 0.85);
     const to = v(-0.08, 0.52, 0.85);
     const outer = outerBiteJoin(from, mark, to, pearl, 3);
     const innerMark = v(0.04, 0.99, 0.12);
     const inner = innerBiteJoin(v(0.055, 0.987, 0.14), innerMark, v(0.025, 0.987, 0.155), pearl, 4);
-    const under = (pts: [number, number, number][]) => {
-      const mid = pts[Math.floor(pts.length / 2)]!;
-      return Math.hypot(...mid);
-    };
-    assert.ok(under(outer) < 1, `outer hidden path is on top of the maki (${under(outer).toFixed(3)})`);
-    assert.ok(under(inner) < 1, `inner hidden path is on top of the maki (${under(inner).toFixed(3)})`);
+    const floor = (pts: [number, number, number][]) => Math.min(...pts.map((p) => Math.hypot(...p)));
+    assert.ok(floor(outer) >= 1, `outer join dives through the cover (${floor(outer).toFixed(3)})`);
+    assert.ok(floor(inner) >= 1, `inner uwagake is buried instead of lying on the stack (${floor(inner).toFixed(3)})`);
   });
 
   it("inner U does not enter the polar cap", () => {
