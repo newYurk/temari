@@ -1291,8 +1291,7 @@ export const useTemari = create<TemariState>((set, get) => ({
         : state.motif === "kiku" && state.kagariSet === 1
           ? prev
           : prev.filter((stitch) => stitchPoleIndex(stitch, state.division, state.motif) !== which);
-    const first = plan.length > 0 ? 1 : 0;
-    if (first) feel.stitch();
+    const first = 0;
     set({
       // A group opened from here is the first one; later groups record their own step.
       ...(state.kagariPlan.length === 0 ? { kagariHistory: pushKagari(state) } : {}),

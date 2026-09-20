@@ -179,7 +179,7 @@ describe("recipe compatibility in studio actions and state", () => {
     assert.deepEqual(state.kagariKept, []);
     assert.equal(state.kagariPlan.length, 8);
     assert.ok(state.kagariPlan.every((stitch) => stitch.kind === "arc" && stitch.pole === 0));
-    assert.equal(state.kagariLaid, 1);
+    assert.equal(state.kagariLaid, 0);
     assert.equal(state.kagariPlaying, true);
     assert.deepEqual(state.pinHistory, []);
     assert.equal(state.pinNote, null);

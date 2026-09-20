@@ -265,38 +265,152 @@ function KagariGuide() {
     const reduce =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const id = window.setTimeout(advance, reduce ? 0 : 160);
+    if (!reduce) return;
+    const id = window.setTimeout(advance, 0);
     return () => window.clearTimeout(id);
   }, [advance, laid, playing]);
   return null;
 }
 
-/** Next prick while a row is being sewn — a quiet pulse, not a HUD ring. */
-function StitchPulse() {
+const NEEDLE_HOVER = 0.09;
+const NEEDLE_DIVE = 0.2;
+const NEEDLE_EMERGE = 0.1;
+const NEEDLE_CYCLE = NEEDLE_HOVER + NEEDLE_DIVE + NEEDLE_EMERGE;
+const _needleN = new THREE.Vector3();
+const _needleFrom = new THREE.Vector3();
+const _needleQ = new THREE.Quaternion();
+const _needleEnter = new THREE.Vector3(0, 1, 0);
+const _needleExit = new THREE.Vector3(0, 1, 0);
+
+function prickOf(stitch: Stitch | undefined): { enter: [number, number, number]; exit: [number, number, number] } | null {
+  if (!stitch || stitch.kind !== "arc") return null;
+  if (stitch.bite) return stitch.bite;
+  return { enter: stitch.b, exit: stitch.b };
+}
+
+function smoothstep(t: number) {
+  const x = Math.min(1, Math.max(0, t));
+  return x * x * (3 - 2 * x);
+}
+
+function takePrick(stitch: Stitch | undefined) {
+  const p = prickOf(stitch);
+  if (!p) return false;
+  _needleEnter.set(p.enter[0], p.enter[1], p.enter[2]).normalize();
+  _needleExit.set(p.exit[0], p.exit[1], p.exit[2]).normalize();
+  return true;
+}
+
+/** Steel needle: hover the bite, dive, the stitch appears, then the tip comes out. */
+function NeedleHand() {
   const playing = useTemari((s) => s.kagariPlaying);
   const laid = useTemari((s) => s.kagariLaid);
   const plan = useTemari((s) => s.kagariPlan);
-  const mesh = useRef<THREE.Mesh>(null);
-  const stitch = playing ? plan[laid] : undefined;
-  useFrame(({ clock }) => {
-    const node = mesh.current;
-    if (!node) return;
-    const k = 0.7 + Math.sin(clock.elapsedTime * 7) * 0.18;
-    node.scale.setScalar(k);
+  const advance = useTemari((s) => s.advanceKagari);
+  const group = useRef<THREE.Group>(null);
+  const shaft = useRef<THREE.Group>(null);
+  const pulse = useRef<THREE.Mesh>(null);
+  const t = useRef(0);
+  const committed = useRef(false);
+  const armed = useRef(false);
+
+  useFrame((_, rawDt) => {
+    const g = group.current;
+    const hand = shaft.current;
+    const dot = pulse.current;
+    if (!g || !hand) return;
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!playing || reduce) {
+      g.visible = false;
+      if (dot) dot.visible = false;
+      t.current = 0;
+      committed.current = false;
+      armed.current = false;
+      return;
+    }
+    if (!armed.current) {
+      if (!takePrick(plan[laid])) {
+        g.visible = false;
+        return;
+      }
+      _needleFrom.copy(_needleEnter);
+      armed.current = true;
+      t.current = 0;
+      committed.current = false;
+    }
+    t.current += Math.min(rawDt, 0.1);
+    const hover = smoothstep(t.current / NEEDLE_HOVER);
+    const dive = smoothstep((t.current - NEEDLE_HOVER) / NEEDLE_DIVE);
+    const emerge = smoothstep((t.current - NEEDLE_HOVER - NEEDLE_DIVE) / NEEDLE_EMERGE);
+
+    if (dive >= 1 && !committed.current) {
+      committed.current = true;
+      advance();
+    }
+    if (t.current >= NEEDLE_CYCLE) {
+      const s = useTemari.getState();
+      if (!s.kagariPlaying || !takePrick(s.kagariPlan[s.kagariLaid])) {
+        armed.current = false;
+        g.visible = false;
+        if (dot) dot.visible = false;
+        return;
+      }
+      _needleFrom.copy(_needleExit);
+      t.current = 0;
+      committed.current = false;
+      return;
+    }
+
+    g.visible = true;
+    if (emerge > 0) {
+      _needleN.copy(_needleExit);
+    } else if (dive > 0) {
+      _needleN.copy(_needleEnter);
+    } else {
+      _needleN.copy(_needleFrom).lerp(_needleEnter, hover);
+      if (_needleN.lengthSq() < 1e-8) _needleN.copy(_needleEnter);
+      else _needleN.normalize();
+    }
+    g.position.copy(_needleN);
+    _needleQ.setFromUnitVectors(Y_UP, _needleN);
+    g.quaternion.copy(_needleQ);
+
+    let lift = 0.26;
+    if (emerge > 0) lift = -0.04 + emerge * 0.3;
+    else if (dive > 0) lift = 0.24 + dive * (-0.04 - 0.24);
+    else lift = 0.28 - hover * 0.04;
+    hand.position.set(0, lift, 0);
+
+    if (dot) {
+      const show = emerge <= 0 && dive < 1;
+      dot.visible = show;
+      dot.scale.setScalar(show ? 0.75 + Math.sin(t.current * 14) * 0.2 : 0);
+    }
   });
-  if (!stitch || stitch.kind !== "arc") return null;
-  const p = stitch.b;
-  const len = Math.hypot(p[0], p[1], p[2]) || 1;
-  const r = 1.028;
+
   return (
-    <mesh
-      ref={mesh}
-      position={[ (p[0] / len) * r, (p[1] / len) * r, (p[2] / len) * r ]}
-      renderOrder={22}
-    >
-      <sphereGeometry args={[0.016, 16, 12]} />
-      <meshBasicMaterial color="#0c0b09" transparent opacity={0.72} depthTest={false} />
-    </mesh>
+    <group ref={group} visible={false} renderOrder={24}>
+      <mesh ref={pulse} position={[0, 0.01, 0]} renderOrder={23} raycast={() => {}}>
+        <sphereGeometry args={[0.016, 12, 10]} />
+        <meshBasicMaterial color="#0c0b09" transparent opacity={0.72} depthTest={false} />
+      </mesh>
+      <group ref={shaft}>
+        <mesh position={[0, 0.02, 0]} rotation={[Math.PI, 0, 0]} renderOrder={24} raycast={() => {}}>
+          <coneGeometry args={[0.007, 0.042, 8]} />
+          <meshStandardMaterial color="#2c2926" roughness={0.28} metalness={0.62} />
+        </mesh>
+        <mesh position={[0, 0.16, 0]} renderOrder={24} raycast={() => {}}>
+          <cylinderGeometry args={[0.0054, 0.0054, 0.24, 8]} />
+          <meshStandardMaterial color="#5a5550" roughness={0.32} metalness={0.55} />
+        </mesh>
+        <mesh position={[0, 0.285, 0]} rotation={[0, 0, Math.PI / 2]} renderOrder={24} raycast={() => {}}>
+          <torusGeometry args={[0.008, 0.0022, 6, 12]} />
+          <meshStandardMaterial color="#3a3734" roughness={0.3} metalness={0.58} />
+        </mesh>
+      </group>
+    </group>
   );
 }
 
@@ -1147,7 +1261,7 @@ export function Ball() {
       {mode === "studio" && layerDone && jiwariOn ? <VRuler /> : null}
       {mode === "studio" && layerDone ? <JiwariGuide /> : null}
       {mode === "studio" && layerDone ? <KagariGuide /> : null}
-      {mode === "studio" && layerDone ? <StitchPulse /> : null}
+      {mode === "studio" && layerDone ? <NeedleHand /> : null}
 
       {markStitches.length > 0 ? (
         <ThreadLayer
