@@ -423,9 +423,14 @@ function stackedArcChainParts(
   }
   const pearl = unitFromMm(kindMm(kind));
   const parts: THREE.BufferGeometry[] = [];
+  const isInner = (p: THREE.Vector3) => Math.abs(p.y) / (p.length() || 1) > 0.75;
   const flush = (pts: THREE.Vector3[], parks: boolean) => {
     if (pts.length < 2) return;
-    const path = parks ? buryWorkingStart(pts, kind) : buryWorkingEnds(pts, kind);
+    // A closed kai returns to the first inner mark. That is still a kagari:
+    // the last petal dives. parks-only would leave two petals (last of A, last
+    // of B) sitting on the cap.
+    const dive = !parks || isInner(pts[pts.length - 1]!);
+    const path = dive ? buryWorkingEnds(pts, kind) : buryWorkingStart(pts, kind);
     parts.push(cachedTube(path, stitchRadius(kind), false, false, twistPerUnit(kind)));
   };
   let pts: THREE.Vector3[] = [];
