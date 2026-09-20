@@ -248,7 +248,9 @@ function joinAroundMark(
   pearl: number,
 ) {
   const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
-  const keep = pearl * 0.5;
+  // Inner: keep the V's approach. A wide trim made a 180° U the size of a pearl
+  // — a knob. Outer can sit closer to the pin.
+  const keep = pearl * (inner ? 0.28 : 0.5);
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
@@ -440,10 +442,9 @@ function stackedArcChainParts(
     const mark = pts[pts.length - 1]!;
     const next0 = piece[0]!;
     if (nearVec(mark, next0) && pts.length > 1 && piece.length > 1) {
-      // One flank, then kagari: the pearl dives under the wrap and the next
-      // ray comes up. Welding inner or outer left a braid on the mari.
-      flush(pts);
-      pts = [...piece];
+      // One working thread: the V turns on the mari. Splitting here buried
+      // both flanks and left a knob at every inner (and outer) mark.
+      joinAroundMark(pts, piece, mark, unitFromMm(kindMm(kind)));
       return;
     }
     const start = nearVec(mark, next0) ? 1 : 0;
