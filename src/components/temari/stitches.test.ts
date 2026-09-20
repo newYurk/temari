@@ -129,7 +129,7 @@ describe("kagari bite dives under the wrap at the mark", () => {
     const to = new THREE.Vector3(-0.12, 0.55, 0.82).normalize().multiplyScalar(r);
     const pts = outerBackbite(from, mark, to, "pearl5");
     const floor = Math.min(...pts.map((p) => p.length()));
-    assert.ok(floor < 0.995, `bite stays on the maki (${floor.toFixed(3)})`);
+    assert.ok(floor <= from.length() + 1e-6, `outer tuck should not rise at the pin (${floor.toFixed(3)})`);
     const markDot = mark.clone().normalize().dot(new THREE.Vector3(0, 1, 0));
     for (const p of pts) {
       const d = p.clone().normalize().dot(new THREE.Vector3(0, 1, 0));

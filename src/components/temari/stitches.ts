@@ -243,18 +243,10 @@ function sameMarkDir(a: THREE.Vector3, b: THREE.Vector3) {
   return a.dot(b) / (da * db) > 0.999;
 }
 
-/** On the mari until the V has closed, then under the wrap at the mark. */
-function plunge(t: number) {
-  const u = Math.min(1, Math.max(0, t));
-  if (u < 0.32) return 0;
-  const s = (u - 0.32) / 0.68;
-  return s * s * (3 - 2 * s);
-}
-
 /**
- * Outer reverse pickup (uwagake-chidori): arrive −q, enter +q, short
- * run under the wrap, leave −q. The outgoing flank sits on the incoming
- * one — a small overlap — then the needle. A symmetric V is a hole.
+ * Outer point: the thread turns and the return sits on the approach —
+ * a fold, then a tiny tuck. A U under the wrap is the hole; a symmetric
+ * V is a drawing, not a stitch.
  */
 export function outerBackbite(
   from: THREE.Vector3,
@@ -264,38 +256,22 @@ export function outerBackbite(
 ): THREE.Vector3[] {
   const half = unitFromMm(kindMm(kind)) * 0.5;
   const pearl = half * 2;
-  const m = mark.clone().normalize();
-  const pole = new THREE.Vector3(0, m.y >= 0 ? 1 : -1, 0);
-  const towardPole = pole.clone().addScaledVector(m, -pole.dot(m));
-  if (towardPole.lengthSq() < 1e-12) towardPole.set(1, 0, 0);
-  towardPole.normalize();
-  const v = towardPole.negate();
-  const q = new THREE.Vector3().crossVectors(m, v).normalize();
-  if (from.clone().normalize().dot(q) > 0) q.negate();
-  const bite = pearl * 0.38;
-  const enterU = m.clone().addScaledVector(q, bite).normalize();
-  const exitU = m.clone().addScaledVector(q, -bite).normalize();
   const fromR = from.length();
   const toR = to.length();
-  const buried = scoopRadius(1, fromR, half);
-  const n = 8;
+  const n = 10;
   const out: THREE.Vector3[] = [];
   for (let i = 1; i <= n; i++) {
     const t = i / n;
-    slerpUnit(from, enterU, t, _a);
-    out.push(_a.clone().multiplyScalar(scoopRadius(plunge(t), fromR, half)));
+    slerpUnit(from, mark, t, _a);
+    const tuck = t < 0.82 ? 0 : (t - 0.82) / 0.18;
+    out.push(_a.clone().multiplyScalar(scoopRadius(tuck * 0.4, fromR, half)));
   }
   for (let i = 1; i <= n; i++) {
     const t = i / n;
-    slerpUnit(enterU, exitU, t, _a);
-    out.push(_a.clone().multiplyScalar(buried));
-  }
-  for (let i = 1; i <= n; i++) {
-    const t = i / n;
-    slerpUnit(exitU, to, t, _a);
-    const emerge = Math.min(1, t / 0.18);
-    const lift = Math.exp(-Math.pow((t - 0.34) / 0.22, 2));
-    const r = buried + (toR - buried) * emerge + pearl * STACK_LIFT * lift * emerge;
+    slerpUnit(mark, to, t, _a);
+    const tuck = t < 0.18 ? (0.18 - t) / 0.18 : 0;
+    const sit = Math.exp(-Math.pow((t - 0.2) / 0.26, 2));
+    const r = scoopRadius(tuck * 0.4, toR, half) + pearl * 0.7 * sit;
     out.push(_a.clone().multiplyScalar(r));
   }
   return out;
@@ -312,7 +288,7 @@ function joinAroundMark(
   kind: ThreadKind,
 ) {
   const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
-  const keep = pearl * (inner ? 1.05 : 1.75);
+  const keep = pearl * (inner ? 1.05 : 1.45);
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
