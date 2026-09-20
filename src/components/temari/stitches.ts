@@ -6,7 +6,7 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
-import { stackBump, scoopAway, scoopRadius, KAGARI_SCOOP_MM } from "./kagari";
+import { stackBump, scoopAway, scoopRadius } from "./kagari";
 
 const ARC_SEGS = 32;
 /**
@@ -243,10 +243,17 @@ function sameMarkDir(a: THREE.Vector3, b: THREE.Vector3) {
   return a.dot(b) / (da * db) > 0.999;
 }
 
+/** On the mari until the V has closed, then under the wrap at the mark. */
+function plunge(t: number) {
+  const u = Math.min(1, Math.max(0, t));
+  if (u < 0.32) return 0;
+  const s = (u - 0.32) / 0.68;
+  return s * s * (3 - 2 * s);
+}
+
 /**
- * One kagari bite: the working thread dives under the wrap ~2 mm before
- * the mark and comes up the other flank. A surface V sits on the mari;
- * two buried ends were the knobs at the pole.
+ * One kagari bite: flanks meet as a V, then the tip tucks under the wrap.
+ * A 2 mm scoop along each flank opened two tongues. A surface V sat on the maki.
  */
 export function stitchDive(
   from: THREE.Vector3,
@@ -259,17 +266,15 @@ export function stitchDive(
   const toR = to.length();
   const n = 10;
   const out: THREE.Vector3[] = [];
-  // Fully under the cover by halfway, so the tip is hidden and the last
-  // visible pearl is the scoop — not a point sitting on the maki.
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     slerpUnit(from, mark, t, _a);
-    out.push(_a.clone().multiplyScalar(scoopRadius(Math.min(1, t / 0.45), fromR, half)));
+    out.push(_a.clone().multiplyScalar(scoopRadius(plunge(t), fromR, half)));
   }
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     slerpUnit(mark, to, t, _a);
-    out.push(_a.clone().multiplyScalar(scoopRadius(Math.min(1, (1 - t) / 0.45), toR, half)));
+    out.push(_a.clone().multiplyScalar(scoopRadius(plunge(1 - t), toR, half)));
   }
   return out;
 }
@@ -286,7 +291,7 @@ function joinAroundMark(
   pearl: number,
   kind: ThreadKind,
 ) {
-  const keep = unitFromMm(KAGARI_SCOOP_MM) + pearl * 0.5;
+  const keep = pearl * 1.3;
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
