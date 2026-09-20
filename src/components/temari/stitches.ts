@@ -309,8 +309,6 @@ function scoopOnPath(
 ): THREE.Vector3[] {
   const half = unitFromMm(kindMm(kind)) * 0.5;
   const surfaceR = at.length();
-  const inner = Math.abs(at.y) / (at.length() || 1) > 0.75;
-  if (inner) return [];
   const guide = from;
   const units = scoopAway(
     [at.x, at.y, at.z],
@@ -441,6 +439,15 @@ function stackedArcChainParts(
     const mark = pts[pts.length - 1]!;
     const next0 = piece[0]!;
     if (nearVec(mark, next0) && pts.length > 1 && piece.length > 1) {
+      // Inner uwagake: the needle goes under the wrap. Keep one cord around
+      // the outer V; at the inner mark the pearl dives and the next petal
+      // comes up. Welding those corners left a braid sitting on the cap.
+      const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
+      if (inner) {
+        flush(pts, false);
+        pts = [...piece];
+        return;
+      }
       pts.pop();
       joinAroundMark(pts, piece, mark, pearl);
     } else {
