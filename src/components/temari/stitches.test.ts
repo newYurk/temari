@@ -142,6 +142,8 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     assert.ok(arrivingSurf.length >= 8, `outer V dives before the cross (${arrivingSurf.length})`);
     const lastIn = arriving[arriving.length - 1]!;
     assert.ok(lastIn.length() < 0.995, `needle does not go in across the jiwari (${lastIn.length().toFixed(3)})`);
+    const firstOut = leaving[0]!;
+    assert.ok(firstOut.length() < 0.995, `leaving starts in the air (${firstOut.length().toFixed(3)})`);
     let best = Infinity;
     let aR = 0;
     let bR = 0;

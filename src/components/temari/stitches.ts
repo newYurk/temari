@@ -28,6 +28,8 @@ const _ua = new THREE.Vector3();
 const _ub = new THREE.Vector3();
 const _pa = new THREE.Vector3();
 const _pb = new THREE.Vector3();
+const _h0 = new THREE.Vector3();
+const _h1 = new THREE.Vector3();
 
 function kindMm(kind: ThreadKind) {
   if (kind === "pearl8") return STITCH_THREAD_MM.pearl8;
@@ -87,6 +89,26 @@ export function slerpOnSphere(
 ) {
   return slerp(a, b, t, out);
 }
+
+/**
+ * Spherical cubic from `a` to `b` that hugs `tip`. Doubled control at the
+ * tip, so the path reaches the pin and then peels to the port — not a
+ * geodesic to the tip and a 90° hop.
+ */
+function hugTip(
+  a: THREE.Vector3,
+  tip: THREE.Vector3,
+  b: THREE.Vector3,
+  t: number,
+  out: THREE.Vector3,
+) {
+  slerpUnit(a, tip, t, _h0);
+  slerpUnit(tip, b, t, _h1);
+  slerpUnit(_h0, tip, t, _h0);
+  slerpUnit(tip, _h1, t, _h1);
+  return slerpUnit(_h0, _h1, t, out);
+}
+
 
 function vec(p: [number, number, number], lift = 0, kind: ThreadKind = DEFAULT_KIND.stitch) {
   const mm = kindMm(kind);
@@ -293,9 +315,10 @@ function reversePorts(
 
 /**
  * Visible needle only. Outer reverse pickup: flanks meet as a V at the
- * pin. Arrive on the mari, go in on the far side of the jiwari, come
- * out the near side over arriving. The hidden run is not drawn. A hop
- * toward the pin is a stub; a tube end facing the pin is a chopped pipe.
+ * pin. Arrive on the mari, curve in on the far side of the jiwari, come
+ * out the near side over arriving. The hidden run is not drawn. Ends
+ * bury under the wrap — a tube facing the pin is a chopped pipe, a hop
+ * to the port after the tip is an elbow.
  *
  * Inner uwagake is one V on the stack — not two tubes meeting as a cut.
  */
@@ -314,7 +337,7 @@ function sewKagariLegs(
   const toR = to.length();
   const m = mark.clone().normalize();
   const tip = m.clone();
-  const n = 10;
+  const n = 14;
   const inPts: THREE.Vector3[] = [];
   const outPts: THREE.Vector3[] = [];
   if (onStack) {
@@ -337,26 +360,23 @@ function sewKagariLegs(
   }
   const { inn, out } = reversePorts(tip, from, enter, exit);
   const buried = scoopRadius(1, fromR, half);
-  const k = 4;
   const lift0 = pearl * STACK_LIFT * 1.35;
+  const port = unitFromMm(0.28);
+  const hug = unitFromMm(0.9);
   for (let i = 1; i <= n; i++) {
-    slerpUnit(from, tip, i / n, _a);
-    inPts.push(_a.clone().multiplyScalar(fromR));
-  }
-  for (let i = 1; i <= k; i++) {
-    slerpUnit(tip, inn, i / k, _a);
-    const dive = smooth01(i / k);
+    const t = i / n;
+    hugTip(from, tip, inn, t, _a);
+    const dive = smooth01(1 - Math.min(1, _a.distanceTo(inn) / port));
     inPts.push(_a.clone().multiplyScalar(fromR + (buried - fromR) * dive));
-  }
-  for (let i = 0; i < k; i++) {
-    slerpUnit(out, tip, i / k, _a);
-    outPts.push(_a.clone().multiplyScalar(toR + lift0));
   }
   for (let i = 0; i < n; i++) {
     const t = i / n;
-    slerpUnit(tip, to, t, _a);
-    const lift = Math.exp(-(t / 0.22) * (t / 0.22));
-    outPts.push(_a.clone().multiplyScalar(toR + lift0 * lift));
+    hugTip(out, tip, to, t, _a);
+    const emerge = smooth01(Math.min(1, _a.distanceTo(out) / port));
+    const u = _a.distanceTo(tip) / hug;
+    const over = Math.exp(-(u * u));
+    const r = buried + (toR - buried) * emerge + lift0 * over * emerge;
+    outPts.push(_a.clone().multiplyScalar(r));
   }
   return { inPts, outPts };
 }
