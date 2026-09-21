@@ -18,6 +18,29 @@ const ARC_SEGS = 32;
 const STACK_LIFT = 0.42;
 /** Cross-section height / width. Pearl cotton lies on the mari, not a pipe. */
 const STITCH_FLAT = 0.5;
+/** Samples along one kagari flank. Mesh density, not a craft length. */
+const KAGARI_LEG_SEGS = 14;
+/**
+ * How far from the reverse-pickup port the arriving tube dives under
+ * the wrap, and the leaving tube comes out. Shorter than pearl #5's
+ * radius (0.355 mm) so the chopped end is already underground before
+ * the hidden run. Studio draw of the bite, not a measured puncture.
+ */
+const REVERSE_PORT_MM = 0.28;
+/**
+ * How far from the pin the leaving thread is still lifted over arriving.
+ * About one pearl #5 plus a little — the small outer перекрестик.
+ */
+const REVERSE_HUG_MM = 0.9;
+/**
+ * Extra STACK_LIFT at the pin so leaving sits on arriving. 1.0 left
+ * leaving under; this is the visible cross, not a second stack.
+ */
+const REVERSE_CROSS_LIFT = 1.35;
+/** Inner uwagake: leaving-over-arriving bump, in STACK_LIFT units. */
+const INNER_LEAVE_LIFT = 1.2;
+/** Inner leaving bump width along the flank, as a fraction of the leg. */
+const INNER_LEAVE_WIDTH = 0.22;
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -305,7 +328,7 @@ function reversePorts(
   }
   if (across.lengthSq() < 1e-12) across.set(1, 0, 0);
   across.normalize();
-  const half = unitFromMm(0.71) * 0.5;
+  const half = unitFromMm(STITCH_THREAD_MM.pearl5) * 0.5;
   const a = t.clone().addScaledVector(across, -half).normalize();
   const b = t.clone().addScaledVector(across, half).normalize();
   const f = from.clone().normalize();
@@ -337,7 +360,7 @@ function sewKagariLegs(
   const toR = to.length();
   const m = mark.clone().normalize();
   const tip = m.clone();
-  const n = 14;
+  const n = KAGARI_LEG_SEGS;
   const inPts: THREE.Vector3[] = [];
   const outPts: THREE.Vector3[] = [];
   if (onStack) {
@@ -352,17 +375,17 @@ function sewKagariLegs(
       slerpUnit(tip, to, t, _a);
       const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
       _a.set(c[0], c[1], c[2]).normalize();
-      const lift = Math.exp(-(t / 0.22) * (t / 0.22));
-      const r = toR + pearl * STACK_LIFT * 1.2 * lift;
+      const lift = Math.exp(-(t / INNER_LEAVE_WIDTH) * (t / INNER_LEAVE_WIDTH));
+      const r = toR + pearl * STACK_LIFT * INNER_LEAVE_LIFT * lift;
       outPts.push(_a.clone().multiplyScalar(r));
     }
     return { inPts, outPts };
   }
   const { inn, out } = reversePorts(tip, from, enter, exit);
   const buried = scoopRadius(1, fromR, half);
-  const lift0 = pearl * STACK_LIFT * 1.35;
-  const port = unitFromMm(0.28);
-  const hug = unitFromMm(0.9);
+  const lift0 = pearl * STACK_LIFT * REVERSE_CROSS_LIFT;
+  const port = unitFromMm(REVERSE_PORT_MM);
+  const hug = unitFromMm(REVERSE_HUG_MM);
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     hugTip(from, tip, inn, t, _a);
