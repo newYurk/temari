@@ -442,10 +442,10 @@ function kikuSkip(n: number) {
 
 /**
  * GT14 / TemariKai beginner: enter ~5 mm from the pole; first outer stitch
- * sits on the pole side of the pin ⅓ up from the equator. Later rounds: lay
- * the thread *parallel* to the first (GT14), inner one pearl #5 below, outer
- * Ozaki ~2 mm below the previous point so the turn lays flat. Work toward
- * the equator. `outer` is the first pin, not a short-V ceiling.
+ * sits at the pin ⅓ up from the equator. Later rounds: lay the thread
+ * *parallel* to the first (GT14), inner one pearl #5 below, outer Ozaki
+ * ~2 mm below the previous point so the turn lays flat. Work toward the
+ * equator. `outer` is the first pin, not a short-V ceiling.
  * Default wanted is 3 kai (tests); studio starts at 1; title uses "fit".
  * Legacy display adapter: unsupported divisions retain the numeric shape with
  * zero capacity and recipe:null. These zeros are not usable recipe geometry.
@@ -526,10 +526,10 @@ export function kikuThetas(
 ) {
   const ceiling = spec.ceiling ?? Math.PI / 2 - spec.pitch * 0.35;
   const tInner = spec.inner + ring * spec.pitch;
-  // First stitch sits against the pin on the pole side: the head fills
-  // the V. A stretch of air in front of the pin holds nothing. Later kai
-  // walk from there toward the equator. Thread does not wrap the shaft.
-  const tOuter = Math.min(ceiling, spec.outer - spec.pitch * 2 + ring * spec.stretch);
+  // First stitch is at the pin — the head sits in the V. A millimetre of
+  // empty jiwari in front of the pin holds nothing; later kai stretch
+  // from there toward the equator. Thread does not wrap the shaft.
+  const tOuter = Math.min(ceiling, spec.outer + ring * spec.stretch);
   return { tInner, tOuter };
 }
 
@@ -621,8 +621,8 @@ function parallelOffset(samples: Vec3[], pole: Vec3, delta: number): Vec3[] {
 
 /**
  * GT14 outer pins: on each meridian, ⅓ up from the equator.
- * The first bottom stitch sits on the pole side of this pin. Later rounds
- * stretch past it toward the equator — the pin is a mark, not a stop.
+ * The first bottom stitch sits at this pin. Later rounds stretch past
+ * it toward the equator — the pin is a mark, not a stop.
  */
 export function kikuMarkPins(
   division: Division,

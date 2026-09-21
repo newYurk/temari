@@ -293,10 +293,9 @@ function reversePorts(
 
 /**
  * Visible needle only. Outer reverse pickup: flanks meet as a V at the
- * tip on the pole side of the pin. Arrive on the mari, go in on the far
- * side of the jiwari, come out the near side over arriving. The hidden
- * run is not drawn. A hop toward the pin is a stub; a tube end facing
- * the pin is a chopped pipe.
+ * pin. Arrive on the mari, go in on the far side of the jiwari, come
+ * out the near side over arriving. The hidden run is not drawn. A hop
+ * toward the pin is a stub; a tube end facing the pin is a chopped pipe.
  *
  * Inner uwagake is one V on the stack — not two tubes meeting as a cut.
  */
@@ -314,12 +313,7 @@ function sewKagariLegs(
   const fromR = from.length();
   const toR = to.length();
   const m = mark.clone().normalize();
-  const pole = new THREE.Vector3(0, m.y >= 0 ? 1 : -1, 0);
-  const towardPole = pole.clone().addScaledVector(m, -pole.dot(m));
-  if (towardPole.lengthSq() < 1e-12) towardPole.set(1, 0, 0);
-  towardPole.normalize();
   const tip = m.clone();
-  if (!onStack) tip.addScaledVector(towardPole, unitFromMm(0.18)).normalize();
   const n = 10;
   const inPts: THREE.Vector3[] = [];
   const outPts: THREE.Vector3[] = [];
