@@ -6,7 +6,7 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns.ts";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 import { WRAP_LAYERS } from "./craft.ts";
-import { stackBump, scoopAway, scoopRadius, KAGARI_SCOOP_MM, clampNotPastPole } from "./kagari.ts";
+import { stackBump, scoopAway, scoopRadius, KAGARI_SCOOP_MM, clampNotPastPole, uwagakeVia } from "./kagari.ts";
 
 const ARC_SEGS = 32;
 /**
@@ -344,6 +344,8 @@ function reversePorts(
  * to the port after the tip is an elbow.
  *
  * Inner uwagake is one V on the stack — not two tubes meeting as a cut.
+ * Later kai: the vertex sits on the previous inner (carry over), then the
+ * bite is one pearl below. A V copied further out is a halo of mari.
  */
 function sewKagariLegs(
   from: THREE.Vector3,
@@ -364,17 +366,37 @@ function sewKagariLegs(
   const inPts: THREE.Vector3[] = [];
   const outPts: THREE.Vector3[] = [];
   if (onStack) {
+    const pole: [number, number, number] = mark.y >= 0 ? [0, 1, 0] : [0, -1, 0];
+    const markDot = m.x * pole[0] + m.y * pole[1] + m.z * pole[2];
+    const enterDot = enter
+      ? enter[0] * pole[0] + enter[1] * pole[1] + enter[2] * pole[2]
+      : markDot;
+    const over =
+      enterDot > markDot + 1e-4
+        ? uwagakeVia(pole, [m.x, m.y, m.z], 1, pearl)
+        : null;
+    const overV = over
+      ? new THREE.Vector3(over[0], over[1], over[2]).normalize()
+      : null;
+    const vertex = overV ?? tip;
     for (let i = 1; i <= n; i++) {
-      slerpUnit(from, tip, i / n, _a);
-      const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
-      _a.set(c[0], c[1], c[2]).normalize();
+      const t = i / n;
+      if (overV) {
+        slerpUnit(from, vertex, t, _a);
+      } else {
+        slerpUnit(from, tip, t, _a);
+        const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
+        _a.set(c[0], c[1], c[2]).normalize();
+      }
       inPts.push(_a.clone().multiplyScalar(fromR));
     }
     for (let i = 0; i < n; i++) {
       const t = i / n;
-      slerpUnit(tip, to, t, _a);
-      const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
-      _a.set(c[0], c[1], c[2]).normalize();
+      slerpUnit(vertex, to, t, _a);
+      if (!overV) {
+        const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
+        _a.set(c[0], c[1], c[2]).normalize();
+      }
       const lift = Math.exp(-(t / INNER_LEAVE_WIDTH) * (t / INNER_LEAVE_WIDTH));
       const r = toR + pearl * STACK_LIFT * INNER_LEAVE_LIFT * lift;
       outPts.push(_a.clone().multiplyScalar(r));

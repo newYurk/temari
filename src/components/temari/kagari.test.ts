@@ -78,6 +78,36 @@ describe("kagari recipe atom", () => {
     );
   });
 
+  it("later inner carries over the first star, it does not leave a halo", () => {
+    const spec = kikuSpec("simple", "even");
+    const ops = compileKiku("simple", "out", "even", 0);
+    const first = ops.find((op) => op.kai === 0 && op.set === 0 && op.mark.t === "inner");
+    const later = ops.find((op) => op.kai === 1 && op.set === 0 && op.mark.t === "inner");
+    assert.ok(first && later);
+    if (!first || !later) return;
+    const th = (p: [number, number, number]) =>
+      Math.acos(Math.min(1, Math.max(-1, p[1])));
+    const via = later.lay.via ?? [];
+    assert.ok(via.length > 0, "later inner has a path, not a geodesic V");
+    const closest = Math.min(...via.map(th), th(later.mark.at));
+    assert.ok(
+      closest < th(later.mark.at) - spec.pitch * 0.4,
+      "over-stack sits closer to the pole than the new bite",
+    );
+    assert.ok(
+      closest <= th(first.mark.at) + spec.pitch * 0.35,
+      `halo: over-stack ${closest.toFixed(3)} vs first star ${th(first.mark.at).toFixed(3)}`,
+    );
+    const firstVia = first.lay.via ?? [];
+    const firstClosest = firstVia.length
+      ? Math.min(...firstVia.map(th), th(first.mark.at))
+      : th(first.mark.at);
+    assert.ok(
+      firstClosest >= th(first.mark.at) - 1e-6,
+      "kai 0 stays on the mark — no macaroni into the cap",
+    );
+  });
+
   it("stitchesFromOps keep the V lay and attach a bite", () => {
     const ops = compileKiku("simple", "out", "even", 0).slice(0, 2);
     const stitches = stitchesFromOps(ops);
@@ -297,7 +327,8 @@ describe("kagari recipe atom", () => {
     // reaches too far would quietly drop crossings and show up here. Sharpening
     // lowered the point counts (56 → 48 at three rounds): crossings that the
     // sample grid placed apart turn out to be the same meeting.
-    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 48], [10, 160, 152, 344]]) {
+    // Later inner uwagake (over the first star) merged four more at 10 rounds.
+    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 48], [10, 160, 152, 340]]) {
       const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, layers!, "all"))
         .filter((s) => s.kind === "arc");
       assert.equal(stitches.length, arcs, `arcs at ${layers} rounds`);

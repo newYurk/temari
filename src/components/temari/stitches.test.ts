@@ -200,6 +200,35 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     }
   });
 
+  it("later inner arrives over the stack, then bites — not a copy of the first V", async () => {
+    const THREE = await import("three");
+    const { sewKagariBite } = await import("./stitches.ts");
+    const { biteAcross } = await import("./kagari.ts");
+    const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
+    const r = 1 + pearl * 0.5;
+    const pole = new THREE.Vector3(0, 1, 0);
+    const mark = new THREE.Vector3(0, Math.cos(0.15), Math.sin(0.15)).normalize().multiplyScalar(r);
+    const from = new THREE.Vector3(0.12, Math.cos(0.22), Math.sin(0.22)).normalize().multiplyScalar(r);
+    const to = new THREE.Vector3(-0.12, Math.cos(0.22), Math.sin(0.22)).normalize().multiplyScalar(r);
+    const bite = biteAcross([0, 1, 0], [mark.x, mark.y, mark.z], 0.71, 1);
+    const pts = sewKagariBite(from, mark, to, "pearl5", bite.enter, bite.exit, true);
+    const markDot = mark.clone().normalize().dot(pole);
+    const arriving = pts.slice(0, Math.floor(pts.length / 2));
+    const closest = Math.max(...arriving.map((p) => p.clone().normalize().dot(pole)));
+    const closestTh = Math.acos(Math.min(1, Math.max(-1, closest)));
+    const markTh = Math.acos(Math.min(1, Math.max(-1, markDot)));
+    assert.ok(
+      closestTh < markTh - 0.008,
+      `arriving does not clear the previous inner (${closestTh.toFixed(4)} vs mark ${markTh.toFixed(4)})`,
+    );
+    for (const p of pts) {
+      assert.ok(
+        p.clone().normalize().dot(pole) < 0.995,
+        "over-stack is the previous inner, not a loop into the pole",
+      );
+    }
+  });
+
   it("working start/stop tucks back under the stitch, not past the outer pin", async () => {
     const THREE = await import("three");
     const { workingThreadScoop } = await import("./stitches.ts");
