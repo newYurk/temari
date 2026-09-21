@@ -21,7 +21,7 @@ import {
 } from './s8-kiku-ab2';
 import type { C8ThreadCoupon, PointMm } from './thread-path';
 
-const line = (id: string, from: PointMm, to: PointMm): C8ThreadCoupon => ({
+const line = (id: string, from: PointMm, to: PointMm, order = 1): C8ThreadCoupon => ({
   kind: 'engineering-thread-path', bodyRadiusMm: 1, threadId: id, threadRadiusMm: 0.2,
   spans: [{
     id: `${id}:span`, threadId: id, opId: `${id}:lay`, step: 1, zone: 'surface',
@@ -36,11 +36,11 @@ const line = (id: string, from: PointMm, to: PointMm): C8ThreadCoupon => ({
     },
   }],
   supports: [], marks: [], fixture: {}, assumptions: [],
-  operations: [{ id: `${id}:lay`, order: 1, step: 1, kind: 'lay', spanIds: [`${id}:span`] }],
+  operations: [{ id: `${id}:lay`, order, step: 1, kind: 'lay', spanIds: [`${id}:span`] }],
 });
 
 describe('S8 second pass (A2/B2)', () => {
-  it('planS8AB2 is row2 of the same phase, not a copy of the first round', () => {
+  it('planS8AB2 is cumulative row2 staging, not yet a continuation-only plan', () => {
     const ab1 = planS8AB(), ab2 = planS8AB2();
     const a2 = planS8Kiku({ stage: 'row2' });
     const b2 = planS8Kiku({ stage: 'row2', phase: 1 });
@@ -48,6 +48,11 @@ describe('S8 second pass (A2/B2)', () => {
     assert.deepEqual(ab2.B2.windows, b2.windows);
     assert.notDeepEqual(ab2.A2.windows, ab1.A.windows, 'row2 shifts ports off A1');
     assert.notDeepEqual(ab2.B2.windows, ab1.B.windows, 'row2 shifts ports off B1');
+    for (const [first, second] of [[ab1.A, ab2.A2], [ab1.B, ab2.B2]]) {
+      assert.equal(second.rows, 2);
+      assert.deepEqual(second.windows.filter(w => w.round === 0), first.windows,
+        'staging retains the entire first-round seed; this is not a solved second pass');
+    }
   });
 
   it('nameS8Thread2 assigns A2:/B2: prefixes and does not mutate the source', () => {
@@ -90,19 +95,33 @@ describe('S8 second pass (A2/B2)', () => {
   });
 
   it('checkS8AB2 throws on span ID collision', () => {
-    // Если не переименовать нити, span IDs совпадут.
-    const raw = line('raw', [-1, 3, 0], [1, 3, 0]);
-    const a1 = { ...raw, threadId: 'A:s8-kiku-thread' };
-    const b1 = { ...raw, threadId: 'B:s8-kiku-thread' };
-    // A2 с тем же span ID, что у a1.
-    assert.throws(() => checkS8AB2(a1, b1, raw, raw), RangeError);
+    const threads = ['A', 'B', 'A2', 'B2'].map((id, i) =>
+      line(id, [-1, 3 + i, 0], [1, 3 + i, 0], i));
+    threads[2].spans[0].id = threads[0].spans[0].id;
+    assert.throws(() => checkS8AB2(threads[0], threads[1], threads[2], threads[3]),
+      /span IDs must be globally unique/);
+  });
+
+  it('checkS8AB2 refuses missing or ambiguous operation chronology before geometry checks', () => {
+    const fixture = () => ['A', 'B', 'A2', 'B2'].map((id, i) =>
+      line(id, [-1, 3 + i, 0], [1, 3 + i, 0], i));
+    for (const order of [1, -1, NaN, Infinity]) {
+      const [a1, b1, a2, b2] = fixture();
+      a2.operations[0].order = order;
+      assert.throws(() => checkS8AB2(a1, b1, a2, b2), /strictly increasing operation order/);
+    }
+    const [a1, b1, a2, b2] = fixture();
+    a2.operations[0].id = b1.operations[0].id;
+    assert.throws(() => checkS8AB2(a1, b1, a2, b2), /operation IDs must be globally unique/);
+    a2.operations = [];
+    assert.throws(() => checkS8AB2(a1, b1, a2, b2), /operations for every pass/);
   });
 
   it('checkS8AB2 returns unresolved (not failed) before crossing count is known', () => {
     // Четыре отдельные непересекающиеся нити — зазоры пройдут, но
     // crossingCountUnknown = true, поэтому статус unresolved, не passed.
     const a1 = { ...line('A1x', [-1, 3, 0], [1, 3, 0]), threadId: 'A:s8-kiku-thread' };
-    const b1 = { ...line('B1x', [0, 3.5, -1], [0, 3.5, 1]), threadId: 'B:s8-kiku-thread' };
+    const b1 = { ...line('B1x', [0, 3.5, -1], [0, 3.5, 1], 2), threadId: 'B:s8-kiku-thread' };
     const a2 = { ...line('A2x', [-1, 4, 0.5], [1, 4, 0.5]), threadId: 'A2:s8-kiku-thread',
       spans: [{
         ...line('A2x', [-1, 4, 0.5], [1, 4, 0.5]).spans[0],
@@ -118,14 +137,14 @@ describe('S8 second pass (A2/B2)', () => {
       operations: [{ id: 'B2:lay', order: 6, step: 1, kind: 'lay' as const, spanIds: ['B2:span'] }],
     };
     const result = checkS8AB2(a1, b1, a2, b2);
-    assert.notEqual(result.status, 'failed');
+    assert.equal(result.status, 'unresolved');
     assert.equal(result.crossingCountUnknown, true);
   });
 
   it('checkS8AB2 fails on inter-thread penetration', () => {
     // a1 и a2 пересекаются — зазор failed.
     const a1 = { ...line('A1p', [-1, 3, 0], [1, 3, 0]), threadId: 'A:s8-kiku-thread' };
-    const b1 = { ...line('B1p', [0, 3.5, -1], [0, 3.5, 1]), threadId: 'B:s8-kiku-thread' };
+    const b1 = { ...line('B1p', [0, 3.5, -1], [0, 3.5, 1], 2), threadId: 'B:s8-kiku-thread' };
     // a2 проходит сквозь a1 (радиусы 0.2 + 0.2 = 0.4, центры в 0.1 друг от друга).
     const a2 = { ...line('A2p', [-1, 3.1, 0], [1, 3.1, 0]), threadId: 'A2:s8-kiku-thread',
       spans: [{

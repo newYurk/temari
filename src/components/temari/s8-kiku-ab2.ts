@@ -1,9 +1,9 @@
 /**
  * s8-kiku-ab2.ts — второй проход двух рабочих нитей S8 (A2/B2).
  *
- * Структурно параллелен s8-kiku-ab.ts. A2 строится поверх принятых A1+B1;
- * B2 строится поверх принятых A1+B1+A2. Порядки операций не пересекаются
- * с первым проходом.
+ * Структурная заготовка, не принятый A2/B2: row2 пока включает и первый
+ * круг. Для продолжения A/B нужны сохранение ранее решённых участков,
+ * непрерывность рабочих нитей и проверка охвата пучка.
  *
  * Числовой расчёт (решатель, снимок) выполняется отдельно генератором
  * compute-s8-ab.mts после ремесленной приёмки A1/B1 человеком.
@@ -17,7 +17,6 @@ import {
 import {
   nameS8Thread,
   interThreadClearance,
-  checkS8AB,
   judgeS8AB,
   type ABGroup,
 } from './s8-kiku-ab';
@@ -28,9 +27,8 @@ export type ABGroup2 = 'A2' | 'B2';
 
 /**
  * Планировщик второго прохода — возвращает планы со stage:'row2', что
- * смещает порты на rowAdvanceMm (верхний) и lowerRowAdvanceMm (нижний)
- * относительно первого прохода. Реальные препятствия A1+B1 добавляются
- * в генераторе при запуске решателя.
+ * добавляет второй ряд со смещёнными портами, но сохраняет первый ряд.
+ * Это ещё не план только новых участков поверх неподвижных A1+B1.
  */
 export const planS8AB2 = () => ({
   A2: planS8Kiku({ stage: 'row2' }),           // фаза 0, порты смещены vs A1
@@ -121,6 +119,21 @@ export function checkS8AB2(
   if (new Set(allSpans.map(s => s.id)).size !== allSpans.length)
     throw new RangeError('AB2 span IDs must be globally unique.');
 
+  const operations = threads.flatMap(t => t.operations);
+  if (new Set(operations.map(o => o.id)).size !== operations.length)
+    throw new RangeError('AB2 operation IDs must be globally unique.');
+  // The over/under checks must not infer a different recipe from invalid timestamps.
+  let previousOrder = -Infinity;
+  for (const thread of threads) {
+    if (!thread.operations.length)
+      throw new RangeError('AB2 requires operations for every pass.');
+    for (const operation of thread.operations) {
+      if (!Number.isFinite(operation.order) || operation.order <= previousOrder)
+        throw new RangeError('AB2 requires strictly increasing operation order: A1 -> B1 -> A2 -> B2.');
+      previousOrder = operation.order;
+    }
+  }
+
   // Межнитевые зазоры.
   const clearances = {
     a2_vs_a1: interThreadClearance(a2, a1),
@@ -134,7 +147,7 @@ export function checkS8AB2(
   const carrier: C8ThreadCoupon = {
     ...a1,
     spans: allSpans,
-    operations: threads.flatMap(t => t.operations),
+    operations,
     supports: [],
     crossings: [],
   };
@@ -146,7 +159,6 @@ export function checkS8AB2(
   // Пересечения второго прохода поверх первого: B1 поверх A1 (уже
   // проверено в checkS8AB), плюс A2 поверх {A1,B1}, B2 поверх {A1,B1,A2}.
   const secondPassIds = new Set([a2.threadId, b2.threadId]);
-  const firstPassIds  = new Set([a1.threadId, b1.threadId]);
 
   const pairs = new Map<string, [ThreadSpan, ThreadSpan]>();
   for (const pair of projectedCrossings(carrier, [0, 1, 0], 0.001, true)) {
