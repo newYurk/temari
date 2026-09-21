@@ -200,7 +200,7 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     }
   });
 
-  it("later inner is one pearl below, a widening V on the stack — not on the first star", async () => {
+  it("inner kagari under the wrap is not drawn on the mari", async () => {
     const THREE = await import("three");
     const { sewKagariBite } = await import("./stitches.ts");
     const { biteAcross } = await import("./kagari.ts");
@@ -210,14 +210,22 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     const mark = new THREE.Vector3(0, Math.cos(0.15), Math.sin(0.15)).normalize().multiplyScalar(r);
     const from = new THREE.Vector3(0.12, Math.cos(0.22), Math.sin(0.22)).normalize().multiplyScalar(r);
     const to = new THREE.Vector3(-0.12, Math.cos(0.22), Math.sin(0.22)).normalize().multiplyScalar(r);
-    const bite = biteAcross([0, 1, 0], [mark.x, mark.y, mark.z], 0.71 * 2, 1);
+    const bite = biteAcross([0, 1, 0], [mark.x, mark.y, mark.z], 0.71 * 4, 3);
     const pts = sewKagariBite(from, mark, to, "pearl5", bite.enter, bite.exit, true);
-    const markDot = mark.clone().normalize().dot(pole);
-    const prevInner = Math.cos(0.15 - pearl);
-    const closest = Math.max(...pts.map((p) => p.clone().normalize().dot(pole)));
+    const enter = new THREE.Vector3(...bite.enter).normalize();
+    const exit = new THREE.Vector3(...bite.exit).normalize();
+    const m = mark.clone().normalize();
+    const minMark = Math.min(...pts.map((p) => p.clone().normalize().distanceTo(m)));
+    const minEnter = Math.min(...pts.map((p) => p.clone().normalize().distanceTo(enter)));
+    const minExit = Math.min(...pts.map((p) => p.clone().normalize().distanceTo(exit)));
+    assert.ok(minMark < pearl * 0.15, "the V still meets at the mark");
     assert.ok(
-      closest < prevInner + 0.002,
-      "later inner does not sit on the previous round",
+      minEnter > minMark + pearl * 0.4,
+      "visible path does not walk to the hidden enter",
+    );
+    assert.ok(
+      minExit > minMark + pearl * 0.4,
+      "visible path does not walk to the hidden exit",
     );
     const arriving = pts.slice(0, Math.floor(pts.length / 2));
     const leaving = pts.slice(Math.floor(pts.length / 2));
@@ -235,12 +243,9 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
       }
     }
     assert.ok(bR > aR, "leaving sits over arriving");
-    const mid = pts[Math.floor(pts.length / 2)]!;
-    const midDot = mid.clone().normalize().dot(pole);
-    assert.ok(
-      Math.abs(midDot - markDot) < 0.01,
-      "the V meets at the new mark, not a skip toward the pole",
-    );
+    const prevInner = Math.cos(0.15 - pearl);
+    const closest = Math.max(...pts.map((p) => p.clone().normalize().dot(pole)));
+    assert.ok(closest < prevInner + 0.002, "later inner does not sit on the previous round");
   });
 
   it("working start/stop tucks back under the stitch, not past the outer pin", async () => {
