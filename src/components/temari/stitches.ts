@@ -336,6 +336,23 @@ function reversePorts(
   return { inn: a, out: b };
 }
 
+/** Sides of the visible inner kagari. The scoop under the wrap is not drawn. */
+function innerPorts(
+  tip: THREE.Vector3,
+  from: THREE.Vector3,
+  enter?: [number, number, number],
+  exit?: [number, number, number],
+): { inn: THREE.Vector3; out: THREE.Vector3 } {
+  if (enter && exit) {
+    const a = new THREE.Vector3(enter[0], enter[1], enter[2]).normalize();
+    const b = new THREE.Vector3(exit[0], exit[1], exit[2]).normalize();
+    const f = from.clone().normalize();
+    if (f.distanceToSquared(a) <= f.distanceToSquared(b)) return { inn: a, out: b };
+    return { inn: b, out: a };
+  }
+  return reversePorts(tip, from);
+}
+
 /**
  * Visible needle only. Outer reverse pickup: flanks meet as a V at the
  * pin. Arrive on the mari, curve in on the far side of the jiwari, come
@@ -343,10 +360,10 @@ function reversePorts(
  * bury under the wrap — a tube facing the pin is a chopped pipe, a hop
  * to the port after the tip is an elbow.
  *
- * Inner uwagake: a V on the stack at the new mark. The kagari itself
- * (in one side of the jiwari, under the wrap, out the other) is not
- * drawn — walking enter→exit on the mari is the stitch that should
- * have gone inside the ball.
+ * Inner uwagake: the needle goes in one side of the jiwari and out the
+ * other. That visible stitch widens around the stack — a sharp V at
+ * every mark is a Christmas tree of points, not the packed wedge.
+ * The run under the wrap is not drawn.
  */
 function sewKagariLegs(
   from: THREE.Vector3,
@@ -367,18 +384,20 @@ function sewKagariLegs(
   const inPts: THREE.Vector3[] = [];
   const outPts: THREE.Vector3[] = [];
   if (onStack) {
+    const { inn, out } = innerPorts(tip, from, enter, exit);
     for (let i = 1; i <= n; i++) {
       const t = i / n;
-      slerpUnit(from, tip, t, _a);
-      const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
-      _a.set(c[0], c[1], c[2]).normalize();
+      slerpUnit(from, inn, t, _a);
+      inPts.push(_a.clone().multiplyScalar(fromR));
+    }
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      slerpUnit(inn, out, t, _a);
       inPts.push(_a.clone().multiplyScalar(fromR));
     }
     for (let i = 0; i < n; i++) {
       const t = i / n;
-      slerpUnit(tip, to, t, _a);
-      const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
-      _a.set(c[0], c[1], c[2]).normalize();
+      slerpUnit(out, to, t, _a);
       const lift = Math.exp(-(t / INNER_LEAVE_WIDTH) * (t / INNER_LEAVE_WIDTH));
       const r = toR + pearl * STACK_LIFT * INNER_LEAVE_LIFT * lift;
       outPts.push(_a.clone().multiplyScalar(r));

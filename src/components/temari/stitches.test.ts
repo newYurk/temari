@@ -165,30 +165,32 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
   it("inner uwagake stays on the stack and still crosses, leaving over arriving", async () => {
     const THREE = await import("three");
     const { sewKagariBite } = await import("./stitches.ts");
+    const { biteAcross } = await import("./kagari.ts");
     const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
     const r = 1 + pearl * 0.5;
     const mark = new THREE.Vector3(0.04, 0.99, 0.12).normalize().multiplyScalar(r);
     const from = new THREE.Vector3(0.055, 0.987, 0.14).normalize().multiplyScalar(r);
     const to = new THREE.Vector3(0.025, 0.987, 0.155).normalize().multiplyScalar(r);
-    const pts = sewKagariBite(from, mark, to, "pearl5", undefined, undefined, true);
+    const bite = biteAcross([0, 1, 0], [mark.x, mark.y, mark.z], 0.71 * 2, 1);
+    const pts = sewKagariBite(from, mark, to, "pearl5", bite.enter, bite.exit, true);
     const floor = Math.min(...pts.map((p) => p.length()));
     assert.ok(floor >= 1, `inner uwagake dives through the cover (${floor.toFixed(3)})`);
-    const mid = Math.floor(pts.length / 2);
-    const arriving = pts.slice(0, mid);
-    const leaving = pts.slice(mid);
-    let best = Infinity;
-    let aR = 0;
-    let bR = 0;
-    for (const a of arriving) {
-      for (const b of leaving) {
-        const d = a.distanceToSquared(b);
-        if (d < best) {
-          best = d;
-          aR = a.length();
-          bR = b.length();
+    const enter = new THREE.Vector3(...bite.enter).normalize();
+    const exit = new THREE.Vector3(...bite.exit).normalize();
+    const near = (q: THREE.Vector3) => {
+      let best = pts[0]!;
+      let d0 = Infinity;
+      for (const p of pts) {
+        const d = p.clone().normalize().distanceToSquared(q);
+        if (d < d0) {
+          d0 = d;
+          best = p;
         }
       }
-    }
+      return best;
+    };
+    const aR = near(enter).length();
+    const bR = near(exit).length();
     assert.ok(bR > aR, `inner leaving does not sit on arriving (${bR.toFixed(3)} vs ${aR.toFixed(3)})`);
     const pole = new THREE.Vector3(0, 1, 0);
     const markDot = mark.clone().normalize().dot(pole);
@@ -200,55 +202,41 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     }
   });
 
-  it("inner kagari under the wrap is not drawn on the mari", async () => {
+  it("later inner is a widening stitch over the stack, not a sharp Christmas-tree V", async () => {
     const THREE = await import("three");
     const { sewKagariBite } = await import("./stitches.ts");
     const { biteAcross } = await import("./kagari.ts");
     const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
     const r = 1 + pearl * 0.5;
     const pole = new THREE.Vector3(0, 1, 0);
-    const mark = new THREE.Vector3(0, Math.cos(0.15), Math.sin(0.15)).normalize().multiplyScalar(r);
-    const from = new THREE.Vector3(0.12, Math.cos(0.22), Math.sin(0.22)).normalize().multiplyScalar(r);
-    const to = new THREE.Vector3(-0.12, Math.cos(0.22), Math.sin(0.22)).normalize().multiplyScalar(r);
-    const bite = biteAcross([0, 1, 0], [mark.x, mark.y, mark.z], 0.71 * 4, 3);
-    const pts = sewKagariBite(from, mark, to, "pearl5", bite.enter, bite.exit, true);
-    const enter = new THREE.Vector3(...bite.enter).normalize();
-    const exit = new THREE.Vector3(...bite.exit).normalize();
-    const m = mark.clone().normalize();
-    const minMark = Math.min(...pts.map((p) => p.clone().normalize().distanceTo(m)));
-    const minEnter = Math.min(...pts.map((p) => p.clone().normalize().distanceTo(enter)));
-    const minExit = Math.min(...pts.map((p) => p.clone().normalize().distanceTo(exit)));
-    assert.ok(minMark < pearl * 0.15, "the V still meets at the mark");
-    assert.ok(
-      minEnter > minMark + pearl * 0.4,
-      "visible path does not walk to the hidden enter",
-    );
-    assert.ok(
-      minExit > minMark + pearl * 0.4,
-      "visible path does not walk to the hidden exit",
-    );
-    for (const p of pts) {
+    const opening = (stacked: number) => {
+      const markTh = 0.15 + stacked * pearl;
+      const mark = new THREE.Vector3(0, Math.cos(markTh), Math.sin(markTh)).normalize().multiplyScalar(r);
+      const from = new THREE.Vector3(0.12, Math.cos(markTh + 0.07), Math.sin(markTh + 0.07)).normalize().multiplyScalar(r);
+      const to = new THREE.Vector3(-0.12, Math.cos(markTh + 0.07), Math.sin(markTh + 0.07)).normalize().multiplyScalar(r);
+      const bite = biteAcross([0, 1, 0], [mark.x, mark.y, mark.z], 0.71 * (1 + stacked), stacked);
+      const pts = sewKagariBite(from, mark, to, "pearl5", bite.enter, bite.exit, true);
+      const enter = new THREE.Vector3(...bite.enter).normalize();
+      const exit = new THREE.Vector3(...bite.exit).normalize();
+      const minEnter = Math.min(...pts.map((p) => p.clone().normalize().distanceTo(enter)));
+      const minExit = Math.min(...pts.map((p) => p.clone().normalize().distanceTo(exit)));
+      const mid = pts[Math.floor(pts.length / 2)]!;
+      const span = enter.distanceTo(exit);
+      return { pts, mark, enter, exit, minEnter, minExit, span, mid, stacked };
+    };
+    const k0 = opening(0);
+    const k3 = opening(3);
+    assert.ok(k0.minEnter < pearl * 0.25, "kai 0 visits the tiny enter");
+    assert.ok(k0.minExit < pearl * 0.25, "kai 0 visits the tiny exit");
+    assert.ok(k3.minEnter < pearl * 0.25, "later visits the wide enter");
+    assert.ok(k3.minExit < pearl * 0.25, "later visits the wide exit");
+    assert.ok(k3.span > k0.span * 1.8, "later stitch is wider around the stack");
+    for (const p of k3.pts) {
       assert.ok(p.length() >= 1, "inner kagari is not a dive through the wrap");
     }
-    const arriving = pts.slice(0, Math.floor(pts.length / 2));
-    const leaving = pts.slice(Math.floor(pts.length / 2));
-    let best = Infinity;
-    let aR = 0;
-    let bR = 0;
-    for (const a of arriving) {
-      for (const b of leaving) {
-        const d = a.distanceToSquared(b);
-        if (d < best) {
-          best = d;
-          aR = a.length();
-          bR = b.length();
-        }
-      }
-    }
-    assert.ok(bR > aR, "leaving sits over arriving");
-    const prevInner = Math.cos(0.15 - pearl);
-    const closest = Math.max(...pts.map((p) => p.clone().normalize().dot(pole)));
-    assert.ok(closest < prevInner + 0.002, "later inner does not sit on the previous round");
+    const prevInner = Math.cos(0.15 + 2 * pearl);
+    const closest = Math.max(...k3.pts.map((p) => p.clone().normalize().dot(pole)));
+    assert.ok(closest < prevInner + 0.003, "later inner does not sit on the previous round");
   });
 
   it("working start/stop tucks back under the stitch, not past the outer pin", async () => {
