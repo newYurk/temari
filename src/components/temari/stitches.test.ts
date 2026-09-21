@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { stackBump, markTurnPast, sphereBezier, innerBiteJoin } from "./kagari.ts";
+import { stackBump, markTurnPast, sphereBezier, innerBiteJoin, appendParkBite } from "./kagari.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 
 describe("thread stack is local, not a lifted petal", () => {
@@ -109,5 +109,119 @@ describe("kiku mark turn is a U around the vertex, not a diamond", () => {
       }
     }
     assert.ok(span < 0.35, `macaroni from above: inner join spanned ${(span * 180) / Math.PI}° around the pole`);
+  });
+});
+
+describe("parked round still takes the inner bite", () => {
+  const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
+
+  function v(x: number, y: number, z: number, r = 1 + pearl * 0.5): [number, number, number] {
+    const len = Math.hypot(x, y, z) || 1;
+    return [(x / len) * r, (y / len) * r, (z / len) * r];
+  }
+
+  function slerp(
+    a: [number, number, number],
+    b: [number, number, number],
+    t: number,
+  ): [number, number, number] {
+    const na = Math.hypot(...a) || 1;
+    const nb = Math.hypot(...b) || 1;
+    const ua: [number, number, number] = [a[0] / na, a[1] / na, a[2] / na];
+    const ub: [number, number, number] = [b[0] / nb, b[1] / nb, b[2] / nb];
+    const d = Math.min(1, Math.max(-1, ua[0] * ub[0] + ua[1] * ub[1] + ua[2] * ub[2]));
+    const th = Math.acos(d);
+    const r = na + (nb - na) * t;
+    if (th < 1e-5) return [ua[0] * r, ua[1] * r, ua[2] * r];
+    const s = Math.sin(th);
+    const w0 = Math.sin((1 - t) * th) / s;
+    const w1 = Math.sin(t * th) / s;
+    return [(ua[0] * w0 + ub[0] * w1) * r, (ua[1] * w0 + ub[1] * w1) * r, (ua[2] * w0 + ub[2] * w1) * r];
+  }
+
+  function pathThrough(...keys: [number, number, number][]) {
+    const out: [number, number, number][] = [];
+    for (let s = 0; s < keys.length - 1; s++) {
+      const a = keys[s]!;
+      const b = keys[s + 1]!;
+      const start = s === 0 ? 0 : 1;
+      for (let i = start; i <= 8; i++) out.push(slerp(a, b, i / 8));
+    }
+    return out;
+  }
+
+  function az(p: [number, number, number]) {
+    return Math.atan2(p[0], p[2]);
+  }
+
+  function wrapDelta(a: number, b: number) {
+    let d = b - a;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  }
+
+  it("adds an across-jiwari U at the start meridian instead of a cusp", () => {
+    const mark = v(0, Math.cos(0.2), -Math.sin(0.2));
+    const right = v(0.18, Math.cos(0.38), -Math.sin(0.38));
+    const left = v(-0.18, Math.cos(0.38), -Math.sin(0.38));
+    const far = v(0, Math.cos(0.7), -Math.sin(0.7));
+    const pts = pathThrough(mark, right, far, left, mark);
+    assert.ok(pts.length > 16);
+    const bitten = appendParkBite(pts, pearl);
+    assert.ok(bitten.length > pts.length - 4, "bite appends the U");
+    const last = bitten[bitten.length - 1]!;
+    assert.ok(last[0] * right[0] > 0, "park bite aims at the departing flank");
+    const markDot = mark[1] / (Math.hypot(...mark) || 1);
+    for (const p of bitten.slice(-12)) {
+      const n = Math.hypot(...p) || 1;
+      assert.ok(p[1] / n <= markDot + 0.02, "park bite must not enter the polar cap");
+    }
+    let span = 0;
+    for (const p of bitten.slice(-12)) {
+      for (const q of bitten.slice(-12)) {
+        span = Math.max(span, Math.abs(wrapDelta(az(p), az(q))));
+      }
+    }
+    assert.ok(span > 0.04, "bite has width across the ray");
+    assert.ok(span < 0.6, "park bite is a pearl U, not a noodle around the pole");
+  });
+
+  it("does not weld an open working length", () => {
+    const mark = v(0, Math.cos(0.2), -Math.sin(0.2));
+    const right = v(0.18, Math.cos(0.38), -Math.sin(0.38));
+    const far = v(0, Math.cos(0.7), -Math.sin(0.7));
+    const pts = pathThrough(mark, right, far);
+    const bitten = appendParkBite(pts, pearl);
+    assert.equal(bitten.length, pts.length, "open petal is left alone");
+  });
+
+  it("north park matches a mid-round inner bite after a 90° turn", () => {
+    const pearlU = (phi: number) => {
+      const mark = v(Math.sin(0.2) * Math.sin(phi), Math.cos(0.2), -Math.sin(0.2) * Math.cos(phi));
+      const right = v(
+        Math.sin(0.38) * Math.sin(phi + 0.5),
+        Math.cos(0.38),
+        -Math.sin(0.38) * Math.cos(phi + 0.5),
+      );
+      const left = v(
+        Math.sin(0.38) * Math.sin(phi - 0.5),
+        Math.cos(0.38),
+        -Math.sin(0.38) * Math.cos(phi - 0.5),
+      );
+      const far = v(Math.sin(0.7) * Math.sin(phi), Math.cos(0.7), -Math.sin(0.7) * Math.cos(phi));
+      return appendParkBite(pathThrough(mark, right, far, left, mark), pearl);
+    };
+    const north = pearlU(0);
+    const east = pearlU(Math.PI / 2);
+    const span = (pts: [number, number, number][]) => {
+      let s = 0;
+      const tail = pts.slice(-12);
+      for (const p of tail) {
+        for (const q of tail) s = Math.max(s, Math.abs(wrapDelta(az(p), az(q))));
+      }
+      return s;
+    };
+    assert.ok(Math.abs(span(north) - span(east)) < 0.08, "start-ray bite is not a special case");
   });
 });

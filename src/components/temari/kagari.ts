@@ -468,3 +468,46 @@ export function uwagakeVia(
     p[2] * ct + radial[2] * st,
   ]);
 }
+
+/**
+ * Inner bite at a parked round's start mark.
+ *
+ * A finished chidori set returns to the first inner mark but must not weld
+ * into a loop — the thread starts and stops there. Without a bite, those two
+ * ends are a cusp on the same meridian every kai (north for set A, the next
+ * ray for set B). The arriving flank still takes the same uwagake U as every
+ * other inner stitch; `to` is only the far side of the bite, not a join.
+ */
+export function appendParkBite(pts: Vec3[], pearl: number): Vec3[] {
+  if (pts.length < 8) return pts;
+  const start = pts[0]!;
+  const mark = pts[pts.length - 1]!;
+  const dx = mark[0] - start[0];
+  const dy = mark[1] - start[1];
+  const dz = mark[2] - start[2];
+  if (dx * dx + dy * dy + dz * dz > 1.6e-4) return pts;
+
+  const keep = pearl * 0.5;
+  const keep2 = keep * keep;
+  const dist2 = (a: Vec3, b: Vec3) => {
+    const x = a[0] - b[0];
+    const y = a[1] - b[1];
+    const z = a[2] - b[2];
+    return x * x + y * y + z * z;
+  };
+
+  let i = pts.length - 1;
+  while (i > 2 && dist2(pts[i]!, mark) < keep2) i--;
+  if (i < 2) return pts;
+
+  let j = 1;
+  const limit = Math.max(3, Math.floor(pts.length / 3));
+  while (j < limit && dist2(pts[j]!, mark) < keep2) j++;
+  const from = pts[i]!;
+  const to = pts[j]!;
+  if (dist2(from, to) < pearl * pearl * 0.05) return pts;
+
+  const out = pts.slice(0, i + 1);
+  out.push(...innerBiteJoin(from, mark, to, pearl, 3));
+  return out;
+}
