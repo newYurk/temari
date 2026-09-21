@@ -253,36 +253,88 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
 
   return (
     <>
-      <p
-        role="status"
-        aria-live="polite"
-        className="pointer-events-none absolute inset-x-0 top-[calc(var(--temari-chrome-top,3.5rem)+0.25rem)] z-20 px-16 text-center text-[13px] leading-[18px] text-ink/80 md:px-40"
+      <div
+        className="pointer-events-none absolute inset-x-0 top-[calc(var(--temari-chrome-top,3.5rem)+0.25rem)] bottom-[var(--temari-chrome-bottom,12rem)] z-20 flex flex-col gap-2"
       >
-        {hint}
-      </p>
+        <p
+          role="status"
+          aria-live="polite"
+          className="shrink-0 px-16 text-center text-[13px] leading-[18px] text-ink/80 md:px-40"
+        >
+          {hint}
+        </p>
 
-      <aside
-        aria-label="Рабочие нити"
-        className="pointer-events-none absolute top-1/2 left-3 z-20 -translate-y-1/2 md:left-6"
-      >
-        <div className="pointer-events-auto flex flex-col gap-2 rounded-3xl border border-line bg-linen/90 p-2 shadow-[0_4px_24px_#0c0b0908]">
-          <div role="group" aria-label="Цвет основы" className="flex flex-col gap-1 pb-1">
-            <p className="px-1 text-[10px] tracking-wide text-ink/55">Основа</p>
-            <div className="flex flex-wrap gap-0.5">
+        <aside
+          aria-label="Рабочие нити"
+          className="ml-3 flex min-h-0 flex-1 items-center self-start md:ml-6"
+        >
+          <div className="pointer-events-auto flex max-h-full flex-col gap-2 overflow-y-auto overscroll-contain rounded-3xl border border-line bg-linen/90 p-2 shadow-[0_4px_24px_#0c0b0908]">
+            <div role="group" aria-label="Цвет основы" className="flex shrink-0 flex-col gap-1 pb-1">
+              <p className="px-1 text-[10px] tracking-wide text-ink/55">Основа</p>
+              <div className="flex flex-wrap gap-0.5">
+                {THREAD_COLORS.map((color, i) => (
+                  <button
+                    key={`wrap-${i}-${color}`}
+                    type="button"
+                    aria-label={`Цвет основы ${i + 1}`}
+                    aria-pressed={s.wrapColor === i}
+                    title={`${COLOR_NAMES[i]} основа`}
+                    onClick={() => s.setWrapColor(i)}
+                    className={cn("flex size-8 items-center justify-center rounded-lg", focusStyle)}
+                  >
+                    <span
+                      className={cn(
+                        "size-4 rounded-full ring-1 ring-line",
+                        s.wrapColor === i && "ring-2 ring-ink ring-offset-1 ring-offset-linen",
+                      )}
+                      style={{ backgroundColor: color }}
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+            {motif === "kiku" ? (
+              <div role="group" aria-label="Две нити кику" className="flex shrink-0 flex-col gap-1">
+                {([0, 1] as const).map((slot) => (
+                  <button
+                    key={slot}
+                    type="button"
+                    aria-pressed={editing === slot}
+                    aria-label={`Нить ${slot + 1}, ${slot === 0 ? "первая" : "вторая"} четвёрка: ${COLOR_NAMES[kagariColors[slot]]?.toLowerCase() ?? ""}`}
+                    onClick={() => s.editThread(slot)}
+                    className={cn(
+                      "flex h-10 items-center gap-2 rounded-2xl px-2 text-sm",
+                      focusStyle,
+                      editing === slot ? "bg-ink/8 font-medium ring-1 ring-ink/40" : "text-ink/70 hover:bg-ink/5",
+                    )}
+                  >
+                    <span aria-hidden className="w-4 text-center text-xs tabular-nums">{slot + 1}</span>
+                    <span
+                      aria-hidden
+                      className="size-5 rounded-full ring-1 ring-line"
+                      style={{ backgroundColor: THREAD_COLORS[kagariColors[slot]] }}
+                    />
+                    <span className="hidden pr-1 lg:inline">Нить</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className="flex shrink-0 flex-col gap-1" aria-label="Цвет нити">
               {THREAD_COLORS.map((color, i) => (
                 <button
-                  key={`wrap-${i}-${color}`}
+                  key={`thread-${i}-${color}`}
                   type="button"
-                  aria-label={`Цвет основы ${i + 1}`}
-                  aria-pressed={s.wrapColor === i}
-                  title={`${COLOR_NAMES[i]} основа`}
-                  onClick={() => s.setWrapColor(i)}
-                  className={cn("flex size-8 items-center justify-center rounded-lg", focusStyle)}
+                  aria-label={threadName(i)}
+                  aria-pressed={s.selectedColor === i}
+                  title={threadName(i)}
+                  onClick={() => s.setColor(i)}
+                  className={cn("flex size-10 items-center justify-center rounded-xl", focusStyle)}
                 >
                   <span
                     className={cn(
-                      "size-4 rounded-full ring-1 ring-line",
-                      s.wrapColor === i && "ring-2 ring-ink ring-offset-1 ring-offset-linen",
+                      "size-6 rounded-full ring-1 ring-line",
+                      otherThread === i && s.selectedColor !== i && "ring-2 ring-ink/35",
+                      s.selectedColor === i && "ring-2 ring-ink ring-offset-2 ring-offset-linen",
                     )}
                     style={{ backgroundColor: color }}
                   />
@@ -290,56 +342,8 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
               ))}
             </div>
           </div>
-          {motif === "kiku" ? (
-            <div role="group" aria-label="Две нити кику" className="flex flex-col gap-1">
-              {([0, 1] as const).map((slot) => (
-                <button
-                  key={slot}
-                  type="button"
-                  aria-pressed={editing === slot}
-                  aria-label={`Нить ${slot + 1}, ${slot === 0 ? "первая" : "вторая"} четвёрка: ${COLOR_NAMES[kagariColors[slot]]?.toLowerCase() ?? ""}`}
-                  onClick={() => s.editThread(slot)}
-                  className={cn(
-                    "flex h-10 items-center gap-2 rounded-2xl px-2 text-sm",
-                    focusStyle,
-                    editing === slot ? "bg-ink/8 font-medium ring-1 ring-ink/40" : "text-ink/70 hover:bg-ink/5",
-                  )}
-                >
-                  <span aria-hidden className="w-4 text-center text-xs tabular-nums">{slot + 1}</span>
-                  <span
-                    aria-hidden
-                    className="size-5 rounded-full ring-1 ring-line"
-                    style={{ backgroundColor: THREAD_COLORS[kagariColors[slot]] }}
-                  />
-                  <span className="hidden pr-1 lg:inline">Нить</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <div className="flex flex-col gap-1" aria-label="Цвет нити">
-            {THREAD_COLORS.map((color, i) => (
-              <button
-                key={`thread-${i}-${color}`}
-                type="button"
-                aria-label={threadName(i)}
-                aria-pressed={s.selectedColor === i}
-                title={threadName(i)}
-                onClick={() => s.setColor(i)}
-                className={cn("flex size-10 items-center justify-center rounded-xl", focusStyle)}
-              >
-                <span
-                  className={cn(
-                    "size-6 rounded-full ring-1 ring-line",
-                    otherThread === i && s.selectedColor !== i && "ring-2 ring-ink/35",
-                    s.selectedColor === i && "ring-2 ring-ink ring-offset-2 ring-offset-linen",
-                  )}
-                  style={{ backgroundColor: color }}
-                />
-              </button>
-            ))}
-          </div>
-        </div>
-      </aside>
+        </aside>
+      </div>
 
       <nav
         aria-label="Действия на мари"

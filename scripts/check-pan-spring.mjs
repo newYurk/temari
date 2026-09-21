@@ -12,11 +12,16 @@ try {
   const page = await context.newPage();
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(base);
-  await page.getByRole('button', { name: 'К вышивке' }).click();
-  await page.getByRole('button', { name: 'Кику здесь' }).waitFor();
+  await page.getByRole('button', { name: 'Кику здесь', exact: true }).waitFor();
+  await page.waitForFunction(() => window.__temari?.pan);
   await page.waitForTimeout(800);
   const box = await page.locator('canvas').boundingBox();
-  const cx = box.x + box.width / 2, cy = box.y + box.height * 0.4;
+  assert.ok(box, 'the sphere canvas is visible');
+  // Start to the right of the palette and above the action buttons.
+  const cx = box.x + box.width * 0.65, cy = box.y + box.height * 0.3;
+  assert.equal(await page.evaluate(({ cx, cy }) =>
+    [cx - 50, cx + 50].every(x => document.elementFromPoint(x, cy) === document.querySelector('canvas')),
+  { cx, cy }), true, 'both touches start on the canvas, not on a control');
   const cdp = await context.newCDPSession(page);
   const touch = (type, dx) => cdp.send('Input.dispatchTouchEvent', {
     type,
@@ -25,7 +30,7 @@ try {
   for (const round of [1, 2]) {
     await touch('touchStart', 0);
     for (let i = 1; i <= 12; i++) {
-      await touch('touchMove', i * 8);
+      await touch('touchMove', -i * 8);
       await page.waitForTimeout(16);
     }
     const held = await page.evaluate(() => window.__temari.pan());

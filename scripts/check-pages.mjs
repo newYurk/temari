@@ -28,9 +28,10 @@ try {
       String(center),
     );
   }
-  await page.getByRole("button", { name: "Сбоку", exact: true }).click();
+  const c8View = page.getByRole("region", { name: "Образец пути нити C8", exact: true });
+  await c8View.getByRole("button", { name: "Сбоку", exact: true }).click();
   await page.screenshot({ path: `${out}/lab-side.png`, fullPage: true });
-  await page.getByRole("button", { name: "На центр", exact: true }).click();
+  await c8View.getByRole("button", { name: "На центр", exact: true }).click();
   await page.locator("#circumference").fill("320");
   await page.waitForFunction(() => document.querySelector("#circumference-value").textContent === "32 см");
   assert.equal(await page.locator("#circumference-value").innerText(), "32 см");
@@ -47,8 +48,8 @@ try {
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(base);
-  await page.waitForFunction(() => window.__temari?.enterStudio);
-  await page.getByRole("button", { name: "К вышивке", exact: true }).click();
+  await page.getByRole("button", { name: "Кику здесь", exact: true }).waitFor();
+  await page.waitForFunction(() => window.__temari?.kagari);
   await page.getByRole("button", { name: "C8", exact: true }).click();
   await page.getByRole("button", { name: "Вышивка", exact: true }).click();
   const kiku = page.getByRole("button", { name: "Кику", exact: true });
@@ -77,6 +78,7 @@ try {
     await page.locator('[aria-live="polite"]').innerText(),
     /Рецепт кику для C10 ещё не реализован/,
   );
+  assert.equal(await page.evaluate(() => window.__temari.kagari().n), 0);
 
   await page.goto(`${base}?kiku=1`);
   await page.waitForFunction(() => window.__temari?.kagari().n > 0);
@@ -94,7 +96,7 @@ try {
   );
   await page.waitForTimeout(200);
   await page.screenshot({ path: `${out}/simple-a1.png` });
-  await page.getByRole("button", { name: "Кику", exact: true }).click();
+  await page.getByRole("button", { name: "Вторая группа", exact: true }).click();
   await page.evaluate(() =>
     window.__temari.freezeKagari(window.__temari.kagari().n),
   );

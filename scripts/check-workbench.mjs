@@ -12,13 +12,22 @@ try {
     const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce" });
     page.on("pageerror", (e) => errors.push(e.message));
     await page.goto(base);
-    await page.getByRole("button", { name: "Цвет 3", exact: true }).click();
-    await page.getByRole("button", { name: "К вышивке", exact: true }).click();
-    for (const name of ["Без сетки", "S8 · простая", "C8", "C10", "Булавки", "Линии эскиза", "Отменить"]) {
+    await page.getByRole("button", { name: "Кику здесь", exact: true }).waitFor();
+    for (let i = 1; i <= 5; i++) {
+      const colour = page.getByRole("button", { name: `Цвет основы ${i}`, exact: true });
+      await colour.click();
+      assert.equal(await colour.getAttribute("aria-pressed"), "true", `base colour ${i} at ${width}`);
+    }
+    const wrapColor = page.getByRole("button", { name: "Цвет основы 3", exact: true });
+    await wrapColor.click();
+    assert.equal(await wrapColor.getAttribute("aria-pressed"), "true");
+    for (const name of ["Без сетки", "S8 · простая", "C8", "C10", "Булавки", "Линии", "Распустить"]) {
       assert.equal(await page.getByRole("button", { name, exact: true }).isVisible(), true, name);
     }
     assert.match(await page.getByRole("status").innerText(), /Нажмите на шар/);
-    await page.getByRole("button", { name: "Линии эскиза", exact: true }).click({ force: true });
+    const lines = page.getByRole("button", { name: "Линии", exact: true });
+    assert.equal(await lines.getAttribute("aria-disabled"), "true");
+    await lines.click({ force: true });
     assert.match(await page.getByRole("status").innerText(), /две булавки/);
     await page.getByRole("button", { name: "C8", exact: true }).click();
     assert.equal(await page.getByRole("button", { name: "C8", exact: true }).getAttribute("aria-pressed"), "true");
@@ -41,17 +50,19 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     const fit = await page.evaluate(() => {
       const canvas = document.querySelector("canvas").getBoundingClientRect();
+      const dock = document.querySelector('[aria-label="Этап работы"]').parentElement.parentElement.getBoundingClientRect();
       return { height: canvas.height, bottom: canvas.bottom,
-        hintTop: document.querySelector('[role="status"]').getBoundingClientRect().top };
+        dockTop: dock.top };
     });
     assert.ok(fit.height >= 230, `usable sphere area at ${width}: ${fit.height}`);
-    assert.ok(fit.bottom <= fit.hintTop + 1, `controls don't cover canvas at ${width}`);
+    assert.ok(fit.bottom <= fit.dockTop + 1, `bottom controls don't cover canvas at ${width}`);
     await page.screenshot({ path: `${out}/marking-${width}.png` });
     await page.getByRole("button", { name: "Вышивка", exact: true }).click();
     const kiku = page.getByRole("button", { name: "Кику", exact: true });
     assert.equal(await kiku.getAttribute("aria-disabled"), "true");
     await kiku.click({ force: true });
     assert.match(await page.getByRole("status").innerText(), /Рецепт кику для C8 ещё не реализован/);
+    assert.equal(await page.evaluate(() => window.__temari.kagari().n), 0);
     await page.screenshot({ path: `${out}/embroidery-${width}.png` });
     await page.close();
   }
