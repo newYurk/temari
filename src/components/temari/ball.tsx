@@ -714,6 +714,21 @@ export function Ball() {
 
   useEffect(() => {
     const el = gl.domElement;
+    let mousePan = false;
+    const panBy = (dx: number, dy: number) => {
+      const g = group.current;
+      if (!g) return;
+      const cam = camera as THREE.PerspectiveCamera;
+      const reach = Math.max(camera.position.length(), 1.16);
+      const worldPerPx =
+        (2 * reach * Math.tan(THREE.MathUtils.degToRad(cam.fov || 32) * 0.5)) /
+        Math.max(size.height, 1);
+      _right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+      _up.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+      g.position.addScaledVector(_right, dx * worldPerPx);
+      g.position.addScaledVector(_up, -dy * worldPerPx);
+      if (g.position.length() > 1.08) g.position.setLength(1.08);
+    };
     const onDown = (e: PointerEvent) => {
       if (useTemari.getState().mode === "title") return;
       if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -724,7 +739,16 @@ export function Ball() {
       pointer.y = e.clientY;
       pointer.down = true;
       pointer.dragged = false;
-      if (ptrs.size === 1) pointer.multi = false;
+      if (ptrs.size === 1) {
+        pointer.multi = false;
+        // Keep the chosen gesture until mouse-up, even if Option is released first.
+        mousePan = e.pointerType === "mouse" && e.altKey;
+        if (mousePan) {
+          pinch.held = true;
+          pointer.dragged = true;
+          pointer.multi = true;
+        }
+      }
       // Every new finger stops the ball: a second finger must not inherit a spin.
       omega.current.set(0, 0, 0);
       swings.length = 0;
@@ -778,21 +802,16 @@ export function Ball() {
         const span = Math.hypot(a.x - b.x, a.y - b.y);
         const dmx = mx - pinch.mx;
         const dmy = my - pinch.my;
-        const cam = camera as THREE.PerspectiveCamera;
-        const reach = Math.max(camera.position.length(), 1.16);
-        const worldPerPx =
-          (2 * reach * Math.tan(THREE.MathUtils.degToRad(cam.fov || 32) * 0.5)) /
-          Math.max(size.height, 1);
-        _right.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
-        _up.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
-        g.position.addScaledVector(_right, dmx * worldPerPx);
-        g.position.addScaledVector(_up, -dmy * worldPerPx);
-        if (g.position.length() > 1.08) g.position.setLength(1.08);
+        panBy(dmx, dmy);
         pinch.mx = mx;
         pinch.my = my;
         pinch.span = span;
         pinch.held = true;
         swings.length = 0;
+        return;
+      }
+      if (mousePan) {
+        panBy(dx, dy);
         return;
       }
       // Below the drag threshold a shaking finger must not turn the ball at all.
@@ -857,9 +876,11 @@ export function Ball() {
       return out;
     };
     const onUp = (e: PointerEvent) => {
+      if (!ptrs.has(e.pointerId)) return;
       ptrs.delete(e.pointerId);
       if (ptrs.size < 2) pinch.held = false;
       if (ptrs.size === 0) {
+        mousePan = false;
         throwSpin(omega.current);
         swings.length = 0;
         spinning.current = false;
@@ -878,15 +899,34 @@ export function Ball() {
         /* already */
       }
     };
+    const onBlur = () => {
+      const captured = [...ptrs.keys()];
+      ptrs.clear();
+      mousePan = false;
+      pinch.held = false;
+      pointer.down = false;
+      pointer.multi = true;
+      spinning.current = false;
+      omega.current.set(0, 0, 0);
+      swings.length = 0;
+      for (const id of captured) {
+        if (el.hasPointerCapture(id)) el.releasePointerCapture(id);
+      }
+    };
     el.addEventListener("pointerdown", onDown);
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerup", onUp);
     el.addEventListener("pointercancel", onUp);
+    el.addEventListener("lostpointercapture", onUp);
+    window.addEventListener("blur", onBlur);
     return () => {
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onUp);
+      el.removeEventListener("lostpointercapture", onUp);
+      window.removeEventListener("blur", onBlur);
+      onBlur();
     };
   }, [camera, gl, setPoseDirty, setWrapStarted, size.height, wrap]);
 
@@ -928,6 +968,7 @@ export function Ball() {
         camera.updateProjectionMatrix();
       },
       qy: () => group.current?.quaternion.y ?? 0,
+      orientation: () => group.current?.quaternion.toArray() ?? [0, 0, 0, 1],
       pan: () => group.current?.position.length() ?? 0,
       progress: () => useTemari.getState().wrapProgress,
       nodes: () => gridNodes(useTemari.getState().division).length,
