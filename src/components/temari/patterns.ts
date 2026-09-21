@@ -1,7 +1,7 @@
 import { polePositions, type Division } from "./division.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 import { COLOR_COUNT } from "./palettes.ts";
-import { biteAcross, closestApproachT, refineApproach, stackOver, uwagakeVia, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
+import { biteAcross, closestApproachT, refineApproach, stackOver, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
 
 export type KikuSlot = { pole: number; ring: number; sector: number };
 
@@ -968,14 +968,6 @@ export function compileKiku(
             left.via,
           );
           const over = stackOver(innerOver[line2] ?? [], crossing);
-          const innerVia = [...right.via].reverse();
-          // Later kai: carry over the previous inner (uwagake), then bite
-          // one pearl below. A geodesic to the new mark leaves a halo of
-          // mari around the first star.
-          if (over.length > 0) {
-            const overStack = uwagakeVia(pole, right.a, over.length, spec.pitch);
-            if (overStack) innerVia.push(overStack);
-          }
           cursor = pushKikuLeg(
             ops,
             pole,
@@ -987,7 +979,7 @@ export function compileKiku(
             { line: line2, t: "inner", at: right.a },
             over,
             cornerMm,
-            innerVia,
+            [...right.via].reverse(),
           );
           innerOver[line2]?.push(ops.length - 1);
         }
