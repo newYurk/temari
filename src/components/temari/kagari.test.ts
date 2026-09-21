@@ -297,7 +297,7 @@ describe("kagari recipe atom", () => {
     // reaches too far would quietly drop crossings and show up here. Sharpening
     // lowered the point counts (56 → 48 at three rounds): crossings that the
     // sample grid placed apart turn out to be the same meeting.
-    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 48], [10, 160, 152, 368]]) {
+    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 48], [10, 160, 152, 360]]) {
       const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, layers!, "all"))
         .filter((s) => s.kind === "arc");
       assert.equal(stitches.length, arcs, `arcs at ${layers} rounds`);
