@@ -53,6 +53,7 @@ const _pa = new THREE.Vector3();
 const _pb = new THREE.Vector3();
 const _h0 = new THREE.Vector3();
 const _h1 = new THREE.Vector3();
+const _pole = new THREE.Vector3();
 
 function kindMm(kind: ThreadKind) {
   if (kind === "pearl8") return STITCH_THREAD_MM.pearl8;
@@ -353,6 +354,35 @@ function innerPorts(
   return reversePorts(tip, from);
 }
 
+/** Same colatitude, rotate around the pole. A great circle piles into the cap. */
+function aroundPole(
+  a: THREE.Vector3,
+  b: THREE.Vector3,
+  t: number,
+  pole: THREE.Vector3,
+  out: THREE.Vector3,
+) {
+  _ua.copy(a).normalize();
+  _ub.copy(b).normalize();
+  const tha = Math.acos(Math.min(1, Math.max(-1, _ua.dot(pole))));
+  const thb = Math.acos(Math.min(1, Math.max(-1, _ub.dot(pole))));
+  const th = tha + (thb - tha) * t;
+  _side.copy(_ua).addScaledVector(pole, -_ua.dot(pole));
+  _radial.copy(_ub).addScaledVector(pole, -_ub.dot(pole));
+  if (_side.lengthSq() < 1e-16 || _radial.lengthSq() < 1e-16) return slerpUnit(a, b, t, out);
+  _side.normalize();
+  _radial.normalize();
+  _t.crossVectors(_side, _radial);
+  let ang = Math.acos(Math.min(1, Math.max(-1, _side.dot(_radial))));
+  if (_t.dot(pole) < 0) ang = -ang;
+  const c = Math.cos(ang * t);
+  const s = Math.sin(ang * t);
+  _t.crossVectors(pole, _side).multiplyScalar(s);
+  out.copy(_side).multiplyScalar(c).add(_t);
+  out.multiplyScalar(Math.sin(th)).addScaledVector(pole, Math.cos(th));
+  return out.normalize();
+}
+
 /**
  * Visible needle only. Outer reverse pickup: flanks meet as a V at the
  * pin. Arrive on the mari, curve in on the far side of the jiwari, come
@@ -361,9 +391,9 @@ function innerPorts(
  * to the port after the tip is an elbow.
  *
  * Inner uwagake: the needle goes in one side of the jiwari and out the
- * other. That visible stitch widens around the stack — a sharp V at
- * every mark is a Christmas tree of points, not the packed wedge.
- * The run under the wrap is not drawn.
+ * other. That stitch widens around the stack and stays on the parallel —
+ * a great-circle U piles into the pole as a knot. The run under the
+ * wrap is not drawn.
  */
 function sewKagariLegs(
   from: THREE.Vector3,
@@ -385,6 +415,7 @@ function sewKagariLegs(
   const outPts: THREE.Vector3[] = [];
   if (onStack) {
     const { inn, out } = innerPorts(tip, from, enter, exit);
+    _pole.set(0, mark.y >= 0 ? 1 : -1, 0);
     for (let i = 1; i <= n; i++) {
       const t = i / n;
       slerpUnit(from, inn, t, _a);
@@ -392,7 +423,7 @@ function sewKagariLegs(
     }
     for (let i = 1; i < n; i++) {
       const t = i / n;
-      slerpUnit(inn, out, t, _a);
+      aroundPole(inn, out, t, _pole, _a);
       inPts.push(_a.clone().multiplyScalar(fromR));
     }
     for (let i = 0; i < n; i++) {

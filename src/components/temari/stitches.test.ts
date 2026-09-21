@@ -231,6 +231,12 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     assert.ok(k3.minEnter < pearl * 0.25, "later visits the wide enter");
     assert.ok(k3.minExit < pearl * 0.25, "later visits the wide exit");
     assert.ok(k3.span > k0.span * 1.8, "later stitch is wider around the stack");
+    const enterDot = k3.enter.dot(pole);
+    const maxDot = Math.max(...k3.pts.map((p) => p.clone().normalize().dot(pole)));
+    assert.ok(
+      maxDot <= enterDot + 0.006,
+      "across piled into the pole (great-circle U, not the parallel)",
+    );
     for (const p of k3.pts) {
       assert.ok(p.length() >= 1, "inner kagari is not a dive through the wrap");
     }
