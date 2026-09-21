@@ -11,6 +11,8 @@ on:
       - 'dist-pages/design.html'
       - 'scripts/sync-design.mjs'
       - 'scripts/build-craft-vault.mts'
+      - 'scripts/check-craft-coverage.mts'
+      - 'spec/jta-coverage.md'
       - 'scripts/build-stitch-diagrams.mts'
       - 'scripts/compute-stitch-diagram.mts'
       - 'scripts/lib/stitch-diagram-*.ts'
@@ -37,6 +39,8 @@ on:
       - 'dist-pages/design.html'
       - 'scripts/sync-design.mjs'
       - 'scripts/build-craft-vault.mts'
+      - 'scripts/check-craft-coverage.mts'
+      - 'spec/jta-coverage.md'
       - 'scripts/build-stitch-diagrams.mts'
       - 'scripts/compute-stitch-diagram.mts'
       - 'scripts/lib/stitch-diagram-*.ts'
@@ -65,6 +69,8 @@ jobs:
       - run: node scripts/sync-design.mjs --check
       # карта ремесла собирается из каталога игры: разойтись они не должны
       - run: npm ci
+      - run: npm run check:craft-coverage
+      - run: npx tsx --test src/components/temari/craft-coverage.test.ts
       - run: npx tsx scripts/build-craft-vault.mts --check
       - run: npx tsx scripts/build-stitch-diagrams.mts --check
       - run: npx tsx scripts/build-s8-ab-diagram.mts --check

@@ -12,7 +12,8 @@
     "preview": "vite preview --config vite.pages.config.ts --host 127.0.0.1 --port 4174 --strictPort",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/components/temari/*.test.ts",
-    "check:docs": "node scripts/sync-design.mjs --check"
+    "check:docs": "node scripts/sync-design.mjs --check",
+    "check:craft-coverage": "tsx scripts/check-craft-coverage.mts"
   },
   "dependencies": {
     "@react-three/drei": "10.7.8",
