@@ -526,11 +526,10 @@ export function kikuThetas(
 ) {
   const ceiling = spec.ceiling ?? Math.PI / 2 - spec.pitch * 0.35;
   const tInner = spec.inner + ring * spec.pitch;
-  // First bottom stitch sits on the pole side of the GT14 pin so the pin
-  // holds it. Two pitches (1.4 mm) landed on the head (~1.15 mm) — the
-  // pin held nothing. Sit just inside one Ozaki stretch; later kai walk
-  // from there toward the equator. Thread does not wrap the shaft.
-  const tOuter = Math.min(ceiling, spec.outer - spec.stretch * 0.92 + ring * spec.stretch);
+  // First stitch sits against the pin on the pole side: the head fills
+  // the V. A stretch of air in front of the pin holds nothing. Later kai
+  // walk from there toward the equator. Thread does not wrap the shaft.
+  const tOuter = Math.min(ceiling, spec.outer - spec.pitch * 2 + ring * spec.stretch);
   return { tInner, tOuter };
 }
 

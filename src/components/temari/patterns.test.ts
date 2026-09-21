@@ -141,7 +141,7 @@ describe("kiku on Simple 8", () => {
     assert.ok(Math.abs(spec.outer - Math.PI / 3) < 1e-9);
     const first = kikuThetas(spec, 0);
     assert.ok(first.tOuter < spec.outer, "round 0 sits on the pole side of the pin");
-    assert.ok(spec.outer - first.tOuter > spec.pitch * 2, "clear of the pin head, not sitting on it");
+    assert.ok(spec.outer - first.tOuter > spec.pitch, "behind the pin, not under the head");
     assert.ok(spec.outer - first.tOuter < spec.stretch, "next to the pin, not a short star");
     const second = kikuThetas(spec, 1);
     assert.ok(Math.abs(second.tOuter - spec.outer) < spec.pitch * 1.2, "second round still at the pin");
@@ -379,7 +379,7 @@ describe("kiku on Simple 8", () => {
     for (const op of outer) {
       const theta = Math.acos(Math.min(1, Math.max(-1, op.mark.at[1])));
       assert.ok(theta < spec.outer, `outer ${theta} is poleward of pin ${spec.outer}`);
-      assert.ok(spec.outer - theta > spec.pitch * 2, "clear of the pin head, not sitting on it");
+      assert.ok(spec.outer - theta > spec.pitch, "behind the pin, not under the head");
       assert.ok(spec.outer - theta < spec.stretch, "next to the pin, not a new latitude");
     }
   });
@@ -504,7 +504,7 @@ describe("kiku on Simple 8", () => {
     const th = Math.acos(Math.min(1, Math.max(-1, outer.mark.at[1])));
     const spec = kikuSpec("simple", "even", 1);
     assert.ok(th < spec.outer, "first corners sit on the pole side of the pin");
-    assert.ok(spec.outer - th > spec.pitch * 2, "clear of the pin head, not sitting on it");
+    assert.ok(spec.outer - th > spec.pitch, "behind the pin, not under the head");
     assert.ok(spec.outer - th < spec.stretch, "next to the pin, not a short star");
     assert.ok(th > spec.inner + 0.5, "first V is long");
   });
