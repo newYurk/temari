@@ -13,29 +13,52 @@ export type S8ABSnapshot = {
     factor: number; probes: number; path: { status: string }; curvature: { status: string; upper: number };
     undeclared: string[]; solves: { status: string; settleMoveMm: number }[];
   }[] }>;
+} | {
+  version: 2; kind: 's8-a1-b1-a2-b2-control'; status: 'accepted' | 'rejected' | 'unresolved';
+  A1: C8ThreadCoupon; B1: C8ThreadCoupon; A2: C8ThreadCoupon; B2: C8ThreadCoupon;
+  marks: { A: S8Tip[]; B: S8Tip[]; A2: S8Tip[]; B2: S8Tip[] };
+  source: { digest: string; files: { path: string; sha256: string }[]; revision: string; sourceModified?: boolean };
+  ab1Checks: ReturnType<typeof checkS8AB>[];
+  ab1Verdict: 'accepted' | 'rejected' | 'unresolved';
+  ab2Checks: unknown[];
+  ab2Verdict: 'accepted' | 'rejected' | 'unresolved';
+  acceptance: Record<'A' | 'B' | 'A2' | 'B2', { status: string; diagnostics: string[]; levels: {
+    factor: number; probes: number; path: { status: string }; curvature: { status: string; upper: number };
+    undeclared: string[]; solves: { status: string; settleMoveMm: number }[];
+  }[] }>;
 };
 
+export function firstS8ABPass(s: S8ABSnapshot) {
+  return s.version === 1
+    ? { status: s.status, A: s.A, B: s.B, marks: { A: s.marks.A, B: s.marks.B }, checks: s.checks, acceptance: { A: s.acceptance.A, B: s.acceptance.B } }
+    : { status: s.ab1Verdict, A: s.A1, B: s.B1, marks: { A: s.marks.A, B: s.marks.B }, checks: s.ab1Checks, acceptance: { A: s.acceptance.A, B: s.acceptance.B } };
+}
+
 export function assertS8ABSnapshot(s: S8ABSnapshot, root: string) {
-  if (s.version !== 1 || s.kind !== 's8-a1-b1-control' || !['accepted', 'rejected', 'unresolved'].includes(s.status)
-    || s.A.threadId === s.B.threadId || s.A.spans.some(p => p.threadId !== s.A.threadId)
-    || s.B.spans.some(p => p.threadId !== s.B.threadId) || s.checks.length !== 6
-    || s.marks.A.length !== 8 || s.marks.B.length !== 8) throw new Error('Invalid A1/B1 control snapshot.');
-  if (s.status === 'accepted' && (s.acceptance.A.status !== 'accepted' || s.acceptance.B.status !== 'accepted'
-    || s.acceptance.A.diagnostics.length || s.acceptance.B.diagnostics.length
-    || s.checks.some(c => c.status !== 'passed' || c.surfaceCrossings !== 8 || c.clearance.status !== 'passed' || c.diagnostics.length))) {
+  if (!((s.version === 1 && s.kind === 's8-a1-b1-control') || (s.version === 2 && s.kind === 's8-a1-b1-a2-b2-control')))
+    throw new Error('Invalid A1/B1 control snapshot.');
+  const pass = firstS8ABPass(s);
+  if (!['accepted', 'rejected', 'unresolved'].includes(pass.status)
+    || pass.A.threadId === pass.B.threadId || pass.A.spans.some(p => p.threadId !== pass.A.threadId)
+    || pass.B.spans.some(p => p.threadId !== pass.B.threadId) || pass.checks.length !== 6
+    || pass.marks.A.length !== 8 || pass.marks.B.length !== 8) throw new Error('Invalid A1/B1 control snapshot.');
+  if (pass.status === 'accepted' && (pass.acceptance.A.status !== 'accepted' || pass.acceptance.B.status !== 'accepted'
+    || pass.acceptance.A.diagnostics.length || pass.acceptance.B.diagnostics.length
+    || pass.checks.some(c => c.status !== 'passed' || c.surfaceCrossings !== 8 || c.clearance.status !== 'passed' || c.diagnostics.length))) {
     throw new Error('An accepted AB illustration requires both ladders and every inter-thread check.');
   }
   const factors = [1, 1.5, 2, 3, 4, 4];
   for (const group of ['A', 'B'] as const) {
-    const levels = s.acceptance[group].levels;
+    const levels = pass.acceptance[group].levels;
     if (levels.length !== 6 || levels.some((l, i) => l.factor !== factors[i] || l.probes !== (i === 5 ? 8 : 4)))
       throw new Error('AB snapshot requires both canonical ladders and doubled-probe rebuilds.');
-    if (s.status === 'accepted' && levels.some(l => l.path.status !== 'passed' || l.undeclared.length
+    if (pass.status === 'accepted' && levels.some(l => l.path.status !== 'passed' || l.undeclared.length
       || l.curvature.status !== 'certified' || !(l.curvature.upper < 1) || l.solves.length !== 16
       || l.solves.some(w => w.status !== 'converged' || !Number.isFinite(w.settleMoveMm) || w.settleMoveMm > .0001)))
       throw new Error('Accepted AB snapshot has an unresolved numerical level.');
   }
-  if (s.source.digest !== modelSource(root, 'src/components/temari/s8-kiku-ab.ts').digest)
+  const source = modelSource(root, 'src/components/temari/s8-kiku-ab.ts');
+  if (s.source.digest !== source.digest)
     throw new Error('S8 AB sources changed: recompute the snapshot before generating its illustration.');
 }
 
@@ -45,10 +68,11 @@ export function projectAB(p: PointMm, R: number): [number, number, number] {
 }
 
 export function renderABOverview(s: S8ABSnapshot) {
-  const R = s.A.bodyRadiusMm;
+  const pass = firstS8ABPass(s);
+  const R = pass.A.bodyRadiusMm;
   const f = (x: number) => x.toFixed(4);
   const pieces: { depth: number; path: string }[] = [];
-  for (const [group, c] of [['A', s.A], ['B', s.B]] as const) {
+  for (const [group, c] of [['A', pass.A], ['B', pass.B]] as const) {
     for (const span of c.spans.filter(p => p.zone === 'surface')) {
       const sample = sampleCurve(span.curve, .01);
       for (let i = 1; i < sample.points.length; i++) {
@@ -58,15 +82,15 @@ export function renderABOverview(s: S8ABSnapshot) {
     }
   }
   pieces.sort((a, b) => a.depth - b.depth);
-  const marks = [...s.marks.A, ...s.marks.B].filter(t => t.role === 'lower');
+  const marks = [...pass.marks.A, ...pass.marks.B].filter(t => t.role === 'lower');
   const pins = marks.map(t => { const p = projectAB(t.markMm, R); return `<circle cx="${f(p[0])}" cy="${f(p[1])}" r="1.7" />`; }).join('');
   const guides = marks.map(t => {
     const p = projectAB(t.markMm, R), dx = p[0] - 100, dy = p[1] - 100, length = Math.hypot(dx, dy);
     return `M100 100L${f(100 + 78 * dx / length)} ${f(100 + 78 * dy / length)}`;
   }).join('');
-  const status = s.status === 'accepted' ? 'Численно проверенный контрольный путь; ремесленная приёмка открыта.'
+  const status = pass.status === 'accepted' ? 'Численно проверенный контрольный путь; ремесленная приёмка открыта.'
     : 'Диагностический путь: численная приёмка не пройдена. Не инструкция для готовой вышивки.';
-  return `<figure id="s8-ab-overview" data-status="${s.status}" data-source="${s.source.digest}">
+  return `<figure id="s8-ab-overview" data-status="${pass.status}" data-source="${s.source.digest}">
           <svg class="ball" viewBox="0 0 200 200" aria-labelledby="s8-ab-svg-title s8-ab-svg-desc">
             <title id="s8-ab-svg-title">Кику Simple 8: первый круг A, затем первый круг B</title>
             <desc id="s8-ab-svg-desc">Две отдельные нити, проекция вычисленных пространственных путей. Только первый проход; скрытые подхваты видны в лаборатории.</desc>

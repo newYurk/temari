@@ -45,7 +45,7 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import * as feel from "./feel";
-import { c8Pins, c10Pins, contrastThread, kikuThreads, kikuThreadsFor, jiwariNormals, jiwariVisiblePins, simplePins, type JiwariPhase } from "./jiwari";
+import { c8Pins, c10Pins, kikuThreads, kikuThreadsFor, jiwariNormals, jiwariVisiblePins, simplePins, type JiwariPhase } from "./jiwari";
 
 export type Mode = "title" | "studio" | "kata";
 
@@ -388,15 +388,25 @@ function pushKagari(s: TemariState) {
   return [...s.kagariHistory, kagariStep(s)].slice(-20);
 }
 
+const INITIAL_WRAP = 0;
+const INITIAL_WRAP_HEX = threadHex(INITIAL_WRAP);
+
+function draftKagariColors(wrapColor: number): [number, number] {
+  return isPair(studioDraft.kagariColors)
+    ? [clampColor(studioDraft.kagariColors[0]), clampColor(studioDraft.kagariColors[1])]
+    : kikuThreads(wrapColor);
+}
+
 export const useTemari = create<TemariState>((set, get) => ({
-  mode: "title",
+  // Workshop first: a prepared mari. Wrap colour is a workshop control.
+  mode: "studio",
   division: "simple",
   paletteId: "beni",
-  motif: "kiku",
-  craft: "wind",
-  selectedColor: 0,
-  wrapColor: 0,
-  wrapHex: "#8f3d32",
+  motif: "none",
+  craft: "pin",
+  selectedColor: draftKagariColors(INITIAL_WRAP)[0],
+  wrapColor: INITIAL_WRAP,
+  wrapHex: INITIAL_WRAP_HEX,
   fills: emptyFills("simple"),
   sewn: [],
   pins: [],
@@ -411,16 +421,16 @@ export const useTemari = create<TemariState>((set, get) => ({
   history: [],
   sewnHistory: [],
   pinHistory: [],
-  wrapCount: 0,
+  wrapCount: 1,
   wrapUndoNonce: 0,
   wrapResetNonce: 0,
   viewNonce: 0,
   viewPole: 0,
   poseDirty: true,
-  wrapProgress: 0,
+  wrapProgress: 1,
   threadWidth: 0.42,
-  wrapStarted: false,
-  layerDone: false,
+  wrapStarted: true,
+  layerDone: true,
   wrapPass: 3,
   kikuLayers: 1,
   kagariDir: "out",
@@ -431,7 +441,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   kagariFocus: null,
   kagariKept: [],
   kagariSet: 0,
-  kagariColors: isPair(studioDraft.kagariColors) ? studioDraft.kagariColors : [0, 0],
+  kagariColors: draftKagariColors(INITIAL_WRAP),
   kagariEdit: null,
   kagariHistory: [],
   facingPole: 0,
@@ -443,12 +453,10 @@ export const useTemari = create<TemariState>((set, get) => ({
   jiwariLaid: 0,
 
   enterStudio: () => {
-    const savedPair = isPair(studioDraft.kagariColors)
-      ? ([clampColor(studioDraft.kagariColors[0]), clampColor(studioDraft.kagariColors[1])] as [number, number])
-      : null;
     feel.unlock();
     const division = studioDraft.division;
     const hasPaint = studioDraft.fills.some((v) => v >= 0);
+    const kagariColors = draftKagariColors(get().wrapColor);
     set({
       mode: "studio",
       division,
@@ -457,9 +465,9 @@ export const useTemari = create<TemariState>((set, get) => ({
       craft: "pin",
       // A thread that reads on this wrap; tone on tone stays a deliberate choice.
       // A pair kept from the last visit is the maker's, and outlives the default.
-      selectedColor: savedPair ? savedPair[0] : contrastThread(get().wrapColor),
+      selectedColor: kagariColors[0],
       // Two working threads, as the control pattern asks for; each keeps its set.
-      kagariColors: savedPair ?? kikuThreads(get().wrapColor),
+      kagariColors,
       kagariEdit: null,
       wrapColor: get().wrapColor,
       wrapHex: get().wrapHex,
@@ -897,10 +905,21 @@ export const useTemari = create<TemariState>((set, get) => ({
     rememberStudio(get());
   },
   setWrapColor: (index) => {
-    if (get().mode === "studio" && get().layerDone) return;
+    if (get().mode === "kata") return;
     const wrapColor = clampColor(index);
+    if (wrapColor === get().wrapColor) return;
     const wrapHex = threadHex(wrapColor);
-    set({ wrapColor, wrapHex, selectedColor: wrapColor });
+    const kagariColors = kikuThreadsFor(get().kagariColors, wrapColor);
+    const selectedColor = kagariColors.includes(get().selectedColor)
+      ? get().selectedColor
+      : kagariColors[0];
+    set({
+      wrapColor,
+      wrapHex,
+      kagariColors,
+      selectedColor,
+      wrapResetNonce: get().wrapResetNonce + 1,
+    });
     rememberStudio(get());
   },
 

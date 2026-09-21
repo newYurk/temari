@@ -71,6 +71,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     layerDone: s.layerDone, history: s.history, sewnHistory: s.sewnHistory,
     pinHistory: s.pinHistory, pinNote: s.pinNote, selectedColor: s.selectedColor,
     paletteId: s.paletteId, setColor: s.setColor, kagariEdit: s.kagariEdit, editThread: s.editThread,
+    wrapColor: s.wrapColor, setWrapColor: s.setWrapColor,
   })));
   const { division, motif, craft, pins, facingPole, jiwariOn, jiwariPhase, jiwariLaid,
     kagariPlan, kagariLaid, kagariKept, kagariColors, kagariPlaying, kagariSet, kikuLayers,
@@ -265,6 +266,30 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
         className="pointer-events-none absolute top-1/2 left-3 z-20 -translate-y-1/2 md:left-6"
       >
         <div className="pointer-events-auto flex flex-col gap-2 rounded-3xl border border-line bg-linen/90 p-2 shadow-[0_4px_24px_#0c0b0908]">
+          <div role="group" aria-label="Цвет основы" className="flex flex-col gap-1 pb-1">
+            <p className="px-1 text-[10px] tracking-wide text-ink/55">Основа</p>
+            <div className="flex flex-wrap gap-0.5">
+              {THREAD_COLORS.map((color, i) => (
+                <button
+                  key={`wrap-${i}-${color}`}
+                  type="button"
+                  aria-label={`Цвет основы ${i + 1}`}
+                  aria-pressed={s.wrapColor === i}
+                  title={`${COLOR_NAMES[i]} основа`}
+                  onClick={() => s.setWrapColor(i)}
+                  className={cn("flex size-8 items-center justify-center rounded-lg", focusStyle)}
+                >
+                  <span
+                    className={cn(
+                      "size-4 rounded-full ring-1 ring-line",
+                      s.wrapColor === i && "ring-2 ring-ink ring-offset-1 ring-offset-linen",
+                    )}
+                    style={{ backgroundColor: color }}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
           {motif === "kiku" ? (
             <div role="group" aria-label="Две нити кику" className="flex flex-col gap-1">
               {([0, 1] as const).map((slot) => (
@@ -294,7 +319,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
           <div className="flex flex-col gap-1" aria-label="Цвет нити">
             {THREAD_COLORS.map((color, i) => (
               <button
-                key={color}
+                key={`thread-${i}-${color}`}
                 type="button"
                 aria-label={threadName(i)}
                 aria-pressed={s.selectedColor === i}
@@ -534,4 +559,3 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     </>
   );
 }
-

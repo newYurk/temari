@@ -21,6 +21,56 @@ function finishPlan() {
   assert.equal(useTemari.getState().kagariPlaying, false);
 }
 
+describe("workshop opens first", () => {
+  afterEach(() => useTemari.setState(initialState, true));
+
+  it("starts in the studio on a wrapped mari", () => {
+    assert.equal(initialState.mode, "studio");
+    assert.equal(initialState.layerDone, true);
+    assert.equal(initialState.wrapSeed, "full");
+    assert.equal(initialState.motif, "none");
+  });
+
+  it("changes wrap colour in the workshop", () => {
+    useTemari.setState({
+      ...initialState,
+      mode: "studio",
+      layerDone: true,
+      wrapColor: 0,
+      selectedColor: 3,
+      kagariColors: [3, 4],
+      wrapResetNonce: 7,
+    }, true);
+    useTemari.getState().setWrapColor(2);
+    const s = useTemari.getState();
+    assert.equal(s.wrapColor, 2);
+    assert.equal(s.selectedColor, 3, "a still-visible selected thread is preserved");
+    assert.deepEqual(s.kagariColors, [3, 4]);
+    assert.equal(s.wrapResetNonce, 8);
+    assert.notEqual(s.kagariColors[0], 2, "a working thread does not vanish on the new wrap");
+    assert.notEqual(s.kagariColors[1], 2);
+  });
+
+  it("changes selected thread when a wrap-colour thread would vanish", () => {
+    useTemari.setState({
+      ...initialState,
+      mode: "studio",
+      layerDone: true,
+      wrapColor: 0,
+      selectedColor: 2,
+      kagariColors: [2, 3],
+      wrapResetNonce: 2,
+    }, true);
+    useTemari.getState().setWrapColor(2);
+    const s = useTemari.getState();
+    assert.equal(s.wrapColor, 2);
+    assert.notEqual(s.kagariColors[0], 2);
+    assert.equal(s.kagariColors[1], 3);
+    assert.equal(s.selectedColor, s.kagariColors[0], "selection follows the replacement thread");
+    assert.equal(s.wrapResetNonce, 3);
+  });
+});
+
 describe("recipe compatibility in studio actions and state", () => {
   beforeEach(() => {
     useTemari.setState({
@@ -226,7 +276,9 @@ describe("recipe compatibility in studio actions and state", () => {
     assert.equal(useTemari.getState().activePin, 0, "same tool preserves the selected start");
     assert.equal(useTemari.getState().pinNote, note);
     useTemari.getState().sketchToPin(pins[1]!.p);
-    assert.deepEqual(useTemari.getState().pinArcs, [{ a: pins[0]!.p, b: pins[1]!.p, color: 0 }]);
+    assert.deepEqual(useTemari.getState().pinArcs, [{
+      a: pins[0]!.p, b: pins[1]!.p, color: useTemari.getState().selectedColor,
+    }]);
     assert.deepEqual(useTemari.getState().pins, pins);
     assert.deepEqual(useTemari.getState().sewn, [], "a free sketch cannot invent a kiku slot");
     assert.equal(action("undo").canExecute(getCraftState()), true);

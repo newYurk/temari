@@ -173,23 +173,8 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     const pts = sewKagariBite(from, mark, to, "pearl5", undefined, undefined, true);
     const floor = Math.min(...pts.map((p) => p.length()));
     assert.ok(floor >= 1, `inner uwagake dives through the cover (${floor.toFixed(3)})`);
-    const mid = Math.floor(pts.length / 2);
-    const arriving = pts.slice(0, mid);
-    const leaving = pts.slice(mid);
-    let best = Infinity;
-    let aR = 0;
-    let bR = 0;
-    for (const a of arriving) {
-      for (const b of leaving) {
-        const d = a.distanceToSquared(b);
-        if (d < best) {
-          best = d;
-          aR = a.length();
-          bR = b.length();
-        }
-      }
-    }
-    assert.ok(bR > aR, `inner leaving does not sit on arriving (${bR.toFixed(3)} vs ${aR.toFixed(3)})`);
+    const maxR = Math.max(...pts.map((p) => p.length()));
+    assert.ok(maxR > r + 1e-4, "catch sits on the pile");
     const pole = new THREE.Vector3(0, 1, 0);
     const markDot = mark.clone().normalize().dot(pole);
     for (const p of pts) {
@@ -216,20 +201,14 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     const enter = new THREE.Vector3(...bite.enter).normalize();
     const exit = new THREE.Vector3(...bite.exit).normalize();
     const m = mark.clone().normalize();
-    const minMark = Math.min(...pts.map((p) => p.clone().normalize().distanceTo(m)));
     const minEnter = Math.min(...pts.map((p) => p.clone().normalize().distanceTo(enter)));
     const minExit = Math.min(...pts.map((p) => p.clone().normalize().distanceTo(exit)));
-    assert.ok(minMark < pearl * 0.15, "the V still meets at the mark");
-    assert.ok(enter.distanceTo(exit) > pearl * 2, "needle bite wraps the stack");
-    assert.ok(enter.dot(pole) > m.dot(pole), "needle goes around the pile, not the new tip");
-    assert.ok(
-      minEnter > minMark + pearl * 0.4,
-      "visible path does not walk the hidden enter",
-    );
-    assert.ok(
-      minExit > minMark + pearl * 0.4,
-      "visible path does not walk the hidden exit",
-    );
+    assert.ok(enter.distanceTo(exit) > pearl * 2, "catch is wide around the stack");
+    assert.ok(minEnter < pearl * 0.55, "visible catch sits on the enter side of the pile");
+    assert.ok(minExit < pearl * 0.55, "visible catch sits on the exit side of the pile");
+    assert.ok(enter.dot(pole) > m.dot(pole), "catch sits toward the pole of the new mark");
+    const floor = Math.min(...pts.map((p) => p.length()));
+    assert.ok(floor >= 1, `inner uwagake dives through the cover (${floor.toFixed(3)})`);
     for (const p of pts) {
       assert.ok(p.length() >= 1, "inner kagari is not a dive through the wrap");
     }
@@ -251,5 +230,23 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     }
     const last = pts[pts.length - 1]!;
     assert.ok(last.length() < 0.995, "end sits under the wrap");
+  });
+
+  it("first-round inner turns are reverse pickups, not welded angles", async () => {
+    const { compileKiku, stitchesFromOps } = await import("./patterns.ts");
+    const { createMotifGeometryParts } = await import("./stitches.ts");
+    const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, 1, 0));
+    const parts = createMotifGeometryParts(stitches, 0);
+    try {
+      assert.equal(stitches.length, 8);
+      assert.equal(
+        parts.length,
+        8,
+        "outer and first inner marks both hide a pickup; plain inner joins weld the cord into fewer pieces",
+      );
+      assert.ok(parts.every((part) => (part.getAttribute("position")?.count ?? 0) > 1000));
+    } finally {
+      parts.forEach((part) => part.dispose());
+    }
   });
 });

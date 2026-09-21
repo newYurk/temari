@@ -6,9 +6,16 @@ import { evaluateCurve } from './components/temari/thread-geometry';
 import type { C8ThreadCoupon, ThreadCurve } from './components/temari/thread-path';
 import type { checkS8AB } from './components/temari/s8-kiku-ab';
 
-type Snapshot = { version: number; kind: string; status: string; A: C8ThreadCoupon; B: C8ThreadCoupon;
+type Snapshot = { version: 1; kind: 's8-a1-b1-control'; status: string; A: C8ThreadCoupon; B: C8ThreadCoupon;
   checks: ReturnType<typeof checkS8AB>[]; acceptance: { A: { status: string; diagnostics: string[] }; B: { status: string; diagnostics: string[] } };
+  source: { digest: string } } | { version: 2; kind: 's8-a1-b1-a2-b2-control'; ab1Verdict: string; A1: C8ThreadCoupon; B1: C8ThreadCoupon;
+  ab1Checks: ReturnType<typeof checkS8AB>[]; acceptance: { A: { status: string; diagnostics: string[] }; B: { status: string; diagnostics: string[] } };
   source: { digest: string } };
+function firstPass(data: Snapshot) {
+  return data.version === 1
+    ? { status: data.status, A: data.A, B: data.B, checks: data.checks, acceptance: data.acceptance }
+    : { status: data.ab1Verdict, A: data.A1, B: data.B1, checks: data.ab1Checks, acceptance: data.acceptance };
+}
 const get = <T extends HTMLElement>(id: string) => document.getElementById(`ab-${id}`) as T;
 const host = get('view'), step = get<HTMLInputElement>('step');
 let draw = () => {}, setView = (_mode: string) => {};
@@ -23,23 +30,25 @@ async function init() {
   const response = await fetch('./fixtures/s8-ab.json');
   if (!response.ok) throw new Error(`Данные недоступны (${response.status})`);
   const data: Snapshot = await response.json();
-  if (data.version !== 1 || data.kind !== 's8-a1-b1-control' || !data.A.spans.length || !data.B.spans.length
-    || data.A.threadId === data.B.threadId || data.checks.length !== 6) throw new Error('Некорректный снимок A/B');
-  const latest = data.checks[4];
-  if (data.status === 'accepted' && (data.acceptance.A.status !== 'accepted' || data.acceptance.B.status !== 'accepted'
-    || data.checks.some(c => c.status !== 'passed'))) throw new Error('Статус не соответствует проверкам');
-  host.dataset.status = data.status; host.dataset.source = data.source.digest;
-  get('circumference').textContent = (2 * Math.PI * data.A.bodyRadiusMm).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
-  get('diameter').textContent = (2 * data.A.threadRadiusMm).toLocaleString('ru-RU', { maximumFractionDigits: 3 });
-  get('status').textContent = data.status === 'accepted'
+  const pass = firstPass(data);
+  if (!((data.version === 1 && data.kind === 's8-a1-b1-control') || (data.version === 2 && data.kind === 's8-a1-b1-a2-b2-control'))
+    || !pass.A.spans.length || !pass.B.spans.length || pass.A.threadId === pass.B.threadId || pass.checks.length !== 6)
+    throw new Error('Некорректный снимок A/B');
+  const latest = pass.checks[4];
+  if (pass.status === 'accepted' && (pass.acceptance.A.status !== 'accepted' || pass.acceptance.B.status !== 'accepted'
+    || pass.checks.some(c => c.status !== 'passed'))) throw new Error('Статус не соответствует проверкам');
+  host.dataset.status = pass.status; host.dataset.source = data.source.digest;
+  get('circumference').textContent = (2 * Math.PI * pass.A.bodyRadiusMm).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+  get('diameter').textContent = (2 * pass.A.threadRadiusMm).toLocaleString('ru-RU', { maximumFractionDigits: 3 });
+  get('status').textContent = pass.status === 'accepted'
     ? 'Численно принято для этой модели. Ремесленная приёмка остаётся открытой.'
     : 'Не принято: показан диагностический путь, а не готовая вышивка.';
   get('crossings').textContent = `${latest.surfaceCrossings} · ${latest.status === 'passed' ? 'проверены' : 'требуют исправления'}`;
   get('gap').textContent = `${latest.clearance.lowerMm.toFixed(5)} мм · ${latest.clearance.status}`;
-  get('report').textContent = JSON.stringify({ status: data.status, A: data.acceptance.A.status, B: data.acceptance.B.status,
-    problemsA: data.acceptance.A.diagnostics, problemsB: data.acceptance.B.diagnostics,
+  get('report').textContent = JSON.stringify({ status: pass.status, A: pass.acceptance.A.status, B: pass.acceptance.B.status,
+    problemsA: pass.acceptance.A.diagnostics, problemsB: pass.acceptance.B.diagnostics,
     betweenThreads: latest.diagnostics.map(d => ({ code: d.code, message: d.message })), clearance: latest.clearance }, null, 2);
-  const R = data.A.bodyRadiusMm;
+  const R = pass.A.bodyRadiusMm;
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.domElement.setAttribute('aria-label', 'Вычисленные пути двух рабочих нитей; мышью можно вращать шар');
@@ -68,13 +77,13 @@ async function init() {
   };
   const guides = new THREE.Group(); scene.add(guides);
   // A contains the shared physical marking segments of both sets; do not duplicate them.
-  data.A.supports.forEach(s => guides.add(tube([s.curve], s.radiusMm, 0x705b40)));
+  pass.A.supports.forEach(s => guides.add(tube([s.curve], s.radiusMm, 0x705b40)));
   let yarn = new THREE.Group(); scene.add(yarn);
   draw = () => {
     yarn.traverse(o => { const m = o as THREE.Mesh; m.geometry?.dispose(); if (m.material) (Array.isArray(m.material) ? m.material : [m.material]).forEach(v => v.dispose()); });
     scene.remove(yarn); yarn = new THREE.Group(); scene.add(yarn);
     const limit = Number(step.value); let shown = 0;
-    for (const [index, coupon] of [data.A, data.B].entries()) {
+    for (const [index, coupon] of [pass.A, pass.B].entries()) {
       const localStep = limit - index * 8;
       if (localStep <= 0) continue;
       const spans = coupon.spans.filter(s => s.step <= localStep);
