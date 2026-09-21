@@ -37,10 +37,6 @@ const REVERSE_HUG_MM = 0.9;
  * leaving under; this is the visible cross, not a second stack.
  */
 const REVERSE_CROSS_LIFT = 1.35;
-/** Inner uwagake: leaving-over-arriving bump, in STACK_LIFT units. */
-const INNER_LEAVE_LIFT = 1.2;
-/** Inner leaving bump width along the flank, as a fraction of the leg. */
-const INNER_LEAVE_WIDTH = 0.22;
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -315,8 +311,15 @@ function reversePorts(
   from: THREE.Vector3,
   enter?: [number, number, number],
   exit?: [number, number, number],
+  preservePorts = false,
 ): { inn: THREE.Vector3; out: THREE.Vector3 } {
   const t = tip.clone().normalize();
+  if (preservePorts && enter && exit) {
+    const a = new THREE.Vector3(...enter).normalize();
+    const b = new THREE.Vector3(...exit).normalize();
+    const f = from.clone().normalize();
+    return f.distanceToSquared(a) < f.distanceToSquared(b) ? { inn: b, out: a } : { inn: a, out: b };
+  }
   const across = new THREE.Vector3();
   if (enter && exit) {
     across.set(exit[0] - enter[0], exit[1] - enter[1], exit[2] - enter[2]);
@@ -343,12 +346,11 @@ function reversePorts(
  * bury under the wrap — a tube facing the pin is a chopped pipe, a hop
  * to the port after the tip is an elbow.
  *
- * Inner uwagake: the visible catch sits on the pile and spans enter→exit.
- * That width already grew with the stacked count in biteAcross. A V at
- * the mark, or pearls stacked to a point, is nested chidori. The needle
- * under the wrap is not drawn.
+ * Inner uwagake also returns under the captured threads. Its wider ports
+ * come from the recipe; the buried return is not a visible bar between
+ * those ports. The legacy radial lifts remain an illustration, not a solver.
  */
-function sewKagariLegs(
+export function sewKagariLegs(
   from: THREE.Vector3,
   mark: THREE.Vector3,
   to: THREE.Vector3,
@@ -362,58 +364,20 @@ function sewKagariLegs(
   const fromR = from.length();
   const toR = to.length();
   const m = mark.clone().normalize();
-  const n = KAGARI_LEG_SEGS;
   const inPts: THREE.Vector3[] = [];
   const outPts: THREE.Vector3[] = [];
-  if (onStack) {
-    const e = new THREE.Vector3();
-    const x = new THREE.Vector3();
-    if (enter && exit) {
-      e.set(enter[0], enter[1], enter[2]).normalize();
-      x.set(exit[0], exit[1], exit[2]).normalize();
-    } else {
-      e.copy(m);
-      x.copy(m);
-    }
-    if (e.distanceToSquared(x) < 1e-8) {
-      const pole = new THREE.Vector3(0, m.y >= 0 ? 1 : -1, 0);
-      _radial.crossVectors(m, pole);
-      if (_radial.lengthSq() < 1e-12) _radial.set(1, 0, 0);
-      _radial.normalize();
-      e.copy(m).addScaledVector(_radial, -pearl * 0.5).normalize();
-      x.copy(m).addScaledVector(_radial, pearl * 0.5).normalize();
-    }
-    const fromDir = from.clone().normalize();
-    if (fromDir.distanceToSquared(e) > fromDir.distanceToSquared(x)) {
-      const sw = e.clone();
-      e.copy(x);
-      x.copy(sw);
-    }
-    const stackR = Math.max(fromR, toR);
-    const barR = stackR + pearl * STACK_LIFT * INNER_LEAVE_LIFT;
-    for (let i = 1; i <= n; i++) {
-      const t = i / n;
-      slerpUnit(from, e, t, _h1);
-      inPts.push(_h1.clone().multiplyScalar(fromR + (stackR - fromR) * t));
-    }
-    for (let i = 0; i <= n; i++) {
-      const t = i / n;
-      slerpUnit(e, x, t, _h1);
-      outPts.push(_h1.clone().multiplyScalar(barR));
-    }
-    for (let i = 1; i <= n; i++) {
-      const t = i / n;
-      slerpUnit(x, to, t, _h1);
-      outPts.push(_h1.clone().multiplyScalar(barR + (toR - barR) * t));
-    }
-    return { inPts, outPts };
-  }
   const tip = m.clone();
-  const { inn, out } = reversePorts(tip, from, enter, exit);
+  const { inn, out } = reversePorts(tip, from, enter, exit, onStack);
   const buried = scoopRadius(1, fromR, half);
   const lift0 = pearl * STACK_LIFT * REVERSE_CROSS_LIFT;
   const port = unitFromMm(REVERSE_PORT_MM);
   const hug = unitFromMm(REVERSE_HUG_MM);
+  const angle = (a: THREE.Vector3, b: THREE.Vector3) =>
+    a.clone().normalize().angleTo(b.clone().normalize());
+  // Resolve the short dive even when a later catch spans a wide bundle.
+  // Use the control-polygon length and cubic degree to bound the sample step.
+  const lengthBound = Math.max(angle(from, tip) + angle(tip, inn), angle(out, tip) + angle(tip, to));
+  const n = Math.max(KAGARI_LEG_SEGS, Math.ceil(3 * lengthBound / (port / 4)));
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     hugTip(from, tip, inn, t, _a);
@@ -489,11 +453,13 @@ function splitJoinAroundMark(
   bite?: { enter: [number, number, number]; exit: [number, number, number] },
   onStack = false,
 ): { head: THREE.Vector3[]; tail: THREE.Vector3[]; outPts: THREE.Vector3[] } {
-  if (onStack) {
-    const start = nearVec(mark, piece[0]!) ? 1 : 0;
-    return { head: pts, tail: piece.slice(start), outPts: [] };
-  }
-  const keepMm = KAGARI_SCOOP_MM;
+  // Clip outside the entire catch. A fixed fraction of one thread put
+  // the join inside later, wider ports and made the cord double back.
+  const portExtent = onStack && bite ? Math.max(
+    mark.clone().normalize().distanceTo(new THREE.Vector3(...bite.enter).normalize()),
+    mark.clone().normalize().distanceTo(new THREE.Vector3(...bite.exit).normalize()),
+  ) : 0;
+  const keepMm = Math.max(KAGARI_SCOOP_MM, portExtent / unitFromMm(1) + kindMm(kind));
   const clip = clipAroundMark(pts, piece, mark, keepMm);
   if (!clip) {
     return { head: pts, tail: piece, outPts: [] };
@@ -713,25 +679,10 @@ function stackedArcChainParts(
     const next0 = piece[0]!;
     if (samePin(mark, next0) && pts.length > 1 && piece.length > 1) {
       if (prevTip === "inner") {
-        const start = nearVec(mark, next0) ? 1 : 0;
-        if ((kai ?? 0) > 0) {
-          // Clip only the vertex. 2 mm ate the flanks and the catch
-          // jumped to enter/exit across empty wrap — broken arms.
-          const clip = clipAroundMark(pts, piece, mark, kindMm(kind) * 0.45);
-          if (clip) {
-            const { inPts, outPts } = sewKagariLegs(
-              clip.from, mark, clip.to, kind, prevBite?.enter, prevBite?.exit, true,
-            );
-            pts.push(clip.from, ...inPts, ...outPts, clip.to, ...piece.slice(clip.k));
-          } else {
-            for (let k = start; k < piece.length; k++) pts.push(piece[k]!);
-          }
-        } else {
-          const { head, tail } = splitJoinAroundMark(pts, piece, mark, kind, prevBite, false);
-          if (pending === null) pending = head;
-          else tube(head, false, false);
-          pts = tail;
-        }
+        const { head, tail } = splitJoinAroundMark(pts, piece, mark, kind, prevBite, (kai ?? 0) > 0);
+        if (pending === null) pending = head;
+        else tube(head, false, false);
+        pts = tail;
         emerge = false;
         return;
       }

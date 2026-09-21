@@ -144,35 +144,52 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     assert.ok(lastIn.length() < 0.995, `needle does not go in across the jiwari (${lastIn.length().toFixed(3)})`);
     const firstOut = leaving[0]!;
     assert.ok(firstOut.length() < 0.995, `leaving starts in the air (${firstOut.length().toFixed(3)})`);
-    let best = Infinity;
-    let aR = 0;
-    let bR = 0;
-    for (const a of arrivingSurf) {
-      for (const b of leavingSurf) {
-        const d = a.distanceToSquared(b);
-        if (d < best) {
-          best = d;
-          aR = a.length();
-          bR = b.length();
-        }
+    // Nearest 3D samples can be beside the crossing, especially as sampling
+    // improves. Intersect the projected segments, then compare their heights.
+    const normal = mark.clone().normalize();
+    const x = new THREE.Vector3(1, 0, 0);
+    const y = new THREE.Vector3().crossVectors(normal, x);
+    const project = (p: InstanceType<typeof THREE.Vector3>): [number, number] =>
+      [p.dot(x) / p.dot(normal), p.dot(y) / p.dot(normal)];
+    const sub = (a: [number, number], b: [number, number]): [number, number] => [a[0] - b[0], a[1] - b[1]];
+    const cross = (a: [number, number], b: [number, number]) => a[0] * b[1] - a[1] * b[0];
+    const crossings: { aR: number; bR: number }[] = [];
+    for (let i = 1; i < arriving.length; i++) {
+      for (let j = 1; j < leaving.length; j++) {
+        const a = project(arriving[i - 1]!);
+        const b = project(leaving[j - 1]!);
+        const u = sub(project(arriving[i]!), a);
+        const v = sub(project(leaving[j]!), b);
+        const det = cross(u, v);
+        if (Math.abs(det) < 1e-16) continue;
+        const w = sub(b, a);
+        const s = cross(w, v) / det;
+        const t = cross(w, u) / det;
+        if (s < 0 || s >= 1 || t < 0 || t >= 1) continue;
+        crossings.push({
+          aR: THREE.MathUtils.lerp(arriving[i - 1]!.length(), arriving[i]!.length(), s),
+          bR: THREE.MathUtils.lerp(leaving[j - 1]!.length(), leaving[j]!.length(), t),
+        });
       }
     }
-    assert.ok(aR >= 1, `arriving is already under the wrap at the cross (${aR.toFixed(3)})`);
-    assert.ok(bR >= 1, `leaving is under the wrap at the cross (${bR.toFixed(3)})`);
-    assert.ok(bR > aR, `leaving does not sit on arriving at the cross (${bR.toFixed(3)} vs ${aR.toFixed(3)})`);
+    assert.equal(crossings.length, 1, "one finite projected crossing, not merely a close pair");
+    const { aR, bR } = crossings[0]!;
+    assert.ok(aR >= 1, "arriving is above the wrap at the crossing");
+    assert.ok(bR - aR >= pearl * 0.5, "outgoing clears incoming for the renderer's half-height section");
   });
 
-  it("inner uwagake stays on the stack and still crosses, leaving over arriving", async () => {
+  it("inner pickup has two buried ports, not a visible return across the bundle", async () => {
     const THREE = await import("three");
-    const { sewKagariBite } = await import("./stitches.ts");
+    const { sewKagariLegs } = await import("./stitches.ts");
     const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
     const r = 1 + pearl * 0.5;
     const mark = new THREE.Vector3(0.04, 0.99, 0.12).normalize().multiplyScalar(r);
     const from = new THREE.Vector3(0.055, 0.987, 0.14).normalize().multiplyScalar(r);
     const to = new THREE.Vector3(0.025, 0.987, 0.155).normalize().multiplyScalar(r);
-    const pts = sewKagariBite(from, mark, to, "pearl5", undefined, undefined, true);
-    const floor = Math.min(...pts.map((p) => p.length()));
-    assert.ok(floor >= 1, `inner uwagake dives through the cover (${floor.toFixed(3)})`);
+    const { inPts, outPts } = sewKagariLegs(from, mark, to, "pearl5", undefined, undefined, true);
+    const pts = [...inPts, ...outPts];
+    assert.ok(inPts.at(-1)!.length() + pearl / 2 < 1, "the arriving end is fully buried");
+    assert.ok(outPts[0]!.length() + pearl / 2 < 1, "the leaving end starts fully buried");
     const maxR = Math.max(...pts.map((p) => p.length()));
     assert.ok(maxR > r + 1e-4, "catch sits on the pile");
     const pole = new THREE.Vector3(0, 1, 0);
@@ -185,9 +202,9 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     }
   });
 
-  it("inner kagari under the wrap is not drawn; the needle bite still wraps the stack", async () => {
+  it("later inner pickups preserve the wide recipe ports and enter on the far side", async () => {
     const THREE = await import("three");
-    const { sewKagariBite } = await import("./stitches.ts");
+    const { sewKagariLegs } = await import("./stitches.ts");
     const { biteAcross } = await import("./kagari.ts");
     const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
     const r = 1 + pearl * 0.5;
@@ -197,7 +214,8 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     const from = new THREE.Vector3(0.12, Math.cos(markTh + 0.07), Math.sin(markTh + 0.07)).normalize().multiplyScalar(r);
     const to = new THREE.Vector3(-0.12, Math.cos(markTh + 0.07), Math.sin(markTh + 0.07)).normalize().multiplyScalar(r);
     const bite = biteAcross([0, 1, 0], [mark.x, mark.y, mark.z], 0.71 * 4, 3);
-    const pts = sewKagariBite(from, mark, to, "pearl5", bite.enter, bite.exit, true);
+    const { inPts, outPts } = sewKagariLegs(from, mark, to, "pearl5", bite.enter, bite.exit, true);
+    const pts = [...inPts, ...outPts];
     const enter = new THREE.Vector3(...bite.enter).normalize();
     const exit = new THREE.Vector3(...bite.exit).normalize();
     const m = mark.clone().normalize();
@@ -207,10 +225,19 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     assert.ok(minEnter < pearl * 0.55, "visible catch sits on the enter side of the pile");
     assert.ok(minExit < pearl * 0.55, "visible catch sits on the exit side of the pile");
     assert.ok(enter.dot(pole) > m.dot(pole), "catch sits toward the pole of the new mark");
-    const floor = Math.min(...pts.map((p) => p.length()));
-    assert.ok(floor >= 1, `inner uwagake dives through the cover (${floor.toFixed(3)})`);
-    for (const p of pts) {
-      assert.ok(p.length() >= 1, "inner kagari is not a dive through the wrap");
+    const incomingPort = inPts.at(-1)!;
+    const outgoingPort = outPts[0]!;
+    const far = from.clone().normalize().distanceTo(enter) > from.clone().normalize().distanceTo(exit) ? enter : exit;
+    const near = far === enter ? exit : enter;
+    assert.ok(incomingPort.clone().normalize().distanceTo(far) < 1e-10);
+    assert.ok(outgoingPort.clone().normalize().distanceTo(near) < 1e-10);
+    assert.ok(incomingPort.length() + pearl / 2 < 1);
+    assert.ok(outgoingPort.length() + pearl / 2 < 1);
+    for (const leg of [inPts, outPts]) {
+      for (let i = 1; i < leg.length; i++) {
+        assert.ok(Math.abs(leg[i]!.length() - leg[i - 1]!.length()) < pearl,
+          "no instantaneous radius jump to a detached bridge");
+      }
     }
   });
 
@@ -247,6 +274,29 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
       assert.ok(parts.every((part) => (part.getAttribute("position")?.count ?? 0) > 1000));
     } finally {
       parts.forEach((part) => part.dispose());
+    }
+  });
+
+  it("keeps all later and closing pickups split at buried returns on both poles", async () => {
+    const { compileKiku, stitchesFromOps } = await import("./patterns.ts");
+    const { createMotifGeometryParts } = await import("./stitches.ts");
+    for (const pole of [0, 1]) {
+      for (const rounds of [1, 2, 3, 10]) {
+        const stitches = stitchesFromOps(compileKiku("simple", "out", "even", pole, 0, rounds));
+        const parts = createMotifGeometryParts(stitches, 0);
+        assert.equal(parts.length, rounds * 16, `pole ${pole}, ${rounds} rounds: one visible flank per pickup`);
+        for (const part of parts) {
+          const position = part.getAttribute("position");
+          assert.ok(position.count > 0);
+          // A tube ring has 20 radial segments and a duplicate seam vertex.
+          for (const start of [0, position.count - 21]) {
+            for (let i = start; i < start + 21; i++) {
+              assert.ok(Math.hypot(position.getX(i), position.getY(i), position.getZ(i)) < 1,
+                `pole ${pole}, ${rounds} rounds: open tube end is visible above the mari`);
+            }
+          }
+        }
+      }
     }
   });
 });
