@@ -53,7 +53,6 @@ const _pa = new THREE.Vector3();
 const _pb = new THREE.Vector3();
 const _h0 = new THREE.Vector3();
 const _h1 = new THREE.Vector3();
-const _pole = new THREE.Vector3();
 
 function kindMm(kind: ThreadKind) {
   if (kind === "pearl8") return STITCH_THREAD_MM.pearl8;
@@ -337,52 +336,6 @@ function reversePorts(
   return { inn: a, out: b };
 }
 
-/** Sides of the visible inner kagari. The scoop under the wrap is not drawn. */
-function innerPorts(
-  tip: THREE.Vector3,
-  from: THREE.Vector3,
-  enter?: [number, number, number],
-  exit?: [number, number, number],
-): { inn: THREE.Vector3; out: THREE.Vector3 } {
-  if (enter && exit) {
-    const a = new THREE.Vector3(enter[0], enter[1], enter[2]).normalize();
-    const b = new THREE.Vector3(exit[0], exit[1], exit[2]).normalize();
-    const f = from.clone().normalize();
-    if (f.distanceToSquared(a) <= f.distanceToSquared(b)) return { inn: a, out: b };
-    return { inn: b, out: a };
-  }
-  return reversePorts(tip, from);
-}
-
-/** Same colatitude, rotate around the pole. A great circle piles into the cap. */
-function aroundPole(
-  a: THREE.Vector3,
-  b: THREE.Vector3,
-  t: number,
-  pole: THREE.Vector3,
-  out: THREE.Vector3,
-) {
-  _ua.copy(a).normalize();
-  _ub.copy(b).normalize();
-  const tha = Math.acos(Math.min(1, Math.max(-1, _ua.dot(pole))));
-  const thb = Math.acos(Math.min(1, Math.max(-1, _ub.dot(pole))));
-  const th = tha + (thb - tha) * t;
-  _side.copy(_ua).addScaledVector(pole, -_ua.dot(pole));
-  _radial.copy(_ub).addScaledVector(pole, -_ub.dot(pole));
-  if (_side.lengthSq() < 1e-16 || _radial.lengthSq() < 1e-16) return slerpUnit(a, b, t, out);
-  _side.normalize();
-  _radial.normalize();
-  _t.crossVectors(_side, _radial);
-  let ang = Math.acos(Math.min(1, Math.max(-1, _side.dot(_radial))));
-  if (_t.dot(pole) < 0) ang = -ang;
-  const c = Math.cos(ang * t);
-  const s = Math.sin(ang * t);
-  _t.crossVectors(pole, _side).multiplyScalar(s);
-  out.copy(_side).multiplyScalar(c).add(_t);
-  out.multiplyScalar(Math.sin(th)).addScaledVector(pole, Math.cos(th));
-  return out.normalize();
-}
-
 /**
  * Visible needle only. Outer reverse pickup: flanks meet as a V at the
  * pin. Arrive on the mari, curve in on the far side of the jiwari, come
@@ -390,10 +343,10 @@ function aroundPole(
  * bury under the wrap — a tube facing the pin is a chopped pipe, a hop
  * to the port after the tip is an elbow.
  *
- * Inner uwagake: the needle goes in one side of the jiwari and out the
- * other. That stitch widens around the stack and stays on the parallel —
- * a great-circle U piles into the pole as a knot. The run under the
- * wrap is not drawn.
+ * Inner uwagake: a V on the stack at the new mark. The needle goes in
+ * one side of the pile and out the other — that catch is the bite, not
+ * the visible thread. Walking enter→exit on the mari is the stitch that
+ * should have gone under the wrap, drawn as a hollow knot.
  */
 function sewKagariLegs(
   from: THREE.Vector3,
@@ -414,21 +367,18 @@ function sewKagariLegs(
   const inPts: THREE.Vector3[] = [];
   const outPts: THREE.Vector3[] = [];
   if (onStack) {
-    const { inn, out } = innerPorts(tip, from, enter, exit);
-    _pole.set(0, mark.y >= 0 ? 1 : -1, 0);
     for (let i = 1; i <= n; i++) {
       const t = i / n;
-      slerpUnit(from, inn, t, _a);
-      inPts.push(_a.clone().multiplyScalar(fromR));
-    }
-    for (let i = 1; i < n; i++) {
-      const t = i / n;
-      aroundPole(inn, out, t, _pole, _a);
+      slerpUnit(from, tip, t, _a);
+      const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
+      _a.set(c[0], c[1], c[2]).normalize();
       inPts.push(_a.clone().multiplyScalar(fromR));
     }
     for (let i = 0; i < n; i++) {
       const t = i / n;
-      slerpUnit(out, to, t, _a);
+      slerpUnit(tip, to, t, _a);
+      const c = clampNotPastPole([_a.x, _a.y, _a.z], [mark.x, mark.y, mark.z]);
+      _a.set(c[0], c[1], c[2]).normalize();
       const lift = Math.exp(-(t / INNER_LEAVE_WIDTH) * (t / INNER_LEAVE_WIDTH));
       const r = toR + pearl * STACK_LIFT * INNER_LEAVE_LIFT * lift;
       outPts.push(_a.clone().multiplyScalar(r));

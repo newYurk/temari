@@ -123,21 +123,14 @@ export function biteAcross(
 ): KagariBite {
   const m = normalize(mark);
   const p = normalize(pole);
-  const across = normalize(cross(m, p));
-  if (hypot3(across) < 1e-6) return { enter: m, exit: m };
-  const center = stacked > 0 ? shiftTowardPole(p, m, unitFromMm(STITCH_THREAD_MM.pearl5) * 0.45) : m;
+  const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
+  const center = stacked > 0 ? shiftTowardPole(p, m, pearl * stacked * 0.5) : m;
   const half = unitFromMm(mm) * 0.5;
-  const enter = normalize([
-    center[0] - across[0] * half,
-    center[1] - across[1] * half,
-    center[2] - across[2] * half,
-  ]);
-  const exit = normalize([
-    center[0] + across[0] * half,
-    center[1] + across[1] * half,
-    center[2] + across[2] * half,
-  ]);
-  return { enter, exit };
+  const theta = Math.acos(Math.min(1, Math.max(-1, dot(p, center))));
+  const sinT = Math.sin(theta);
+  if (sinT < 1e-6) return { enter: center, exit: center };
+  const ang = half / sinT;
+  return { enter: rotateAxis(center, p, -ang), exit: rotateAxis(center, p, ang) };
 }
 
 /**
