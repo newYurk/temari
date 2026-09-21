@@ -10,6 +10,8 @@ const BALL_R = 1.05;
 const FIT_MARGIN = 1.16;
 /** Just off the pearl — the pole weave can fill the view. */
 const SURFACE_CLOSE = 1.16;
+export type InspectionView = 'pole' | 'close' | 'side';
+type Inspection = { view: InspectionView; focus: readonly [number, number, number] };
 
 function framingDistance(width: number, height: number, mode: Mode) {
   const halfH = Math.tan(THREE.MathUtils.degToRad(FOV) / 2);
@@ -23,10 +25,11 @@ function aimY(_width: number, _height: number, _mode: Mode) {
   return 0;
 }
 
-function CameraRig() {
+function CameraRig({ inspection }: { inspection?: Inspection }) {
   const size = useThree((s) => s.size);
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
-  const mode = useTemari((s) => s.mode);
+  const storedMode = useTemari((s) => s.mode);
+  const mode = inspection ? 'studio' : storedMode;
   const viewNonce = useTemari((s) => s.viewNonce);
   const autoRotate = mode === "title";
   const reduce =
@@ -53,26 +56,36 @@ function CameraRig() {
   useLayoutEffect(() => {
     const y = aimY(size.width, size.height, mode);
     const dir = new THREE.Vector3(0, 0.08, 1).normalize();
-    camera.position.copy(dir.multiplyScalar(dist));
-    camera.up.set(0, 1, 0);
-    camera.lookAt(0, y, 0);
+    const target = new THREE.Vector3(0, y, 0);
+    camera.position.copy(dir.multiplyScalar(dist)); camera.up.set(0, 1, 0);
+    if (inspection) {
+      const focus = new THREE.Vector3(...inspection.focus);
+      camera.up.set(0, 0, -1);
+      if (inspection.view === 'pole') camera.position.set(0, dist, .02);
+      else {
+        target.copy(focus);
+        camera.position.copy(focus).multiplyScalar(inspection.view === 'close' ? 1.7 : 1.15);
+        if (inspection.view === 'side') camera.position.x += .7;
+      }
+    }
+    camera.lookAt(target);
     const controls = controlsRef.current;
     if (controls) {
-      controls.target.set(0, y, 0);
+      controls.target.copy(target);
       controls.update();
     }
-  }, [camera, dist, mode, size.height, size.width, viewNonce]);
+  }, [camera, dist, mode, size.height, size.width, viewNonce, inspection?.view, inspection?.focus]);
 
   return (
     <OrbitControls
       ref={controlsRef as never}
       makeDefault
       enablePan={false}
-      enableRotate={autoRotate}
+      enableRotate={autoRotate || !!inspection}
       enableZoom={!autoRotate}
       enableDamping
       dampingFactor={0.08}
-      minDistance={SURFACE_CLOSE}
+      minDistance={inspection ? .12 : SURFACE_CLOSE}
       maxDistance={dist * 2.35}
       minPolarAngle={0}
       maxPolarAngle={Math.PI}
@@ -84,10 +97,13 @@ function CameraRig() {
   );
 }
 
-class SceneGuard extends Component<{ children: ReactNode }, { dead: boolean }> {
+class SceneGuard extends Component<{ children: ReactNode; onError?: (message: string) => void }, { dead: boolean }> {
   state = { dead: false };
   static getDerivedStateFromError() {
     return { dead: true };
+  }
+  componentDidCatch(error: Error) {
+    this.props.onError?.(error.message);
   }
   render() {
     if (this.state.dead) return null;
@@ -95,9 +111,11 @@ class SceneGuard extends Component<{ children: ReactNode }, { dead: boolean }> {
   }
 }
 
-export function TemariScene() {
+export function TemariScene({ children, inspection, onError }: {
+  children?: ReactNode; inspection?: Inspection; onError?: (message: string) => void;
+} = {}) {
   return (
-    <SceneGuard>
+    <SceneGuard onError={onError}>
     <Canvas
       className="absolute inset-0 z-[8] touch-none"
       camera={{ position: [0, 0.2, 3.6], fov: FOV, near: 0.05, far: 60 }}
@@ -117,8 +135,8 @@ export function TemariScene() {
       <ambientLight intensity={0.42} color="#f0e6d6" />
       <directionalLight position={[3.2, 4.4, 2.4]} intensity={1.18} color="#fff6ea" />
       <directionalLight position={[-2.8, 0.8, -1.8]} intensity={0.34} color="#9aab9c" />
-      <Ball />
-      <CameraRig />
+      {children ?? <Ball />}
+      <CameraRig inspection={inspection} />
     </Canvas>
     </SceneGuard>
   );

@@ -2,6 +2,7 @@ import { polePositions, type Division } from "./division.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 import { COLOR_COUNT } from "./palettes.ts";
 import { biteAcross, closestApproachT, refineApproach, stackOver, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
+import { traceKagariOperations, type KagariTrace } from "./kagari-topology";
 
 export type KikuSlot = { pole: number; ring: number; sector: number };
 
@@ -80,6 +81,8 @@ export type Stitch =
       set?: 0 | 1;
       pole?: number;
       kai?: number;
+      /** Preserved recipe chronology; legacy/free arcs may have no operation trace. */
+      operation?: KagariTrace;
     }
   | { kind: "loop"; points: Vec3[]; color: number; lift?: number };
 
@@ -992,6 +995,7 @@ export function compileKiku(
 }
 
 export function stitchesFromOps(ops: KagariOp[]): Stitch[] {
+  const traces = traceKagariOperations(ops, KIKU_8_POINT.id);
   const stitches: Stitch[] = ops.map((op, i) => {
     const prev = i > 0 ? ops[i - 1] : undefined;
     const sitTo = op.mark.t === "inner" && op.over.length > 0 ? 1 : 0;
@@ -1013,6 +1017,7 @@ export function stitchesFromOps(ops: KagariOp[]): Stitch[] {
       pole: op.pole,
       kai: op.kai,
       tip: op.mark.t,
+      operation: traces[i],
     };
   });
   return annotateSetCrossings(stitches);
