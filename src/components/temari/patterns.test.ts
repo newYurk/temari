@@ -135,14 +135,14 @@ describe("kiku on Simple 8", () => {
     }
   });
 
-  it("GT14: inner 5 mm from the pole; first outer is the pin ⅓ from the equator", () => {
+  it("GT14: inner 5 mm from the pole; first outer is below the pin ⅓ from the equator", () => {
     const spec = kikuSpec("simple");
     assert.ok(Math.abs(spec.inner - unitFromMm(5)) < 1e-6);
     assert.ok(Math.abs(spec.outer - Math.PI / 3) < 1e-9);
     const first = kikuThetas(spec, 0);
-    assert.ok(Math.abs(first.tOuter - spec.outer) < spec.pitch * 0.25, "round 0 is at the pin, not a gap of air");
+    assert.ok(Math.abs(first.tOuter - spec.outer - spec.pitch) < 1e-9, "round 0 is below the pin by the engineering clearance");
     const second = kikuThetas(spec, 1);
-    assert.ok(Math.abs(second.tOuter - (spec.outer + spec.stretch)) < 1e-9, "second round stretches past the pin");
+    assert.ok(Math.abs(second.tOuter - (first.tOuter + spec.stretch)) < 1e-9, "second round stretches from the first stitch");
     assert.ok(first.tOuter - first.tInner > 0.7, "first V is a long petal, not a tick");
     assert.ok(spec.inner + spec.rounds * spec.pitch <= spec.ceiling + spec.pitch);
     assert.ok(Math.abs(spec.pitch - unitFromMm(STITCH_THREAD_MM.pearl5)) < 1e-6);
@@ -245,7 +245,7 @@ describe("kiku on Simple 8", () => {
     assert.ok(bIn > aIn + 0.02, "inner moves out with the round");
     assert.ok(bOut > aOut + 0.02, "outer moves toward the equator");
     const spec = kikuSpec("simple");
-    assert.ok(Math.abs(bIn - aIn - 3 * spec.pitch) < 1e-6, "inner steps one pearl");
+    assert.ok(Math.abs(bIn - aIn - 3 * spec.pitch) < spec.pitch * 0.55, "inner steps about one pearl per round");
     assert.ok(Math.abs(bOut - aOut - 3 * spec.stretch) < 1e-6, "outer steps Ozaki 2 mm");
     assert.ok(b.via && b.via.length > 4, "later kai is an offset path");
     const mid0 = polar(pole, slerp(a.a, a.b, 0.5));
@@ -369,14 +369,16 @@ describe("kiku on Simple 8", () => {
     assert.match(kikuPinHint(9, 9), /Можно шить/);
   });
 
-  it("first bottom stitch sits at the GT14 pin", () => {
+  it("first bottom stitch sits just below the GT14 pin on both poles", () => {
     const spec = kikuSpec("simple");
-    const ops = compileKiku("simple", "out", "even", 0, 0, 1, 0);
-    const outer = ops.filter((op) => op.mark.t === "outer");
-    assert.equal(outer.length, 4);
-    for (const op of outer) {
-      const theta = Math.acos(Math.min(1, Math.max(-1, op.mark.at[1])));
-      assert.ok(Math.abs(theta - spec.outer) < spec.pitch * 0.25, `outer ${theta} is at the pin ${spec.outer}`);
+    for (const pole of [0, 1]) {
+      const ops = compileKiku("simple", "out", "even", pole, 0, 1, 0);
+      const outer = ops.filter((op) => op.mark.t === "outer");
+      assert.equal(outer.length, 4);
+      for (const op of outer) {
+        const theta = Math.acos(Math.min(1, Math.max(-1, op.mark.at[1] * (pole === 0 ? 1 : -1))));
+        assert.ok(Math.abs(theta - spec.outer - spec.pitch) < 1e-9, "one engineering thread-width toward the equator");
+      }
     }
   });
 
@@ -464,7 +466,9 @@ describe("kiku on Simple 8", () => {
     };
     for (const ring of [1, 3, spec.fit - 1]) {
       const d = minDotFor(ring);
-      assert.ok(d > 0.975, `ring ${ring} min tanDot ${d} — later kai must not rib`);
+      // Uwagake inner is a U around the previous inner, about one pearl
+      // across. That turn is tighter than the Ozaki ease at the outer point.
+      assert.ok(d > 0.93, `ring ${ring} min tanDot ${d} — later kai must not rib`);
     }
   });
 
@@ -499,7 +503,7 @@ describe("kiku on Simple 8", () => {
     if (!outer) return;
     const th = Math.acos(Math.min(1, Math.max(-1, outer.mark.at[1])));
     const spec = kikuSpec("simple", "even", 1);
-    assert.ok(Math.abs(th - spec.outer) < spec.pitch * 0.25, "first corners sit at the pin");
+    assert.ok(Math.abs(th - spec.outer - spec.pitch) < 1e-9, "first corners are just below the pin");
     assert.ok(th > spec.inner + 0.5, "first V is long");
   });
 

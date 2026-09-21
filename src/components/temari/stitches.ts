@@ -18,25 +18,10 @@ const ARC_SEGS = 32;
 const STACK_LIFT = 0.42;
 /** Cross-section height / width. Pearl cotton lies on the mari, not a pipe. */
 const STITCH_FLAT = 0.5;
-/** Samples along one kagari flank. Mesh density, not a craft length. */
-const KAGARI_LEG_SEGS = 14;
-/**
- * How far from the reverse-pickup port the arriving tube dives under
- * the wrap, and the leaving tube comes out. Shorter than pearl #5's
- * radius (0.355 mm) so the chopped end is already underground before
- * the hidden run. Studio draw of the bite, not a measured puncture.
- */
-const REVERSE_PORT_MM = 0.28;
-/**
- * How far from the pin the leaving thread is still lifted over arriving.
- * About one pearl #5 plus a little — the small outer перекрестик.
- */
-const REVERSE_HUG_MM = 0.9;
-/**
- * Extra STACK_LIFT at the pin so leaving sits on arriving. 1.0 left
- * leaving under; this is the visible cross, not a second stack.
- */
-const REVERSE_CROSS_LIFT = 1.35;
+const KAGARI_LEG_SEGS = 48;
+/** Engineering windows for a smooth pickup, not measured needle dimensions. */
+const REVERSE_JOIN_MM = 6;
+const REVERSE_HUG_MM = 4;
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -67,7 +52,7 @@ function slerpUnit(
   _ub.copy(b).normalize();
   const dot = THREE.MathUtils.clamp(_ua.dot(_ub), -1, 1);
   const theta = Math.acos(dot);
-  if (theta < 1e-4) return out.copy(_ua);
+  if (theta < 1e-4) return out.copy(_ua).lerp(_ub, t).normalize();
   if (theta > Math.PI - 1e-4) {
     const axis =
       Math.abs(_ua.y) < 0.9 ? _t.set(0, 1, 0) : _t.set(1, 0, 0);
@@ -109,22 +94,20 @@ export function slerpOnSphere(
   return slerp(a, b, t, out);
 }
 
-/**
- * Spherical cubic from `a` to `b` that hugs `tip`. Doubled control at the
- * tip, so the path reaches the pin and then peels to the port — not a
- * geodesic to the tip and a 90° hop.
- */
-function hugTip(
+/** Spherical de Casteljau interpolation, with independent end tangents. */
+function pickupDirection(
   a: THREE.Vector3,
-  tip: THREE.Vector3,
+  c1: THREE.Vector3,
+  c2: THREE.Vector3,
   b: THREE.Vector3,
   t: number,
   out: THREE.Vector3,
 ) {
-  slerpUnit(a, tip, t, _h0);
-  slerpUnit(tip, b, t, _h1);
-  slerpUnit(_h0, tip, t, _h0);
-  slerpUnit(tip, _h1, t, _h1);
+  const middle = slerpUnit(c1, c2, t, new THREE.Vector3());
+  slerpUnit(a, c1, t, _h0);
+  slerpUnit(c2, b, t, _h1);
+  slerpUnit(_h0, middle, t, _h0);
+  slerpUnit(middle, _h1, t, _h1);
   return slerpUnit(_h0, _h1, t, out);
 }
 
@@ -238,7 +221,7 @@ export function arcPath(
     // Preserve the path's declared lift at every orientation. This legacy
     // stack estimate is not a contact solver; latitude cannot correct it.
     const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts)) * diameter * STACK_LIFT;
-    return dir.clone().multiplyScalar(1 + half + extra);
+    return dir.clone().multiplyScalar(1 + half * STITCH_FLAT + extra);
   };
   if (via.length === 0) {
     const a = anchors[0]!;
@@ -312,9 +295,11 @@ function reversePorts(
   enter?: [number, number, number],
   exit?: [number, number, number],
   preservePorts = false,
+  halfWidth = unitFromMm(STITCH_THREAD_MM.pearl5),
 ): { inn: THREE.Vector3; out: THREE.Vector3 } {
   const t = tip.clone().normalize();
-  if (preservePorts && enter && exit) {
+  if (preservePorts && enter && exit
+    && new THREE.Vector3(...enter).distanceTo(new THREE.Vector3(...exit)) >= halfWidth * 2) {
     const a = new THREE.Vector3(...enter).normalize();
     const b = new THREE.Vector3(...exit).normalize();
     const f = from.clone().normalize();
@@ -331,9 +316,8 @@ function reversePorts(
   }
   if (across.lengthSq() < 1e-12) across.set(1, 0, 0);
   across.normalize();
-  const half = unitFromMm(STITCH_THREAD_MM.pearl5) * 0.5;
-  const a = t.clone().addScaledVector(across, -half).normalize();
-  const b = t.clone().addScaledVector(across, half).normalize();
+  const a = t.clone().addScaledVector(across, -halfWidth).normalize();
+  const b = t.clone().addScaledVector(across, halfWidth).normalize();
   const f = from.clone().normalize();
   if (f.distanceToSquared(a) < f.distanceToSquared(b)) return { inn: b, out: a };
   return { inn: a, out: b };
@@ -358,6 +342,7 @@ export function sewKagariLegs(
   enter?: [number, number, number],
   exit?: [number, number, number],
   onStack = false,
+  tangents?: { from: THREE.Vector3; to: THREE.Vector3 },
 ): { inPts: THREE.Vector3[]; outPts: THREE.Vector3[] } {
   const half = unitFromMm(kindMm(kind)) * 0.5;
   const pearl = half * 2;
@@ -367,30 +352,53 @@ export function sewKagariLegs(
   const inPts: THREE.Vector3[] = [];
   const outPts: THREE.Vector3[] = [];
   const tip = m.clone();
-  const { inn, out } = reversePorts(tip, from, enter, exit, onStack);
+  const { inn, out } = reversePorts(tip, from, enter, exit, onStack, pearl);
   const buried = scoopRadius(1, fromR, half);
-  const lift0 = pearl * STACK_LIFT * REVERSE_CROSS_LIFT;
-  const port = unitFromMm(REVERSE_PORT_MM);
+  const lift0 = pearl * 1.4;
   const hug = unitFromMm(REVERSE_HUG_MM);
+  const fromDir = from.clone().normalize();
+  const toDir = to.clone().normalize();
+  const control = (at: THREE.Vector3, tangent: THREE.Vector3, angle: number) => {
+    const direction = tangent.clone().projectOnPlane(at).normalize();
+    return at.clone().multiplyScalar(Math.cos(angle)).addScaledVector(direction, Math.sin(angle));
+  };
+  const fromAngle = fromDir.angleTo(tip) / 3;
+  const toAngle = toDir.angleTo(tip) / 3;
+  const inC1 = tangents ? control(fromDir, tangents.from, fromAngle)
+    : slerpUnit(fromDir, tip, 1 / 3, new THREE.Vector3());
+  const inC2 = slerpUnit(fromDir, inn, 2 / 3, new THREE.Vector3());
+  const outC1 = slerpUnit(out, toDir, 1 / 3, new THREE.Vector3());
+  const outC2 = tangents ? control(toDir, tangents.to, -toAngle)
+    : slerpUnit(tip, toDir, 2 / 3, new THREE.Vector3());
+  const slope = (tangent: THREE.Vector3, radial: THREE.Vector3, angle: number) =>
+    tangent.dot(radial) / Math.max(tangent.clone().projectOnPlane(radial).length(), 1e-12) * angle * 3;
+  const fromSlope = tangents ? slope(tangents.from, fromDir, fromAngle) : 0;
+  const toSlope = tangents ? slope(tangents.to, toDir, toAngle) : 0;
+  const descend = (distance: number, surface: number) => {
+    const drop = surface - buried;
+    const u = Math.max(0, Math.min(1, 1 - distance / drop));
+    return surface - drop * (1 - Math.sqrt(Math.max(0, 1 - u * u)));
+  };
   const angle = (a: THREE.Vector3, b: THREE.Vector3) =>
     a.clone().normalize().angleTo(b.clone().normalize());
   // Resolve the short dive even when a later catch spans a wide bundle.
   // Use the control-polygon length and cubic degree to bound the sample step.
   const lengthBound = Math.max(angle(from, tip) + angle(tip, inn), angle(out, tip) + angle(tip, to));
-  const n = Math.max(KAGARI_LEG_SEGS, Math.ceil(3 * lengthBound / (port / 4)));
+  const n = Math.max(KAGARI_LEG_SEGS, Math.ceil(3 * lengthBound / (pearl / 6)));
   for (let i = 1; i <= n; i++) {
     const t = i / n;
-    hugTip(from, tip, inn, t, _a);
-    const dive = smooth01(1 - Math.min(1, _a.distanceTo(inn) / port));
-    inPts.push(_a.clone().multiplyScalar(fromR + (buried - fromR) * dive));
+    pickupDirection(fromDir, inC1, inC2, inn, t, _a);
+    const surface = fromR + fromSlope * t * (1 - t) ** 2;
+    inPts.push(_a.clone().multiplyScalar(descend(_a.distanceTo(inn), surface)));
   }
   for (let i = 0; i < n; i++) {
     const t = i / n;
-    hugTip(out, tip, to, t, _a);
-    const emerge = smooth01(Math.min(1, _a.distanceTo(out) / port));
+    pickupDirection(out, outC1, outC2, toDir, t, _a);
     const u = _a.distanceTo(tip) / hug;
     const over = Math.exp(-(u * u));
-    const r = buried + (toR - buried) * emerge + lift0 * over * emerge;
+    const lift = lift0 * over * smooth01(_a.distanceTo(toDir) / unitFromMm(1.5));
+    const surface = toR + toSlope * t * t * (t - 1);
+    const r = descend(_a.distanceTo(out), surface + lift);
     outPts.push(_a.clone().multiplyScalar(r));
   }
   return { inPts, outPts };
@@ -419,8 +427,6 @@ function clipAroundMark(
   mark: THREE.Vector3,
   keepMm = KAGARI_SCOOP_MM,
 ): { from: THREE.Vector3; to: THREE.Vector3; k: number } | null {
-  // Inner: one pearl — the tiny visible kagari. 2 mm ate the packed
-  // flanks and drew the hidden scoop on the mari. Outer: 2 mm reverse pickup.
   const keep = unitFromMm(keepMm);
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
@@ -443,7 +449,7 @@ function clipAroundMark(
 /**
  * Cut the working thread at an outer mark: arriving dives across the
  * jiwari, leaving comes out over it. Drawing the buried bite as one
- * cord was the hole-and-loop at the tip. Inner marks stay one cord.
+ * cord was the hole-and-loop at the tip. Both kinds of mark have buried ports.
  */
 function splitJoinAroundMark(
   pts: THREE.Vector3[],
@@ -459,13 +465,17 @@ function splitJoinAroundMark(
     mark.clone().normalize().distanceTo(new THREE.Vector3(...bite.enter).normalize()),
     mark.clone().normalize().distanceTo(new THREE.Vector3(...bite.exit).normalize()),
   ) : 0;
-  const keepMm = Math.max(KAGARI_SCOOP_MM, portExtent / unitFromMm(1) + kindMm(kind));
+  const keepMm = Math.max(REVERSE_JOIN_MM, portExtent / unitFromMm(1) + kindMm(kind));
   const clip = clipAroundMark(pts, piece, mark, keepMm);
   if (!clip) {
     return { head: pts, tail: piece, outPts: [] };
   }
   const { inPts, outPts } = sewKagariLegs(
     clip.from, mark, clip.to, kind, bite?.enter, bite?.exit, onStack,
+    {
+      from: clip.from.clone().sub(pts.at(-1)!),
+      to: piece[clip.k]!.clone().sub(clip.to),
+    },
   );
   return {
     head: [...pts, clip.from, ...inPts],
@@ -579,7 +589,7 @@ function cachedTube(
     tubeCache.set(key, hit);
     return hit;
   }
-  const geo = tubeOnSphere(pts, radius, taperEnds, closed, uPerUnit, heightScale);
+  const geo = tubeOnSphere(pts, radius, taperEnds, closed, uPerUnit, heightScale, true);
   geo.userData.cached = true;
   tubeCache.set(key, geo);
   while (tubeCache.size > TUBE_CACHE_MAX) {
@@ -650,12 +660,9 @@ function stackedArcChainParts(
       const mark = pts[pts.length - 1]!;
       const next0 = firstPiece[0];
       if (next0 && firstPiece.length > 1 && samePin(mark, next0)) {
-        const { head, outPts } = joinAt(firstPiece, (kaiFirst.kai ?? 0) > 0);
+        const { head, tail } = joinAt(pending.slice(), (kaiFirst.kai ?? 0) > 0);
         tube(head, false, false);
-        const start = pending.slice();
-        const pearl2 = unitFromMm(kindMm(kind)) ** 2;
-        while (start.length > 2 && start[0]!.distanceToSquared(mark) < pearl2) start.shift();
-        tube([...outPts, ...start], false, false);
+        tube(tail, false, false);
         pending = null;
         pts = [];
         return;
@@ -1052,6 +1059,55 @@ export function createWrapLineGeometry(strands: THREE.Vector3[][]) {
   return geo;
 }
 
+function smoothStitchPath(
+  pts: THREE.Vector3[],
+  radius: number,
+  closed: boolean,
+) {
+  const path: THREE.Vector3[] = [];
+  const segs = closed ? pts.length : pts.length - 1;
+  const directions = new THREE.CatmullRomCurve3(pts.map(p => p.clone().normalize()), closed, "centripetal");
+  const radii = pts.map(p => p.length());
+  const radiusSlope = (i: number) => {
+    const before = radii[closed ? (i - 1 + pts.length) % pts.length : Math.max(0, i - 1)]!;
+    const after = radii[closed ? (i + 1) % pts.length : Math.min(pts.length - 1, i + 1)]!;
+    const left = radii[i]! - before, right = after - radii[i]!;
+    return left * right > 0 ? 2 * left * right / (left + right) : 0;
+  };
+  for (let i = 0; i < segs; i++) {
+    const next = (i + 1) % pts.length;
+    const a = radii[i]!, b = radii[next]!;
+    const ma = radiusSlope(i), mb = radiusSlope(next);
+    const steps = 4;
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      const t2 = t * t, t3 = t2 * t;
+      const radiusAt = (2 * t3 - 3 * t2 + 1) * a + (t3 - 2 * t2 + t) * ma
+        + (-2 * t3 + 3 * t2) * b + (t3 - t2) * mb;
+      directions.getPoint((i + t) / segs, _a).normalize().multiplyScalar(radiusAt);
+      path.push(_a.clone());
+    }
+  }
+  if (!closed) path.push(pts[pts.length - 1]!.clone());
+  // Use comparable arc-length steps for tube frames, independently of how
+  // densely a recipe samples its flanks versus its small needle passages.
+  const dense = closed ? [...path, path[0]!] : path;
+  const distances = [0];
+  for (let i = 1; i < dense.length; i++) distances.push(distances[i - 1]! + dense[i]!.distanceTo(dense[i - 1]!));
+  const length = distances.at(-1)!;
+  const count = Math.max(2, Math.ceil(length / (radius * .2)));
+  const uniform: THREE.Vector3[] = [];
+  let segment = 1;
+  for (let i = 0; i <= count - (closed ? 1 : 0); i++) {
+    const distance = length * i / count;
+    while (segment < dense.length - 1 && distances[segment]! < distance) segment++;
+    const span = distances[segment]! - distances[segment - 1]!;
+    const t = span > 1e-12 ? (distance - distances[segment - 1]!) / span : 0;
+    uniform.push(slerp(dense[segment - 1]!, dense[segment]!, t, new THREE.Vector3()));
+  }
+  return uniform;
+}
+
 /**
  * Pearl on the mari. Sphere-radial frames, not Frenet.
  *
@@ -1072,21 +1128,20 @@ function tubeOnSphere(
   uPerUnit = 0,
   /** 1 = round cord (wrap). <1 flattens onto the mari (kagari). */
   heightScale = 1,
+  /** Needle passages need smooth joins; preserve wrap sampling and its budget. */
+  smoothJoins = false,
 ) {
   if (pts.length < 2) return new THREE.BufferGeometry();
-  const path: THREE.Vector3[] = [];
-  const segs = closed ? pts.length : pts.length - 1;
-  for (let i = 0; i < segs; i++) {
-    const a = pts[i]!;
-    const b = pts[(i + 1) % pts.length]!;
-    const steps = 4;
-    for (let s = 0; s < steps; s++) {
-      const t = s / steps;
-      slerp(a, b, t, _a);
-      path.push(_a.clone());
+  const path: THREE.Vector3[] = smoothJoins ? smoothStitchPath(pts, radius, closed) : [];
+  if (!smoothJoins) {
+    const segs = closed ? pts.length : pts.length - 1;
+    for (let i = 0; i < segs; i++) {
+      for (let s = 0; s < 4; s++) {
+        path.push(slerp(pts[i]!, pts[(i + 1) % pts.length]!, s / 4, _a).clone());
+      }
     }
+    if (!closed) path.push(pts[pts.length - 1]!.clone());
   }
-  if (!closed) path.push(pts[pts.length - 1]!.clone());
   const nPath = path.length;
   if (nPath < 2) return new THREE.BufferGeometry();
   const along = [0];
@@ -1115,7 +1170,15 @@ function tubeOnSphere(
     const p = path[i]!;
     const prev = path[closed ? (i - 1 + nPath) % nPath : Math.max(0, i - 1)]!;
     const next = path[closed ? (i + 1) % nPath : Math.min(nPath - 1, i + 1)]!;
-    _t.subVectors(next, prev);
+    const before = p.clone().sub(prev), after = next.clone().sub(p);
+    const left = before.length(), right = after.length();
+    // A dense pickup meets a sparse flank. The unweighted secant biases the
+    // frame toward the distant sample and can fold a finite-width tube there.
+    if (smoothJoins && left > 1e-12 && right > 1e-12) {
+      _t.copy(before).multiplyScalar(right / left).addScaledVector(after, left / right);
+    } else {
+      _t.subVectors(next, prev);
+    }
     if (_t.lengthSq() < 1e-12) {
       _t.crossVectors(p, Math.abs(p.y) < 0.9 ? _mid.set(0, 1, 0) : _mid.set(1, 0, 0));
     }

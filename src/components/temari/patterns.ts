@@ -442,7 +442,7 @@ function kikuSkip(n: number) {
 
 /**
  * GT14 / TemariKai beginner: enter ~5 mm from the pole; first outer stitch
- * sits at the pin ⅓ up from the equator. Later rounds: lay the thread
+ * sits just below the pin ⅓ up from the equator. Later rounds: lay the thread
  * *parallel* to the first (GT14), inner one pearl #5 below, outer Ozaki
  * ~2 mm below the previous point so the turn lays flat. Work toward the
  * equator. `outer` is the first pin, not a short-V ceiling.
@@ -478,13 +478,16 @@ export function kikuSpec(
   const stretch = unitFromMm(recipe.stretchMm);
   const inner = unitFromMm(recipe.innerMm);
   const outer = (Math.PI / 2) * (1 - recipe.outerFromEquator);
+  // GT14 says "just below pin", not a distance. One thread width is our
+  // explicit engineering clearance; `outer` remains the measured pin mark.
+  const firstOuter = outer + pitch;
   const equator = Math.PI / 2;
   const obi = Math.min(equator - unitFromMm(8), Math.PI * 0.49);
   // This pole's kiku may walk to the equator. Crossing it is the other flower.
   const ceiling = equator - pitch * 0.35;
-  const vDepth = Math.max(pitch, outer - inner);
-  const toObi = 1 + Math.floor(Math.max(0, obi - outer) / Math.max(stretch, 1e-9));
-  const toRim = 1 + Math.floor(Math.max(0, ceiling - outer) / Math.max(stretch, 1e-9));
+  const vDepth = Math.max(pitch, firstOuter - inner);
+  const toObi = 1 + Math.floor(Math.max(0, obi - firstOuter) / Math.max(stretch, 1e-9));
+  const toRim = 1 + Math.floor(Math.max(0, ceiling - firstOuter) / Math.max(stretch, 1e-9));
   const fit = Math.max(1, toObi);
   const capacity = Math.max(fit, toRim);
   const rounds =
@@ -526,10 +529,7 @@ export function kikuThetas(
 ) {
   const ceiling = spec.ceiling ?? Math.PI / 2 - spec.pitch * 0.35;
   const tInner = spec.inner + ring * spec.pitch;
-  // First stitch is at the pin — the head sits in the V. A millimetre of
-  // empty jiwari in front of the pin holds nothing; later kai stretch
-  // from there toward the equator. Thread does not wrap the shaft.
-  const tOuter = Math.min(ceiling, spec.outer + ring * spec.stretch);
+  const tOuter = Math.min(ceiling, spec.outer + spec.pitch + ring * spec.stretch);
   return { tInner, tOuter };
 }
 
@@ -621,7 +621,7 @@ function parallelOffset(samples: Vec3[], pole: Vec3, delta: number): Vec3[] {
 
 /**
  * GT14 outer pins: on each meridian, ⅓ up from the equator.
- * The first bottom stitch sits at this pin. Later rounds stretch past
+ * The first bottom stitch is just below this pin. Later rounds stretch past
  * it toward the equator — the pin is a mark, not a stop.
  */
 export function kikuMarkPins(
@@ -784,24 +784,26 @@ export function kikuFlank(
   phiOuter: number,
 ): { a: Vec3; b: Vec3; via: Vec3[] } {
   const { tInner, tOuter } = kikuThetas(spec, ring);
-  const a = around(pole, tInner, phiInner);
+  const a0 = around(pole, tInner, phiInner);
   const b = around(pole, tOuter, phiOuter);
-  if (ring <= 0) return { a, b, via: [] };
+  if (ring <= 0) return { a: a0, b, via: [] };
   const prev = kikuFlank(pole, spec, ring - 1, phiInner, phiOuter);
   const samples = pathSamples(prev.a, prev.b, prev.via, 36);
   const off = parallelOffset(samples, pole, spec.pitch);
   const n = off.length;
-  if (n < 6) return { a, b, via: off };
-  // Ozaki ~2 mm at the point — not 12% of the petal (that left air
-  // between later kai) and not a one-sample knuckle.
-  const join = Math.max(
-    3,
-    Math.round((unitFromMm(2.6) / Math.max(tOuter - tInner, spec.pitch)) * n),
-  );
-  const i0 = Math.min(Math.floor(n / 4), join);
-  const i1 = Math.max(i0 + 2, n - 1 - i0);
+  if (n < 6) return { a: a0, b, via: off };
+  // Outer Ozaki ~2.6 mm at the point. Inner is the offset of the previous
+  // inner, snapped to this meridian — the new thread hugs the last inner
+  // from the outside (uwagake). A geodesic V at tInner is nested chidori.
+  const span = Math.max(tOuter - tInner, spec.pitch);
+  const outerJoin = Math.max(3, Math.round((unitFromMm(2.6) / span) * n));
+  const i1 = Math.max(4, n - 1 - Math.min(Math.floor(n / 4), outerJoin));
+  const i0 = Math.min(2, i1 - 2);
   const p0 = off[i0]!;
   const p1 = off[i1]!;
+  // Inner mark stays on this meridian so neighbouring petals meet.
+  // Offset off[0] of two flanks is not the same point — that left gaps.
+  const a = a0;
   const head = hermiteJoin(a, p0, dirOnSphere(a, p0), tangentAt(off, i0), 8);
   const tail = hermiteJoin(p1, b, tangentAt(off, i1), dirOnSphere(p1, b), 8);
   const pts: Vec3[] = [

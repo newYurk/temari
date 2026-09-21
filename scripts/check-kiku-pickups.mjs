@@ -13,7 +13,7 @@ try {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(new URL("?kiku=1", base).href);
   await page.waitForFunction(() => typeof window.__temari?.packKiku === "function");
-  for (const [name, rounds, laid, face] of [
+  for (const [name, rounds, laid, face, zoom = 4.3] of [
     ["first-stitch", 1, 1, [0, 1, 0]],
     ["first-group", 1, 8, [0, 1, 0]],
     ["first-round", 1, 16, [0, 1, 0]],
@@ -21,15 +21,18 @@ try {
     ["third-round-silhouette", 3, 48, [0, 0.4, 1]],
     ["ten-rounds", 10, 160, [0, 1, 0]],
     ["ten-rounds-silhouette", 10, 160, [0, 0.4, 1]],
+    ["inner-close", 1, 8, [-0.130526, 0.991445, 0], 1.7],
+    ["outer-close", 1, 8, [-0.612372, 0.5, -0.612372], 1.7],
+    ["first-group-side", 1, 8, [-1, 0.3, 0], 2.8],
   ]) {
-    await page.evaluate(({ rounds, laid, face }) => {
+    await page.evaluate(({ rounds, laid, face, zoom }) => {
       const t = window.__temari;
       t.setColor(2);
       t.packKiku(rounds);
       t.freezeKagari(laid);
       t.face(...face);
-      t.dolly(4.3);
-    }, { rounds, laid, face });
+      t.dolly(zoom);
+    }, { rounds, laid, face, zoom });
     await page.waitForFunction((expected) => window.__temari.kagari().laid === expected, laid);
     await page.waitForTimeout(500);
     states.push({ name, state: await page.evaluate(() => window.__temari.kagari()) });
