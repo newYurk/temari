@@ -6,7 +6,7 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
 import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure";
 import { WRAP_LAYERS } from "./craft";
-import { stackBump, scoopAway, scoopRadius, markTurnPast as markTurnPastVec, sphereBezier as sphereBezierVec, innerBiteJoin as innerBiteJoinVec } from "./kagari";
+import { stackBump, scoopAway, scoopRadius, markTurnPast as markTurnPastVec, sphereBezier as sphereBezierVec, innerBiteJoin as innerBiteJoinVec, appendParkBite } from "./kagari";
 
 const ARC_SEGS = 32;
 /** Almost one pearl so the over cord clears; a hair less so it nestles, not a tent. */
@@ -165,6 +165,7 @@ function arcRibbon(a: THREE.Vector3, b: THREE.Vector3, width: number) {
  * Consecutive legs that share a mark are one cord: the master does not
  * cut the pearl at the outer point or the inner stitch. A complete
  * chidori round *returns* to the start mark — that is a park, not a weld.
+ * The park still takes the inner uwagake bite so the start ray is not a cusp.
  */
 function arcPath(
   stitch: Extract<Stitch, { kind: "arc" }>,
@@ -389,7 +390,15 @@ function stackedArcChain(
   const parts: THREE.BufferGeometry[] = [];
   const flush = (pts: THREE.Vector3[], parks: boolean) => {
     if (pts.length < 2) return;
-    const path = parks ? buryWorkingStart(pts, kind) : buryWorkingEnds(pts, kind);
+    let shaped = pts;
+    if (parks) {
+      const bite = appendParkBite(
+        pts.map((p) => [p.x, p.y, p.z] as [number, number, number]),
+        pearl,
+      );
+      shaped = bite.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+    }
+    const path = parks ? buryWorkingStart(shaped, kind) : buryWorkingEnds(shaped, kind);
     parts.push(tubeOnSphere(path, stitchRadius(kind), false, false));
   };
   let pts: THREE.Vector3[] = [];
