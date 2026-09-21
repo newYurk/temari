@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import ts from 'typescript';
 import type { LowerKagariFixture } from '../../src/components/temari/lower-kagari.ts';
 import type { C8ThreadCoupon } from '../../src/components/temari/thread-path.ts';
 
@@ -45,6 +46,7 @@ export function modelSource(root: string, entry = 'src/components/temari/compute
       if (!target) throw new Error(`Missing model dependency ${match[1]} in ${path}`);
       walk(target);
     }
+
   };
   walk(join(root, entry));
   const files = [...seen].map((path) => ({
@@ -52,6 +54,60 @@ export function modelSource(root: string, entry = 'src/components/temari/compute
     sha256: hash(readFileSync(path, 'utf8')),
   })).sort((a, b) => a.path.localeCompare(b.path));
   return { files, digest: hash(JSON.stringify(files)) };
+}
+
+/** Type-only imports cannot affect numerical paths; retain all runtime imports. */
+export function runtimeModelSource(root: string, entry: string) {
+  const seen = new Set<string>();
+  const walk = (path: string) => {
+    if (seen.has(path)) return;
+    seen.add(path);
+    const text = readFileSync(path, 'utf8');
+    const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true);
+    const follow = (name: string) => {
+      if (!name.startsWith('.')) return;
+      const raw = resolve(dirname(path), name).replace(/\.(ts|tsx)$/, '');
+      const target = [`${raw}.ts`, `${raw}.tsx`, join(raw, 'index.ts')].find(existsSync);
+      if (!target) throw new Error(`Missing runtime model dependency ${name} in ${path}`);
+      walk(target);
+    };
+    const visit = (node: ts.Node): void => {
+      if (ts.isImportDeclaration(node)) {
+        const clause = node.importClause;
+        const bindings = clause?.namedBindings;
+        const onlyTypes = clause?.isTypeOnly || (!clause?.name && bindings
+          && ts.isNamedImports(bindings) && bindings.elements.length > 0 && bindings.elements.every(e => e.isTypeOnly));
+        if (!onlyTypes && ts.isStringLiteral(node.moduleSpecifier)) follow(node.moduleSpecifier.text);
+      } else if (ts.isExportDeclaration(node)) {
+        const clause = node.exportClause;
+        const onlyTypes = node.isTypeOnly || (clause && ts.isNamedExports(clause)
+          && clause.elements.length > 0 && clause.elements.every(e => e.isTypeOnly));
+        if (!onlyTypes && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) follow(node.moduleSpecifier.text);
+      } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        const argument = node.arguments[0];
+        if (!argument || !ts.isStringLiteral(argument)) throw new Error(`Nonliteral model import in ${path}`);
+        follow(argument.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  };
+  walk(join(root, entry));
+  const files = [...seen].map(path => ({
+    path: relative(root, path).replaceAll('\\', '/'), sha256: hash(readFileSync(path, 'utf8')),
+  })).sort((a, b) => a.path.localeCompare(b.path));
+  return { files, digest: hash(JSON.stringify(files)) };
+}
+
+export function matchesRuntimeModelSource(
+  recorded: { digest: string; files: { path: string; sha256: string }[] },
+  root: string,
+  entry: string,
+): boolean {
+  if (recorded.digest !== hash(JSON.stringify(recorded.files))) return false;
+  const hashes = new Map(recorded.files.map(file => [file.path, file.sha256]));
+  if (hashes.size !== recorded.files.length) return false;
+  return runtimeModelSource(root, entry).files.every(file => hashes.get(file.path) === file.sha256);
 }
 
 /** Refuse a stale or diagnostic solve before generating any current illustration. */

@@ -2,7 +2,7 @@ import { sampleCurve } from '../../src/components/temari/thread-geometry.ts';
 import type { C8ThreadCoupon, PointMm } from '../../src/components/temari/thread-path.ts';
 import type { S8Tip } from '../../src/components/temari/s8-kiku.ts';
 import type { checkS8AB } from '../../src/components/temari/s8-kiku-ab.ts';
-import { modelSource } from './stitch-diagram-data.ts';
+import { matchesRuntimeModelSource } from './stitch-diagram-data.ts';
 
 export type S8ABSnapshot = {
   version: 1; kind: 's8-a1-b1-control'; status: 'accepted' | 'rejected' | 'unresolved';
@@ -57,8 +57,7 @@ export function assertS8ABSnapshot(s: S8ABSnapshot, root: string) {
       || l.solves.some(w => w.status !== 'converged' || !Number.isFinite(w.settleMoveMm) || w.settleMoveMm > .0001)))
       throw new Error('Accepted AB snapshot has an unresolved numerical level.');
   }
-  const source = modelSource(root, 'src/components/temari/s8-kiku-ab.ts');
-  if (s.source.digest !== source.digest)
+  if (!matchesRuntimeModelSource(s.source, root, 'src/components/temari/s8-kiku-ab.ts'))
     throw new Error('S8 AB sources changed: recompute the snapshot before generating its illustration.');
 }
 
