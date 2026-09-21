@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
-import { CircleHelp, PencilLine, Pin, RotateCcw, Undo2, X } from "lucide-react";
+import { CircleHelp, MoreHorizontal, Palette, PencilLine, Pin, RotateCcw, Undo2, X } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { THREAD_COLORS } from "./palettes";
@@ -7,10 +7,11 @@ import { jiwariPhaseHint } from "./jiwari";
 import { kagariPhaseHint, kikuMarksReady, kikuPinHint, kikuSpec, kikuWorkingPins, stitchPoleIndex } from "./patterns";
 import { useTemari } from "./store";
 import { CRAFT_ACTIONS, dispatchCommand, getCraftState } from "./actions";
-import { IconHishi, IconHoshi, IconKiku, IconNeedle, IconObi } from "./icons";
+import { IconKiku, IconNeedle } from "./icons";
 import { MarkingDiagram } from "./MarkingDiagram";
 
 type Stage = "jiwari" | "kagari";
+type Panel = "pattern" | "threads" | "more" | "help";
 const MARKINGS = [
   { id: "jiwari-off", division: "none", name: "Без сетки", detail: "Свои метки", note: "Булавки можно ставить в любом месте шара." },
   { id: "jiwari-simple", division: "simple", name: "S8 · простая", detail: "8 долей", note: "S8: восемь долей между двумя полюсами. Для первой кику." },
@@ -21,9 +22,6 @@ const MARKINGS = [
 ] as const;
 const MOTIFS = [
   { id: "motif-kiku", name: "Кику", detail: "Хризантема", icon: <IconKiku /> },
-  { id: "motif-hoshi", name: "Хоси", detail: "Позже", icon: <IconHoshi /> },
-  { id: "motif-hishi", name: "Хиси", detail: "Позже", icon: <IconHishi /> },
-  { id: "motif-obi", name: "Оби", detail: "Позже", icon: <IconObi /> },
   { id: "motif-none", name: "Эскиз", detail: "Свои линии", icon: <PencilLine /> },
 ];
 const COLOR_NAMES = ["Красная", "Золотая", "Светлая", "Тёмная", "Синяя"];
@@ -52,9 +50,10 @@ function KikuHelp() {
         их не остаётся.
       </p>
       <p className="text-ink/75">
-        «Отменить» снимает <b>целую группу</b> лепестков, а не один стежок: нить не режут
-        посреди круга. «Дошить» доводит этот полюс до экватора одним шагом — это для проверки,
-        в настоящей работе каждый ряд кладут руками.
+        «Отменить» возвращает последнее действие: при вышивании — <b>целую группу</b>
+        или выбранный пакет рядов, не один стежок. В «Узор → Узоры» можно выбрать число
+        следующих рядов; «всё» меняет основное действие на «До экватора».
+        Это ускорение стенда, не описание ручной работы мастера.
       </p>
     </div>
   );
@@ -65,7 +64,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     division: s.division, motif: s.motif, craft: s.craft, pins: s.pins,
     facingPole: s.facingPole, jiwariOn: s.jiwariOn, jiwariPhase: s.jiwariPhase,
     jiwariLaid: s.jiwariLaid, kagariPlan: s.kagariPlan, kagariLaid: s.kagariLaid,
-    kagariKept: s.kagariKept, kagariColors: s.kagariColors,
+    kagariKept: s.kagariKept, kagariColors: s.kagariColors, kagariHistory: s.kagariHistory,
     kagariPlaying: s.kagariPlaying, kagariSet: s.kagariSet, kikuLayers: s.kikuLayers,
     kagariDir: s.kagariDir, kagariSpacing: s.kagariSpacing, mode: s.mode,
     layerDone: s.layerDone, history: s.history, sewnHistory: s.sewnHistory,
@@ -78,14 +77,35 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     kagariDir, kagariSpacing } = s;
   const state = useMemo(() => getCraftState(), [s]);
   const [tip, setTip] = useState<string | null>(null);
-  const [stage, setStage] = useState<Stage>(motif === "none" ? "jiwari" : "kagari");
+  const [stage, setStage] = useState<Stage>("kagari");
   const [sewHow, setSewHow] = useState<1 | 2 | 3 | "all">(1);
-  const help = useRef<HTMLDialogElement>(null);
+  const [panel, setPanel] = useState<Panel | null>(null);
+  const [colorTarget, setColorTarget] = useState<"base" | "thread">("thread");
+  const [confirmReset, setConfirmReset] = useState(false);
+  const sheet = useRef<HTMLDialogElement>(null);
   const sewing = stage === "kagari";
-  const helpTitle = sewing ? "Как шьётся кику" : "Как читать разметку";
+  const helpTitle = sewing ? motif === "kiku" ? "Как шьётся кику" : "Как рисовать эскиз" : "Как читать разметку";
+  const panelTitle = panel === "pattern" ? "Узор и разметка" :
+    panel === "threads" ? "Нити и основа" : panel === "more" ? "Действия" : helpTitle;
 
   useEffect(() => { if (motif !== "none") setStage("kagari"); }, [motif]);
   useEffect(() => { setTip(null); }, [division, motif, craft, pins, jiwariOn, kagariPlan, s.pinNote]);
+  useEffect(() => {
+    if (panel && !sheet.current?.open) sheet.current?.showModal();
+    if (!panel && sheet.current?.open) sheet.current.close();
+  }, [panel]);
+
+  function openPanel(next: Panel) {
+    setConfirmReset(false);
+    if (next === "threads") setColorTarget("thread");
+    setPanel(next);
+  }
+
+  function closePanel() {
+    sheet.current?.close();
+    setPanel(null);
+    setConfirmReset(false);
+  }
 
   function run(id: string) {
     const action = actionById(id);
@@ -107,6 +127,9 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const kikuFit = kikuSpec(division, kagariSpacing, "fit").capacity;
   const canPickRows = motif === "kiku" && complete && kagariSet === 1 && kikuLayers < kikuFit && !kagariPlaying;
   const remaining = Math.max(0, kikuFit - kikuLayers);
+  useEffect(() => {
+    if (sewHow !== "all" && sewHow > Math.max(1, remaining)) setSewHow(1);
+  }, [remaining, sewHow]);
   const sewId = secondGroup ? "motif-kiku" : "fill";
   const sewLabel = kagariPlaying ? "Вышиваем…" : secondGroup ? "Вторая группа" :
     canPickRows && sewHow === "all" ? "До экватора" :
@@ -149,7 +172,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
             aria-pressed={sewHow === n}
             onClick={() => setSewHow(n)}
             className={cn(
-              "min-h-9 min-w-9 rounded-xl px-2 text-xs tabular-nums",
+              "min-h-11 min-w-11 rounded-xl px-3 text-sm tabular-nums",
               focusStyle,
               sewHow === n ? "bg-ink text-linen" : "text-ink/70 hover:bg-ink/5",
             )}
@@ -204,44 +227,50 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
 
   function verb(id: string, label: string, icon: ReactNode, primary = false, onClick?: () => void) {
     const action = actionById(id);
-    const available = action.canExecute(state) && !(primary && kagariPlaying);
+    const available = action.canExecute(state) && !kagariPlaying;
     const active = action.isActive?.(state) ?? false;
     return (
       <button
         type="button"
         aria-label={label}
-        aria-pressed={primary ? undefined : active}
+        aria-pressed={primary ? undefined : action.isActive?.(state)}
+        disabled={!available}
         aria-disabled={!available}
         onClick={() => (onClick ? onClick() : run(id))}
         title={action.getDisabledReason(state) ?? label}
         className={cn(
-          "flex items-center gap-2 rounded-2xl text-sm transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
+          "flex min-h-11 items-center justify-center gap-2 rounded-2xl text-sm transition-colors disabled:cursor-not-allowed",
           focusStyle,
           primary
-            ? cn("min-h-12 pl-4 pr-3", available ? "bg-cinnabar text-linen" : "bg-ink/10 text-ink/55")
+            ? cn("min-w-0 flex-1 px-3", available ? "bg-cinnabar text-linen hover:bg-cinnabar/90" : "bg-ink/8 text-ink/50")
             : cn(
-                "min-h-11 bg-linen/95 pl-3 pr-2.5 ring-1 ring-line",
+                "size-11 shrink-0 ring-1 ring-line",
                 active ? "font-medium ring-ink/40" : "hover:bg-ink/5",
                 !available && "text-ink/45",
               ),
         )}
       >
-        <span className="hidden max-w-[9rem] truncate md:inline">{label}</span>
-        <span className="flex size-8 shrink-0 items-center justify-center [&>svg]:size-4">{icon}</span>
+        <span className="flex size-5 shrink-0 items-center justify-center [&>svg]:size-5">{icon}</span>
+        {primary ? <span className="truncate">{label}</span> : null}
       </button>
     );
   }
 
+  const emptySketch = motif === "none" && pins.length === 0;
   const sewVerb = () =>
-    motif === "none"
-      ? verb("stitch", "Линии", <PencilLine className="size-4" />)
+    emptySketch ? (
+      <button type="button" aria-haspopup="dialog" onClick={() => openPanel("pattern")}
+        className={cn("flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl bg-cinnabar px-3 text-sm text-linen hover:bg-cinnabar/90", focusStyle)}>
+        <IconKiku className="size-5" />Выбрать узор
+      </button>
+    ) : motif === "none"
+      ? verb("stitch", "Линии", <PencilLine />, true)
       : verb(sewId, sewLabel, <IconNeedle className="size-4" />, true, runSew);
-  const arc = [
-    { key: "sew", node: sewVerb(), mobile: false },
-    { key: "pin", node: verb("pin", "Булавки", <Pin className="size-4" />), mobile: true },
-    { key: "undo", node: verb("undo", "Распустить", <Undo2 className="size-4" />), mobile: true },
-    { key: "reset", node: verb("reset", "Сброс", <RotateCcw className="size-4" />), mobile: true },
-  ];
+  const primaryReason = actionById(motif === "none" ? "stitch" : sewId).getDisabledReason(state);
+  const visibleHint = tip ?? s.pinNote ?? (emptySketch
+    ? "Выберите узор или поставьте булавки для эскиза."
+    : motif === "none" && primaryReason ? primaryReason : hint);
+  const tabStyle = "min-h-11 flex-1 rounded-xl px-3 text-sm";
 
   if (!s.layerDone) {
     return (
@@ -254,189 +283,94 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   return (
     <>
       <div
-        className="pointer-events-none absolute inset-x-0 top-[calc(var(--temari-chrome-top,3.5rem)+0.25rem)] bottom-[var(--temari-chrome-bottom,12rem)] z-20 flex flex-col gap-2"
+        ref={chromeRef}
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       >
-        <p
-          role="status"
-          aria-live="polite"
-          className="shrink-0 px-16 text-center text-[13px] leading-[18px] text-ink/80 md:px-40"
-        >
-          {hint}
-        </p>
-
-        <aside
-          aria-label="Рабочие нити"
-          className="ml-3 flex min-h-0 flex-1 items-center self-start md:ml-6"
-        >
-          <div className="pointer-events-auto flex max-h-full flex-col gap-2 overflow-y-auto overscroll-contain rounded-3xl border border-line bg-linen/90 p-2 shadow-[0_4px_24px_#0c0b0908]">
-            <div role="group" aria-label="Цвет основы" className="flex shrink-0 flex-col gap-1 pb-1">
-              <p className="px-1 text-[10px] tracking-wide text-ink/55">Основа</p>
-              <div className="flex flex-wrap gap-0.5">
-                {THREAD_COLORS.map((color, i) => (
-                  <button
-                    key={`wrap-${i}-${color}`}
-                    type="button"
-                    aria-label={`Цвет основы ${i + 1}`}
-                    aria-pressed={s.wrapColor === i}
-                    title={`${COLOR_NAMES[i]} основа`}
-                    onClick={() => s.setWrapColor(i)}
-                    className={cn("flex size-8 items-center justify-center rounded-lg", focusStyle)}
-                  >
-                    <span
-                      className={cn(
-                        "size-4 rounded-full ring-1 ring-line",
-                        s.wrapColor === i && "ring-2 ring-ink ring-offset-1 ring-offset-linen",
-                      )}
-                      style={{ backgroundColor: color }}
-                    />
-                  </button>
-                ))}
-              </div>
+        <div className="mx-auto w-full max-w-md">
+          <p role="status" aria-live="polite" className="mb-2 px-2 text-center text-xs leading-4 text-ink/75">
+            {visibleHint}
+          </p>
+          <nav aria-label="Действия на мари" className="pointer-events-auto rounded-3xl border border-line bg-linen/95 p-2 shadow-[0_4px_24px_#0c0b0908]">
+            <div className="mb-2 grid grid-cols-[1fr_1fr_auto] gap-2 border-b border-line pb-2">
+              <button type="button" aria-label="Узор" aria-haspopup="dialog"
+                onClick={() => openPanel("pattern")}
+                className={cn("flex min-h-11 items-center gap-2 rounded-xl px-2 text-left hover:bg-ink/5", focusStyle)}>
+                <span className="flex size-6 shrink-0 items-center justify-center [&>svg]:size-5"><IconKiku /></span>
+                <span className="min-w-0 text-sm">Узор
+                  <span className="block truncate text-[11px] text-ink/60">{motif === "kiku" ? "Кику · S8" : `Эскиз · ${selected.name}`}</span>
+                </span>
+              </button>
+              <button type="button" aria-label="Нити" aria-haspopup="dialog"
+                onClick={() => openPanel("threads")}
+                className={cn("flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm hover:bg-ink/5", focusStyle)}>
+                <span aria-hidden className="flex -space-x-1">
+                  {(motif === "kiku" ? kagariColors : [s.selectedColor]).map((color, slot) => (
+                    <span key={slot} className="size-5 rounded-full border-2 border-linen ring-1 ring-line"
+                      style={{ backgroundColor: THREAD_COLORS[color] }} />
+                  ))}
+                </span>
+                Нити
+              </button>
+              <button type="button" aria-label="Ещё" aria-haspopup="dialog" title="Ещё"
+                onClick={() => openPanel("more")}
+                className={cn("flex size-11 items-center justify-center rounded-xl hover:bg-ink/5", focusStyle)}>
+                <MoreHorizontal className="size-5" />
+              </button>
             </div>
-            {motif === "kiku" ? (
-              <div role="group" aria-label="Две нити кику" className="flex shrink-0 flex-col gap-1">
-                {([0, 1] as const).map((slot) => (
-                  <button
-                    key={slot}
-                    type="button"
-                    aria-pressed={editing === slot}
-                    aria-label={`Нить ${slot + 1}, ${slot === 0 ? "первая" : "вторая"} четвёрка: ${COLOR_NAMES[kagariColors[slot]]?.toLowerCase() ?? ""}`}
-                    onClick={() => s.editThread(slot)}
-                    className={cn(
-                      "flex h-10 items-center gap-2 rounded-2xl px-2 text-sm",
-                      focusStyle,
-                      editing === slot ? "bg-ink/8 font-medium ring-1 ring-ink/40" : "text-ink/70 hover:bg-ink/5",
-                    )}
-                  >
-                    <span aria-hidden className="w-4 text-center text-xs tabular-nums">{slot + 1}</span>
-                    <span
-                      aria-hidden
-                      className="size-5 rounded-full ring-1 ring-line"
-                      style={{ backgroundColor: THREAD_COLORS[kagariColors[slot]] }}
-                    />
-                    <span className="hidden pr-1 lg:inline">Нить</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            <div className="flex shrink-0 flex-col gap-1" aria-label="Цвет нити">
-              {THREAD_COLORS.map((color, i) => (
-                <button
-                  key={`thread-${i}-${color}`}
-                  type="button"
-                  aria-label={threadName(i)}
-                  aria-pressed={s.selectedColor === i}
-                  title={threadName(i)}
-                  onClick={() => s.setColor(i)}
-                  className={cn("flex size-10 items-center justify-center rounded-xl", focusStyle)}
-                >
-                  <span
-                    className={cn(
-                      "size-6 rounded-full ring-1 ring-line",
-                      otherThread === i && s.selectedColor !== i && "ring-2 ring-ink/35",
-                      s.selectedColor === i && "ring-2 ring-ink ring-offset-2 ring-offset-linen",
-                    )}
-                    style={{ backgroundColor: color }}
-                  />
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              {verb("pin", "Булавки", <Pin />)}
+              {sewVerb()}
+              {verb("undo", "Отменить", <Undo2 />)}
             </div>
-          </div>
-        </aside>
+          </nav>
+        </div>
       </div>
 
-      <nav
-        aria-label="Действия на мари"
-        className="pointer-events-none absolute top-1/2 right-0 z-20 h-[min(22rem,48dvh)] w-[min(11rem,38vw)] -translate-y-1/2 md:w-52"
+      <dialog
+        ref={sheet}
+        aria-labelledby="workbench-panel-title"
+        onCancel={(event) => {
+          // A queued native `close` may belong to a previous opening.
+          event.preventDefault();
+          closePanel();
+        }}
+        onClick={(event) => {
+          if (event.target !== event.currentTarget) return;
+          const rect = event.currentTarget.getBoundingClientRect();
+          if (event.clientX < rect.left || event.clientX > rect.right ||
+            event.clientY < rect.top || event.clientY > rect.bottom) closePanel();
+        }}
+        className="fixed inset-x-0 bottom-0 top-auto m-0 max-h-[85dvh] w-full max-w-none overflow-y-auto overscroll-contain rounded-t-3xl border border-line bg-linen text-ink shadow-xl backdrop:bg-ink/30 sm:inset-0 sm:m-auto sm:w-[calc(100%-2rem)] sm:max-w-md sm:rounded-3xl"
       >
-        {rowPicker("absolute -top-12 right-4 hidden md:flex")}
-        <div className="relative size-full">
-          {arc.map((item, i, list) => {
-            const shown = list.filter((entry) => entry.mobile).length;
-            const mobileIndex = list.slice(0, i).filter((entry) => entry.mobile).length;
-            const t = (n: number, k: number) => (n <= 1 ? 0.5 : k / (n - 1));
-            const place = (k: number, n: number) => {
-              const ang = (-50 + t(n, k) * 100) * (Math.PI / 180);
-              return {
-                left: `${18 + Math.cos(ang) * 62}%`,
-                top: `${50 + Math.sin(ang) * 44}%`,
-              };
-            };
-            const desk = place(i, list.length);
-            const mob = place(item.mobile ? mobileIndex : i, item.mobile ? shown : list.length);
-            return (
-              <div
-                key={item.key}
-                className={cn(
-                  "pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 left-[var(--arc-mx)] top-[var(--arc-my)] md:left-[var(--arc-dx)] md:top-[var(--arc-dy)]",
-                  item.mobile ? "max-md:block" : "hidden md:block",
-                )}
-                style={{
-                  ["--arc-dx" as string]: desk.left,
-                  ["--arc-dy" as string]: desk.top,
-                  ["--arc-mx" as string]: mob.left,
-                  ["--arc-my" as string]: mob.top,
-                }}
-              >
-                {item.node}
-              </div>
-            );
-          })}
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-linen px-4 py-3">
+          <h2 id="workbench-panel-title" className="font-display text-2xl">{panelTitle}</h2>
+          <button type="button" aria-label="Закрыть панель" onClick={closePanel}
+            className={cn("flex size-11 shrink-0 items-center justify-center rounded-full hover:bg-ink/5", focusStyle)}>
+            <X className="size-5" />
+          </button>
         </div>
-      </nav>
-
-      <div
-        ref={chromeRef}
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[max(0.6rem,calc(env(safe-area-inset-bottom)+0.35rem))]"
-      >
-        <div className="pointer-events-auto mx-auto w-full max-w-lg">
-          <div className="mb-2 flex flex-col items-center gap-2 md:hidden">
-            {rowPicker()}
-            <div className="[&>button]:min-w-48 [&>button]:justify-center">{sewVerb()}</div>
-          </div>
-          <div className="rounded-3xl border border-line bg-linen/95 p-2 shadow-[0_4px_24px_#0c0b0906]">
-            <div className="mb-1 flex items-center gap-1">
-              <div className="flex flex-1 gap-1" aria-label="Этап работы">
-                {([["jiwari", "Разметка"], ["kagari", "Вышивка"]] as const).map(([id, label], i) => (
+        <div className="space-y-4 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          {panel === "pattern" ? (
+            <>
+              <div className="flex gap-1 rounded-2xl bg-ink/5 p-1" aria-label="Настройка узора">
+                {([["kagari", "Узоры"], ["jiwari", "Разметка"]] as const).map(([id, label]) => (
                   <button
                     key={id}
                     type="button"
-                    aria-label={label}
                     aria-pressed={stage === id}
-                    onClick={() => {
-                      setTip(null);
-                      setStage(id);
-                    }}
-                    className={cn(
-                      "flex h-10 flex-1 items-center justify-center gap-2 rounded-full text-sm",
-                      focusStyle,
-                      stage === id ? "bg-ink text-linen" : "text-ink/65 hover:bg-ink/5",
-                    )}
+                    onClick={() => { setTip(null); setStage(id); }}
+                    className={cn(tabStyle, focusStyle, stage === id ? "bg-linen font-medium shadow-sm" : "text-ink/65")}
                   >
-                    <span aria-hidden className="text-xs opacity-60">{i + 1}</span>
                     {label}
                   </button>
                 ))}
               </div>
-              <button
-                type="button"
-                aria-label={helpTitle}
-                title={helpTitle}
-                onClick={() => help.current?.showModal()}
-                className={cn(
-                  "flex size-10 shrink-0 items-center justify-center rounded-full text-ink/65 hover:bg-ink/5",
-                  focusStyle,
-                )}
-              >
-                <CircleHelp className="size-5" />
-              </button>
-            </div>
-
-            {stage === "jiwari" ? (
+              {stage === "jiwari" ? (
               <>
-                <div className="grid grid-cols-4 gap-1" aria-label="Вид разметки">
+                <div className="grid grid-cols-2 gap-2" aria-label="Вид разметки">
                   {MARKINGS.map((item) => {
                     const active = selected.id === item.id;
+                    const available = actionById(item.id).canExecute(state) && !kagariPlaying;
                     return (
                       <button
                         key={item.id}
@@ -444,50 +378,49 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
                         aria-label={item.name}
                         aria-describedby={`${item.id}-detail`}
                         aria-pressed={active}
-                        onClick={() => {
-                          if (!active) run(item.id);
-                        }}
+                        disabled={!available}
+                        onClick={() => { if (!active) run(item.id); }}
                         className={cn(
-                          "flex min-w-0 flex-col items-center rounded-xl py-1.5",
+                          "flex min-w-0 items-center gap-2 rounded-2xl border border-line p-3 text-left disabled:opacity-40",
                           focusStyle,
-                          active ? "bg-ink/7 ring-1 ring-inset ring-ink/30" : "hover:bg-ink/5",
+                          active ? "bg-ink/5 ring-1 ring-ink/30" : "hover:bg-ink/5",
                         )}
                       >
-                        <MarkingDiagram division={item.division} className="mb-0.5 size-10" />
-                        <span className="whitespace-nowrap text-[11px] font-medium sm:text-xs">{item.name}</span>
-                        <span id={`${item.id}-detail`} className="text-[10px] text-ink/65 sm:text-[11px]">
-                          {item.detail}
+                        <MarkingDiagram division={item.division} className="size-8 shrink-0" />
+                        <span className="text-xs font-medium">{item.name}
+                          <span id={`${item.id}-detail`} className="mt-1 block text-[11px] font-normal text-ink/65">{item.detail}</span>
                         </span>
                       </button>
                     );
                   })}
                 </div>
-                <p className="min-h-9 px-2 py-1.5 text-center text-xs leading-4 text-ink/70">{selected.note}</p>
+                <p className="text-sm leading-relaxed text-ink/70">{selected.note}</p>
               </>
             ) : (
               <>
-                <div className="grid grid-cols-5 gap-1" aria-label="Узор вышивки">
+                <div className="grid grid-cols-2 gap-2" aria-label="Узор вышивки">
                   {MOTIFS.map((item) => {
                     const action = actionById(item.id);
-                    const available = action.canExecute(state);
+                    const available = action.canExecute(state) && !kagariPlaying;
                     const active = action.isActive?.(state);
                     return (
                       <button
                         key={item.id}
                         type="button"
                         aria-label={item.name}
+                        disabled={!available}
                         aria-disabled={!available}
                         aria-pressed={active}
-                        onClick={() => run(item.id)}
+                        onClick={() => { if (!active) run(item.id); }}
                         className={cn(
-                          "flex min-w-0 flex-col items-center rounded-xl py-2",
+                          "flex min-w-0 flex-col items-center rounded-2xl border border-line p-3",
                           focusStyle,
                           !available ? "text-ink/45" : active ? "bg-ink/7 ring-1 ring-inset ring-ink/30" : "hover:bg-ink/5",
                         )}
                       >
                         <span className="mb-1 flex size-8 items-center justify-center [&>svg]:size-6">{item.icon}</span>
                         <span className="text-xs font-medium">{item.name}</span>
-                        <span className="mt-0.5 text-[9px] sm:text-[11px]">
+                        <span className="mt-1 text-[11px]">
                           {item.id === "motif-kiku" && (!jiwariOn || division !== "simple")
                             ? "Нужна S8"
                             : item.detail}
@@ -496,69 +429,142 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
                     );
                   })}
                 </div>
-                <p className="min-h-9 px-2 py-1.5 text-center text-xs leading-4 text-ink/70">
-                  {motif === "kiku"
-                    ? sewingThread
-                      ? "Цвет слева — для выбранной нити. Пришитое не меняется."
-                      : "Слева нити 1 и 2. Выберите нить, затем цвет."
-                    : division !== "simple" && jiwariOn
-                      ? `Для кику выберите S8 в «Разметке». Рецепта ${division.toUpperCase()} ещё нет.`
-                      : "Начните с кику на S8. Эскиз — свободные линии между метками."}
+                <div className="rounded-2xl bg-ink/5 p-3">
+                  <p className="mb-3 text-sm leading-relaxed text-ink/75">
+                    {sewnHere || kagariLaid > 0
+                      ? "«Кику здесь» заново разметит текущий полюс и снимет его цветок. Другой полюс останется; действие можно отменить."
+                      : "Начать без ручной разметки: подготовить S8 и метки кику на обращённом к вам полюсе."}
+                  </p>
+                  <button type="button" disabled={!actionById("quick-kiku").canExecute(state) || kagariPlaying}
+                    onClick={() => { run("quick-kiku"); closePanel(); }}
+                    className={cn("flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-cinnabar px-3 text-sm text-linen disabled:opacity-40", focusStyle)}>
+                    <IconKiku className="size-5" />Кику здесь
+                  </button>
+                </div>
+                {canPickRows ? (
+                  <div>
+                    <p className="mb-2 text-sm">Сколько рядов в следующем действии</p>
+                    {rowPicker()}
+                  </div>
+                ) : null}
+                <p className="text-xs leading-relaxed text-ink/60">
+                  Хоси, хиси, оби и собственные рецепты — позже. Сейчас доступны кику на S8
+                  и эскиз линиями между булавками; эскиз не является физической вышивкой.
                 </p>
               </>
             )}
-          </div>
-        </div>
-      </div>
-
-      <dialog
-        ref={help}
-        aria-labelledby="marking-help-title"
-        className="fixed inset-0 m-auto max-h-[85dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-3xl border border-line bg-linen p-5 text-ink shadow-xl backdrop:bg-ink/30"
-      >
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 id="marking-help-title" className="font-display text-2xl">{helpTitle}</h2>
-          <button
-            type="button"
-            aria-label="Закрыть подсказку"
-            onClick={() => help.current?.close()}
-            className={cn("flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-ink/5", focusStyle)}
-          >
-            <X className="size-5" />
-          </button>
-        </div>
-        {sewing ? <KikuHelp /> : null}
-        <p className="mb-4 text-sm leading-relaxed">
-          Разметка, или дзивари, — нити, которые делят поверхность шара и помогают расположить узор.
-        </p>
-        <div className="space-y-3">
-          {MARKINGS.slice(1).map((item) => (
-            <div key={item.id} className="flex items-center gap-3">
-              <MarkingDiagram division={item.division} className="size-20 shrink-0" />
-              <div>
-                <p className="text-sm font-medium">{item.name}</p>
-                <p className="mt-1 text-xs leading-relaxed text-ink/75">
-                  {"help" in item ? item.help : item.note}
+              <button type="button" onClick={() => openPanel("help")}
+                className={cn("flex min-h-11 items-center gap-2 text-sm underline underline-offset-4", focusStyle)}>
+                <CircleHelp className="size-4" />{helpTitle}
+              </button>
+            </>
+          ) : null}
+          {panel === "threads" ? (
+            <>
+              <div role="group" aria-label="Что перекрасить" className="flex gap-1 rounded-2xl bg-ink/5 p-1">
+                <button type="button" aria-pressed={colorTarget === "base"} onClick={() => setColorTarget("base")}
+                  className={cn(tabStyle, focusStyle, colorTarget === "base" && "bg-linen font-medium shadow-sm")}>Основа</button>
+                {(motif === "kiku" ? [0, 1] as const : [0] as const).map((slot) => (
+                  <button key={slot} type="button" aria-label={motif === "kiku" ? `Нить ${slot + 1}` : "Нить"}
+                    aria-pressed={colorTarget === "thread" && (motif !== "kiku" || editing === slot)}
+                    onClick={() => { setColorTarget("thread"); s.editThread(slot); }}
+                    className={cn(tabStyle, focusStyle,
+                      colorTarget === "thread" && (motif !== "kiku" || editing === slot) && "bg-linen font-medium shadow-sm")}>
+                    {motif === "kiku" ? `Нить ${slot + 1}` : "Нить"}
+                  </button>
+                ))}
+              </div>
+              <div role="group" aria-label={colorTarget === "base" ? "Цвет основы" : "Цвет нити"}
+                className="flex justify-center gap-2 py-2">
+                {THREAD_COLORS.map((color, i) => {
+                  const active = (colorTarget === "base" ? s.wrapColor : s.selectedColor) === i;
+                  const label = colorTarget === "base" ? `Цвет основы ${i + 1}` : threadName(i);
+                  return (
+                    <button key={color} type="button" aria-label={label} aria-pressed={active}
+                      title={colorTarget === "base" ? `${COLOR_NAMES[i]} основа` : threadName(i)}
+                      onClick={() => colorTarget === "base" ? s.setWrapColor(i) : s.setColor(i)}
+                      className={cn("flex size-11 shrink-0 items-center justify-center rounded-xl", focusStyle)}>
+                      <span className={cn("size-7 rounded-full ring-1 ring-line",
+                        active && "ring-2 ring-ink ring-offset-3 ring-offset-linen")}
+                        style={{ backgroundColor: color }} />
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-center text-sm">{COLOR_NAMES[colorTarget === "base" ? s.wrapColor : s.selectedColor]} {colorTarget === "base" ? "основа" : "нить"}</p>
+              <p className="text-sm leading-relaxed text-ink/70">
+                {colorTarget === "base" ? "Цвет основы меняется сразу. Рабочие нити сохраняют контраст с основой." :
+                  sewingThread ? "Меняется цвет следующих стежков выбранной нити. Уже пришитое не перекрашивается." :
+                    motif === "kiku" ? "Нить 1 — первая четвёрка лепестков, нить 2 — вторая. Цвета выбираются отдельно." :
+                      "Цвет следующих линий эскиза. Уже нарисованные линии не перекрашиваются."}
+              </p>
+            </>
+          ) : null}
+          {panel === "more" ? (
+            <>
+              <button type="button" onClick={() => openPanel("help")}
+                className={cn("flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-sm hover:bg-ink/5", focusStyle)}>
+                <CircleHelp className="size-5" />Справка
+              </button>
+              <a href="./design.html#interface" className={cn("flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm hover:bg-ink/5", focusStyle)}>
+                <Palette className="size-5" />О стенде и ограничениях
+              </a>
+              {confirmReset ? (
+                <div role="alert" className="rounded-2xl border border-cinnabar/30 p-3">
+                  <p className="mb-3 text-sm">{s.mode === "kata" ? "Очистить заполнение текущей задачи?" :
+                    "Убрать вышивку, булавки и разметку с обоих полюсов? Цвет основы сохранится."}</p>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setConfirmReset(false)}
+                      className={cn("min-h-11 flex-1 rounded-xl px-2 text-sm ring-1 ring-line", focusStyle)}>Отмена</button>
+                    <button type="button" onClick={() => { run("reset"); closePanel(); }}
+                      className={cn("min-h-11 flex-1 rounded-xl bg-cinnabar px-2 text-sm text-linen", focusStyle)}>Сбросить работу</button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setConfirmReset(true)}
+                  className={cn("flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-sm text-cinnabar hover:bg-cinnabar/5", focusStyle)}>
+                  <RotateCcw className="size-5" />Сброс
+                </button>
+              )}
+            </>
+          ) : null}
+          {panel === "help" ? (
+            <>
+              {sewing && motif === "kiku" ? <KikuHelp /> : null}
+              <p className="mb-4 text-sm leading-relaxed">
+                Разметка, или дзивари, — нити, которые делят поверхность шара и помогают расположить узор.
+              </p>
+              <div className="space-y-3">
+                {MARKINGS.slice(1).map((item) => (
+                  <div key={item.id} className="flex items-center gap-3">
+                    <MarkingDiagram division={item.division} className="size-20 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium">{item.name}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-ink/75">
+                        {"help" in item ? item.help : item.note}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-ink/75">
+                Точки на схемах — основные центры пересечения линий, в том числе на обратной стороне шара. Число лучей не равно числу лепестков.
+              </p>
+              <div className="my-4 flex gap-3 rounded-xl bg-ink/5 p-3">
+                <Pin className="mt-0.5 size-5 shrink-0" />
+                <p className="text-sm leading-relaxed">
+                  <b>Булавки — временные метки.</b> Помогают отметить расстояния и места будущих стежков. Выберите «Булавки», нажмите на шар, чтобы поставить, и на головку, чтобы снять. Нить от этого не появляется.
                 </p>
               </div>
-            </div>
-          ))}
+              <p className="text-xs leading-relaxed text-ink/75">
+                Чтобы повернуть шар, потяните его. «Линии» соединяют две булавки; это рисунок на сфере, без подхватов и натяжения нити.
+              </p>
+              <a href="./design.html#jiwari" className="mt-4 inline-block py-2 text-sm underline underline-offset-4">
+                Подробнее о разметке и вышивке →
+              </a>
+            </>
+          ) : null}
         </div>
-        <p className="mt-3 text-xs leading-relaxed text-ink/75">
-          Точки на схемах — основные центры пересечения линий, в том числе на обратной стороне шара. Число лучей не равно числу лепестков.
-        </p>
-        <div className="my-4 flex gap-3 rounded-xl bg-ink/5 p-3">
-          <Pin className="mt-0.5 size-5 shrink-0" />
-          <p className="text-sm leading-relaxed">
-            <b>Булавки — временные метки.</b> Помогают отметить расстояния и места будущих стежков. Выберите «Булавки», нажмите на шар, чтобы поставить, и на головку, чтобы снять. Нить от этого не появляется.
-          </p>
-        </div>
-        <p className="text-xs leading-relaxed text-ink/75">
-          Чтобы повернуть шар, потяните его. «Линии эскиза» соединяют две булавки; это рисунок на сфере, без подхватов и натяжения нити.
-        </p>
-        <a href="./design.html#jiwari" className="mt-4 inline-block py-2 text-sm underline underline-offset-4">
-          Подробнее о разметке и вышивке →
-        </a>
       </dialog>
     </>
   );

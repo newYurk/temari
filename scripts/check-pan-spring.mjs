@@ -12,13 +12,12 @@ try {
   const page = await context.newPage();
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(base);
-  await page.getByRole('button', { name: 'Кику здесь', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Узор', exact: true }).waitFor();
   await page.waitForFunction(() => window.__temari?.pan);
   await page.waitForTimeout(800);
   const box = await page.locator('canvas').boundingBox();
   assert.ok(box, 'the sphere canvas is visible');
-  // Start to the right of the palette and above the action buttons.
-  const cx = box.x + box.width * 0.65, cy = box.y + box.height * 0.3;
+  const cx = box.x + box.width / 2, cy = box.y + box.height * 0.4;
   assert.equal(await page.evaluate(({ cx, cy }) =>
     [cx - 50, cx + 50].every(x => document.elementFromPoint(x, cy) === document.querySelector('canvas')),
   { cx, cy }), true, 'both touches start on the canvas, not on a control');

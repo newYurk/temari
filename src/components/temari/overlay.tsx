@@ -5,8 +5,7 @@ import { PUZZLES } from "./puzzles";
 import { fillsMatch, polePositions } from "./division";
 import { useTemari } from "./store";
 import { ActionBar } from "./ActionBar";
-import { IconKiku, IconPoles } from "./icons";
-import { dispatchCommand } from "./actions";
+import { IconPoles } from "./icons";
 
 function useChromeVar(
   name: "--temari-chrome-top" | "--temari-chrome-bottom",
@@ -66,31 +65,12 @@ function RecenterButton({ className }: { className?: string }) {
       title={label}
       onClick={resetView}
       className={cn(
-        "pointer-events-auto flex h-10 items-center justify-center gap-1.5 rounded-full bg-linen/80 px-2.5 text-sm text-ink ring-1 ring-line sm:px-3",
+        "pointer-events-auto flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-full bg-linen/80 px-2.5 text-sm text-ink ring-1 ring-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:px-3",
         className,
       )}
     >
       <IconPoles next={nextNorth ? "north" : "south"} className="size-5" />
-      {/* An icon alone did not say what the button does; the word fits from small up. */}
-      <span className="hidden sm:inline">{label}</span>
-    </button>
-  );
-}
-
-/**
- * Test shortcut until the flow is designed: S8 marking and kiku pins at the
- * pole the viewer is looking at, in one tap.
- */
-function QuickKikuButton() {
-  return (
-    <button
-      type="button"
-      title="Разметка S8 и булавки кику у полюса, который смотрит на вас"
-      onClick={() => dispatchCommand("quick-kiku")}
-      className="pointer-events-auto flex h-10 items-center gap-1.5 rounded-full bg-linen/80 px-3 text-sm text-ink ring-1 ring-line hover:bg-ink/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink [&>svg]:size-5"
-    >
-      <IconKiku />
-      Кику здесь
+      <span className="max-w-32 text-xs sm:max-w-none sm:text-sm">{n === 2 ? label : "Следующий полюс"}</span>
     </button>
   );
 }
@@ -128,7 +108,6 @@ function Workbench() {
               </p>
             </div>
           ) : null}
-          {mode === "studio" ? <QuickKikuButton /> : null}
           <RecenterButton />
         </div>
       </header>
