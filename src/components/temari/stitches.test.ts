@@ -227,6 +227,9 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
       minExit > minMark + pearl * 0.4,
       "visible path does not walk to the hidden exit",
     );
+    for (const p of pts) {
+      assert.ok(p.length() >= 1, "inner kagari is not a dive through the wrap");
+    }
     const arriving = pts.slice(0, Math.floor(pts.length / 2));
     const leaving = pts.slice(Math.floor(pts.length / 2));
     let best = Infinity;

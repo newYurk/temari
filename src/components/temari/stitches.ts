@@ -429,8 +429,11 @@ function clipAroundMark(
   pts: THREE.Vector3[],
   piece: THREE.Vector3[],
   mark: THREE.Vector3,
+  keepMm = KAGARI_SCOOP_MM,
 ): { from: THREE.Vector3; to: THREE.Vector3; k: number } | null {
-  const keep = unitFromMm(KAGARI_SCOOP_MM);
+  // Inner: one pearl — the tiny visible kagari. 2 mm ate the packed
+  // flanks and drew the hidden scoop on the mari. Outer: 2 mm reverse pickup.
+  const keep = unitFromMm(keepMm);
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
@@ -462,7 +465,8 @@ function splitJoinAroundMark(
   bite?: { enter: [number, number, number]; exit: [number, number, number] },
   onStack = false,
 ): { head: THREE.Vector3[]; tail: THREE.Vector3[]; outPts: THREE.Vector3[] } {
-  const clip = clipAroundMark(pts, piece, mark);
+  const keepMm = onStack ? kindMm(kind) : KAGARI_SCOOP_MM;
+  const clip = clipAroundMark(pts, piece, mark, keepMm);
   if (!clip) {
     return { head: pts, tail: piece, outPts: [] };
   }
@@ -635,7 +639,6 @@ function stackedArcChainParts(
       twistPerUnit(kind),
     ));
   };
-  const keep2 = unitFromMm(KAGARI_SCOOP_MM) * unitFromMm(KAGARI_SCOOP_MM);
   let pts: THREE.Vector3[] = [];
   let kai0 = chain[0]?.kai;
   let prevBite: { enter: [number, number, number]; exit: [number, number, number] } | undefined;
@@ -658,7 +661,8 @@ function stackedArcChainParts(
         const { head, outPts } = joinAt(firstPiece);
         tube(head, false, false);
         const start = pending.slice();
-        while (start.length > 2 && start[0]!.distanceToSquared(mark) < keep2) start.shift();
+        const pearl2 = unitFromMm(kindMm(kind)) ** 2;
+        while (start.length > 2 && start[0]!.distanceToSquared(mark) < pearl2) start.shift();
         tube([...outPts, ...start], false, false);
         pending = null;
         pts = [];
@@ -685,7 +689,7 @@ function stackedArcChainParts(
       const onStack = prevTip === "inner"
         || (prevTip !== "outer" && Math.abs(mark.y) / (mark.length() || 1) > 0.75);
       if (onStack) {
-        const clip = clipAroundMark(pts, piece, mark);
+        const clip = clipAroundMark(pts, piece, mark, kindMm(kind));
         if (clip) {
           const { inPts, outPts } = sewKagariLegs(
             clip.from, mark, clip.to, kind, prevBite?.enter, prevBite?.exit, true,
