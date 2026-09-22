@@ -906,7 +906,7 @@ function pushKikuLeg(
       // Widen one pearl for any stack; depth≥2 adds another ¼ pearl as the
       // eye-stroke stand-in so leave clears the far (exit) port by ≳1·pearl.
       // Linear *(1+overs) made later ports reach past the previous tip.
-      ? cornerMm * (1 + Math.min(1, over.length) + (over.length >= 2 ? 0.6 : 0))
+      ? cornerMm * (1 + Math.min(1, over.length) + (over.length >= 2 ? 1.2 : 0))
       : cornerMm;
   const bite = biteAcross(pole, to.at, biteMm, to.t === "inner" ? over.length : 0);
   ops.push({
