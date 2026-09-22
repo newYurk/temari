@@ -213,8 +213,10 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     const mark = new THREE.Vector3(0, Math.cos(markTh), Math.sin(markTh)).normalize().multiplyScalar(r);
     const from = new THREE.Vector3(0.12, Math.cos(markTh + 0.07), Math.sin(markTh + 0.07)).normalize().multiplyScalar(r);
     const to = new THREE.Vector3(-0.12, Math.cos(markTh + 0.07), Math.sin(markTh + 0.07)).normalize().multiplyScalar(r);
+    // Depth≥2 keeps recipe ports (poleward + wide). Boolean true is depth 1 and
+    // intentionally falls back to synthetic ±pearl ports (r0↔r1 tip-gate path).
     const bite = biteAcross([0, 1, 0], [mark.x, mark.y, mark.z], 0.71 * 4, 3);
-    const { inPts, outPts } = sewKagariLegs(from, mark, to, "pearl5", bite.enter, bite.exit, true);
+    const { inPts, outPts } = sewKagariLegs(from, mark, to, "pearl5", bite.enter, bite.exit, 3);
     const pts = [...inPts, ...outPts];
     const enter = new THREE.Vector3(...bite.enter).normalize();
     const exit = new THREE.Vector3(...bite.exit).normalize();
