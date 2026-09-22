@@ -157,19 +157,23 @@ Leave tip-gate band укорочен с `4·pearl` до `2·pearl` (короче
 
 **Диагноз r1/outer ↔ r2/inner (22.09, численно):** leave после `r1/inner-2` идёт
 по меридиану через место `r2/inner-2` (min dist к tip2 ≈0,4–0,6 mm < pearl) и
-выходит на поверхность в том же луче, куда ныряет arrive r2 (`dirDot≈1`, зазор
-осей ≪ diam). Это не лечится длиной tip-gate: `2·pearl` короче pitch не держит
-leave под tip2, `4·pearl` держит bury в зоне arrive. Азимутальный «shove» leave
-достаточной силы чистит tip2, но бьёт leave предыдущего ряда (`r0/outer↔r1/outer`
-на 2 рядах). `annotateSetCrossings` same-set / `sitA>1` — отдельно, раньше
-складывали трубки.
+**через exit-порт r2** (min ≈0,04 mm). Выход на поверхность в том же луче, куда
+ныряет arrive (`dirDot≈1`, зазор осей ≪ diam). Это не лечится длиной tip-gate:
+`2·pearl` короче pitch не держит leave под tip2, `4·pearl` держит bury в зоне
+arrive. Азимутальный shove leave (≥≈1,5·pearl) чистит tip2, но бьёт leave
+предыдущего ряда (`r0/outer↔r1/outer`). Сдвиг/поворот портов от leave-коридора
+либо делает tip↔exit асимметричным (exit садится на метку), либо не уводит оба
+порта от GC leave. Pitch до 2× не снимает свидетеля. Короткий arrive-pierce
+не помогает, пока leave занимает будущий порт. `annotateSetCrossings` same-set /
+`sitA>1` — отдельно, раньше складывали трубки.
 
 **Срез в коде (не clear 3 рядов):** `sewKagariLegs` принимает `stackDepth` из
 `overOperations.length`; arrive поднимается на `pearl·depth`; leave **без**
 полочки `stackClear` (иначе emerge на стеллаже в коридоре следующего tip).
 Ширина inner bite: `corner·(1+min(1,overs))` — линейный `1+overs` давал
 `r2 portOffset > pitch`. Регрессия 2 рядов A: exit 2. Свидетель 3 рядов A:
-остаётся. Не закрывать #94.
+остаётся. Следующий срез — маршрут leave, который не занимает будущие порты
+(или порты не на GC предыдущего leave), без ломки 2-рядового clear. Не закрывать #94.
 
 Не закрывать #94. Шаг ряда 1½× — инженерный зазор под порты; craft ~1× подряд — отдельно, без возврата к пересечениям портов «наугад».
 
