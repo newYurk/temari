@@ -19,9 +19,15 @@ const STACK_LIFT = 0.42;
 /** Cross-section height / width. Pearl cotton lies on the mari, not a pipe. */
 const STITCH_FLAT = 0.5;
 const KAGARI_LEG_SEGS = 48;
-/** Engineering windows for a smooth pickup, not measured needle dimensions. */
+/** Engineering windows for a reverse pickup, not measured needle dimensions. */
 const REVERSE_JOIN_MM = 6;
 const REVERSE_HUG_MM = 4;
+/**
+ * Straight pierce depth under the unit sphere (mm). Matches lower-kagari's
+ * engineering bite; TemariKai's ~2 mm is the surface scoop, not this drop.
+ * Studio bury still uses scoopRadius so the pearl sits under the cover.
+ */
+const NEEDLE_DEPTH_MM = 1;
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -324,15 +330,15 @@ function reversePorts(
 }
 
 /**
- * Visible needle only. Outer reverse pickup: flanks meet as a V at the
- * pin. Arrive on the mari, curve in on the far side of the jiwari, come
- * out the near side over arriving. The hidden run is not drawn. Ends
- * bury under the wrap — a tube facing the pin is a chopped pipe, a hop
- * to the port after the tip is an elbow.
+ * Visible needle only. Craft: the thread follows a straight needle through
+ * the wrap — surface approach, radial pierce at the far port, undrawn buried
+ * return under the mark, radial emerge at the near port, then leave over the
+ * arriving flank. No smooth/Gaussian dive across the tip corridor (that made
+ * stacked rows share one immerse height). Depth is engineering (NEEDLE_DEPTH_MM
+ * / scoopRadius floor), not TemariKai's ~2 mm surface scoop.
  *
- * Inner uwagake also returns under the captured threads. Its wider ports
- * come from the recipe; the buried return is not a visible bar between
- * those ports. The legacy radial lifts remain an illustration, not a solver.
+ * Inner uwagake keeps wider recipe ports; the buried bar between ports is not
+ * drawn as a visible cord.
  */
 export function sewKagariLegs(
   from: THREE.Vector3,
@@ -348,12 +354,15 @@ export function sewKagariLegs(
   const pearl = half * 2;
   const fromR = from.length();
   const toR = to.length();
-  const m = mark.clone().normalize();
+  const tip = mark.clone().normalize();
   const inPts: THREE.Vector3[] = [];
   const outPts: THREE.Vector3[] = [];
-  const tip = m.clone();
   const { inn, out } = reversePorts(tip, from, enter, exit, onStack, pearl);
-  const buried = scoopRadius(1, fromR, half);
+  // Whole pearl under the cover (same floor as start/stop scoops).
+  const buriedR = Math.min(
+    scoopRadius(1, Math.min(fromR, toR), half),
+    1 - unitFromMm(NEEDLE_DEPTH_MM),
+  );
   const lift0 = pearl * 1.4;
   const hug = unitFromMm(REVERSE_HUG_MM);
   const fromDir = from.clone().normalize();
@@ -374,22 +383,29 @@ export function sewKagariLegs(
     tangent.dot(radial) / Math.max(tangent.clone().projectOnPlane(radial).length(), 1e-12) * angle * 3;
   const fromSlope = tangents ? slope(tangents.from, fromDir, fromAngle) : 0;
   const toSlope = tangents ? slope(tangents.to, toDir, toAngle) : 0;
-  const descend = (distance: number, surface: number) => {
-    const drop = surface - buried;
-    const u = Math.max(0, Math.min(1, 1 - distance / drop));
-    return surface - drop * (1 - Math.sqrt(Math.max(0, 1 - u * u)));
-  };
   const angle = (a: THREE.Vector3, b: THREE.Vector3) =>
     a.clone().normalize().angleTo(b.clone().normalize());
-  // Resolve the short dive even when a later catch spans a wide bundle.
-  // Use the control-polygon length and cubic degree to bound the sample step.
   const lengthBound = Math.max(angle(from, tip) + angle(tip, inn), angle(out, tip) + angle(tip, to));
   const n = Math.max(KAGARI_LEG_SEGS, Math.ceil(3 * lengthBound / (pearl / 6)));
+  // Enough pierce samples that each radial step stays under one pearl (test).
+  const pierceN = Math.max(8, Math.ceil((Math.max(fromR, toR) - buriedR) / (pearl / 4)));
+  // Surface approach to the far port — stay on the mari until the pierce.
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     pickupDirection(fromDir, inC1, inC2, inn, t, _a);
     const surface = fromR + fromSlope * t * (1 - t) ** 2;
-    inPts.push(_a.clone().multiplyScalar(descend(_a.distanceTo(inn), surface)));
+    inPts.push(_a.clone().multiplyScalar(surface));
+  }
+  // Snap the last approach sample onto the port ray so the pierce is radial.
+  inPts[inPts.length - 1] = inn.clone().multiplyScalar(fromR);
+  for (let i = 1; i <= pierceN; i++) {
+    const t = i / pierceN;
+    inPts.push(inn.clone().multiplyScalar(fromR + (buriedR - fromR) * t));
+  }
+  // Straight emerge, then surface leave with a tip lift so outgoing clears arriving.
+  for (let i = 0; i < pierceN; i++) {
+    const t = i / pierceN;
+    outPts.push(out.clone().multiplyScalar(buriedR + (toR - buriedR) * t));
   }
   for (let i = 0; i < n; i++) {
     const t = i / n;
@@ -397,9 +413,8 @@ export function sewKagariLegs(
     const u = _a.distanceTo(tip) / hug;
     const over = Math.exp(-(u * u));
     const lift = lift0 * over * smooth01(_a.distanceTo(toDir) / unitFromMm(1.5));
-    const surface = toR + toSlope * t * t * (t - 1);
-    const r = descend(_a.distanceTo(out), surface + lift);
-    outPts.push(_a.clone().multiplyScalar(r));
+    const surface = toR + toSlope * t * t * (t - 1) + lift;
+    outPts.push(_a.clone().multiplyScalar(surface));
   }
   return { inPts, outPts };
 }
