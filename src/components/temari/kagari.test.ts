@@ -220,7 +220,9 @@ describe("kagari recipe atom", () => {
     const w = (op: typeof inner0) => dist(op.bite.enter, op.bite.exit);
     assert.ok(w(innerN) > w(inner0) * 1.8, "later inner bite wraps the stack");
     assert.ok(w(outerN) < w(innerN) * 0.6, "outer point stays a tiny scoop");
-    assert.ok(innerN.bite.enter[1] > innerN.mark.at[1], "inner scoop sits toward the pole");
+    assert.ok(Math.abs(innerN.bite.enter[1] - innerN.mark.at[1]) < 1e-9
+      && Math.abs(innerN.bite.exit[1] - innerN.mark.at[1]) < 1e-9,
+      "later top stitch stays at its equatorward row mark, not back toward the pole");
     assert.ok(dist(innerN.lay.to, innerN.mark.at) < 1e-9, "flanks still meet on the mark");
   });
 
@@ -303,6 +305,17 @@ describe("kagari recipe atom", () => {
       );
       const kais = [...new Set(chain.map((s) => s.kai))];
       assert.deepEqual(kais, [0, 1, 2], "same pearl resumes across kai");
+      for (let i = 1; i < chain.length; i++) {
+        const current = chain[i]!;
+        const previous = chain[i - 1]!;
+        if (current.kai === previous.kai) continue;
+        const resume = current.operation?.resume;
+        assert.ok(resume, "new kai explicitly resumes the parked working end");
+        if (!resume) continue;
+        assert.ok(dist(resume.from, previous.b) < 1e-9, "resume starts at the previous parked end");
+        assert.ok(dist(resume.to, current.a) < 1e-9, "hidden passage exits at the new row start");
+        assert.ok(dist(resume.from, resume.to) > 0, "park/resume is not a welded loop");
+      }
     }
   });
 

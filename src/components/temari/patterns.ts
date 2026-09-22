@@ -903,10 +903,10 @@ function pushKikuLeg(
 ): Vec3 {
   const biteMm =
     to.t === "inner"
-      // Widen one pearl for any stack; depth≥2 adds another ¼ pearl as the
-      // eye-stroke stand-in so leave clears the far (exit) port by ≳1·pearl.
-      // Linear *(1+overs) made later ports reach past the previous tip.
-      ? cornerMm * (1 + Math.min(1, over.length) + (over.length >= 2 ? 1.2 : 0))
+      // GT14: each later upper stitch widens around every earlier row.
+      // The eye of the needle opens room; it is not a fixed-width substitute
+      // after row two.
+      ? cornerMm * (1 + over.length)
       : cornerMm;
   const bite = biteAcross(pole, to.at, biteMm, to.t === "inner" ? over.length : 0);
   ops.push({
@@ -952,6 +952,7 @@ export function compileKiku(
   const step = (2 * Math.PI) / n;
   for (const { index: poleIndex, pole } of kagariPolesToSew(division, which)) {
     const innerOver: number[][] = Array.from({ length: n }, () => []);
+    const parked: [Vec3 | null, Vec3 | null] = [null, null];
     for (const ring of rings) {
       const { tInner, tOuter } = kikuThetas(spec, ring);
       if (tInner >= tOuter - spec.pitch * 0.4) continue;
@@ -960,6 +961,7 @@ export function compileKiku(
         const set = (pass === 0 ? 0 : 1) as 0 | 1;
         const thread = kikuColor(ring, color);
         let cursor: Vec3 | null = null;
+        let first = true;
         for (let sector = 0; sector < n; sector++) {
           if (sector % skip !== pass) continue;
           const phi0 = step * sector;
@@ -982,6 +984,10 @@ export function compileKiku(
             cornerMm,
             left.via,
           );
+          if (first && parked[set]) {
+            ops[ops.length - 1]!.resume = { from: parked[set], to: left.a };
+          }
+          first = false;
           const over = stackOver(innerOver[line2] ?? [], crossing);
           cursor = pushKikuLeg(
             ops,
@@ -998,6 +1004,7 @@ export function compileKiku(
           );
           innerOver[line2]?.push(ops.length - 1);
         }
+        parked[set] = cursor;
       }
     }
   }

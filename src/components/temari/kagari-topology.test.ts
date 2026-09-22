@@ -53,5 +53,10 @@ describe("recipe identities survive the workshop adapter", () => {
     assert.throws(() => stitchesFromOps(wrong), /same working thread and mark/);
     const reordered = source(); [reordered[0], reordered[1]] = [reordered[1]!, reordered[0]!];
     assert.throws(() => stitchesFromOps(reordered), /increasing execution order/);
+    const cut = source(); delete cut[16]!.resume;
+    assert.throws(() => stitchesFromOps(cut), /explicitly resume its parked working thread/);
+    const teleported = source();
+    teleported[16]!.resume = { ...teleported[16]!.resume!, from: teleported[16]!.lay.from };
+    assert.throws(() => stitchesFromOps(teleported), /park\/resume must connect/);
   });
 });

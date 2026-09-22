@@ -369,12 +369,9 @@ export function sewKagariLegs(
   // true keeps the old one-under path for unit tests.
   const stackDepth = Math.min(3, typeof onStack === "number" ? Math.max(0, onStack) : onStack ? 1 : 0);
   const stacked = stackDepth > 0;
-  // Depth≥1 used to fail preservePorts (bite chord ~1.995 < 2·pearl) and fall
-  // back to synthetic ±pearl ports — that accidental path is what cleared r0↔r1
-  // with the leave tip-gate. Depth≥2 must keep recipe ports (poleward + wide
-  // bite) or leave shares the synthetic ray with arrive. Do not re-enable
-  // preserve at depth 1 in this slice.
-  const { inn, out } = reversePorts(tip, from, enter, exit, stackDepth >= 2, pearl);
+  // Every later upper stitch has recipe ports widened around its actual stack.
+  // Falling back to synthetic ±pearl ports silently discards that chronology.
+  const { inn, out } = reversePorts(tip, from, enter, exit, stacked, pearl);
   // Whole pearl under the cover (same floor as start/stop scoops).
   const buriedR = Math.min(
     scoopRadius(1, Math.min(fromR, toR), half),

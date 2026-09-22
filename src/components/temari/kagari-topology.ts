@@ -6,6 +6,8 @@ export type KagariTrace = {
   threadId: string;
   order: number;
   previousInThread: string | null;
+  /** Explicit park→resume passage; legacy renderer keeps this part hidden. */
+  resume: KagariOp["resume"] | null;
   /** Compiler-declared bundle targets, not an inferred pairwise crossing table. */
   overOperations: string[];
 };
@@ -15,6 +17,9 @@ export function traceKagariOperations(ops: readonly KagariOp[], recipeId: string
   const seen = new Map<number, { op: KagariOp; trace: KagariTrace }>();
   const ids = new Set<string>();
   const previous = new Map<string, string>();
+  const previousOp = new Map<string, KagariOp>();
+  const samePoint = (a: readonly number[], b: readonly number[]) =>
+    a.length === b.length && a.every((x, i) => Math.abs(x - b[i]!) < 1e-9);
   let lastOrder = -1;
   return ops.map(op => {
     if (![op.i, op.pole, op.kai, op.mark.line].every(n => Number.isInteger(n) && n >= 0)
@@ -35,13 +40,26 @@ export function traceKagariOperations(ops: readonly KagariOp[], recipeId: string
       }
       return target.trace.operationId;
     });
+    const prior = previousOp.get(threadId);
+    if (op.resume) {
+      if (!prior || prior.kai >= op.kai
+        || !samePoint(op.resume.from, prior.lay.to)
+        || !samePoint(op.resume.to, op.lay.from)) {
+        throw new RangeError(`${operationId}: park/resume must connect the previous working end to this row start.`);
+      }
+    } else if (prior && prior.kai < op.kai) {
+      throw new RangeError(`${operationId}: new kai must explicitly resume its parked working thread.`);
+    }
     const trace: KagariTrace = {
       operationId, threadId, order: op.i,
-      previousInThread: previous.get(threadId) ?? null, overOperations,
+      previousInThread: previous.get(threadId) ?? null,
+      resume: op.resume ?? null,
+      overOperations,
     };
     lastOrder = op.i;
     ids.add(operationId);
     previous.set(threadId, operationId);
+    previousOp.set(threadId, op);
     seen.set(op.i, { op, trace });
     return trace;
   });

@@ -82,6 +82,8 @@ export type KagariOp = {
   mark: KagariMark;
   lay: { from: Vec3; to: Vec3; via?: Vec3[] };
   bite: KagariBite;
+  /** Same working end parked after the previous kai, then carried inside the wrap. */
+  resume?: { from: Vec3; to: Vec3 };
   /** Previous ops this bite goes over (uwagake at the pole). */
   over: number[];
 };
@@ -124,17 +126,11 @@ export function biteAcross(
 ): KagariBite {
   const m = normalize(mark);
   const p = normalize(pole);
-  const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
-  // Cap the poleward scoop: growing linearly with stack walked ports into
-  // the previous tip (0.48 mm gap < pearl). Depth≥2 needs more poleward so
-  // tip ports sit off the previous kai's leave through this meridian
-  // (TemariKai eye-stroke opens wedge room; studio stand-in). tip1→port must
-  // stay ≳1·pearl: at pitch 1.5, 1.05·pearl poleward ≈ 0.45 mark gap and
-  // ~1.4 tip1→port with 2·pearl bite half-width.
-  const poleShift = stacked <= 0 ? 0
-    : stacked >= 2 ? pearl * 1.2
-    : pearl * 0.35;
-  const center = poleShift > 0 ? shiftTowardPole(p, m, poleShift) : m;
+  // GT14: every later top stitch is wider and *below* the previous stitch.
+  // `kikuThetas` has already moved this mark equatorward by one row pitch.
+  // Shifting its bite back toward the pole cancels that instruction and
+  // bunches successive catches onto the earlier tip.
+  const center = m;
   const half = unitFromMm(mm) * 0.5;
   const theta = Math.acos(Math.min(1, Math.max(-1, dot(p, center))));
   const sinT = Math.sin(theta);

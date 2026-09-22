@@ -226,7 +226,9 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     assert.ok(enter.distanceTo(exit) > pearl * 2, "catch is wide around the stack");
     assert.ok(minEnter < pearl * 0.55, "visible catch sits on the enter side of the pile");
     assert.ok(minExit < pearl * 0.55, "visible catch sits on the exit side of the pile");
-    assert.ok(enter.dot(pole) > m.dot(pole), "catch sits toward the pole of the new mark");
+    assert.ok(Math.abs(enter.dot(pole) - m.dot(pole)) < 1e-10
+      && Math.abs(exit.dot(pole) - m.dot(pole)) < 1e-10,
+      "catch stays at the new row mark instead of walking back toward the pole");
     const incomingPort = inPts.at(-1)!;
     const outgoingPort = outPts[0]!;
     const far = from.clone().normalize().distanceTo(enter) > from.clone().normalize().distanceTo(exit) ? enter : exit;
