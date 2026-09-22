@@ -378,10 +378,14 @@ export function sewKagariLegs(
   // but not so short the tube folds (full-depth band overlapped stacked rows).
   const portOffset = Math.max(inn.distanceTo(tip), out.distanceTo(tip), pearl);
   const pierceBand = Math.min(dropFloor, portOffset * 0.85);
-  const pierceRadius = (distance: number, surface: number, atPort: number) => {
-    if (distance >= pierceBand) return surface;
+  // Stacked leave must clear the previous tip's surface flank before rising.
+  // Port-only pierce climbed through r0/inner (~0.4 mm axes, dirDot≈1).
+  // Do not cap this along-path band with dropFloor (a radius delta).
+  const leavePierceBand = onStack ? Math.max(pierceBand, pearl * 4) : pierceBand;
+  const pierceRadius = (distance: number, surface: number, atPort: number, band = pierceBand) => {
+    if (distance >= band) return surface;
     const drop = surface - atPort;
-    const u = Math.max(0, Math.min(1, 1 - distance / pierceBand));
+    const u = Math.max(0, Math.min(1, 1 - distance / band));
     return surface - drop * (1 - Math.sqrt(Math.max(0, 1 - u * u)));
   };
   const fromDir = from.clone().normalize();
@@ -414,6 +418,7 @@ export function sewKagariLegs(
     Math.ceil(3 * lengthBound / (pearl / 6)),
     // Elevated stacked surface → bury needs fine samples or the emerge jumps a pearl.
     Math.ceil(dropSpan / (pearl * 0.4)),
+    onStack ? Math.ceil(leavePierceBand / (pearl * 0.35)) : 0,
   );
   const addLeg = (pts: THREE.Vector3[], p: THREE.Vector3) => {
     // Cap per-sample radius change so an elevated stacked emerge cannot jump
@@ -451,9 +456,16 @@ export function sewKagariLegs(
     const stack = stackClear * smooth01(1 - t);
     const lift = lift0 * over * smooth01(_a.distanceTo(toDir) / unitFromMm(1.5));
     const surface = toR + stack + toSlope * t * t * (t - 1) + lift;
-    // Same pierceRadius as inbound: near the port the leave is buried even if
-    // the tip lift term is large (matches the previous descend(surface+lift)).
-    addLeg(outPts, _a.clone().multiplyScalar(pierceRadius(_a.distanceTo(out), surface, buriedR)));
+    // Arrive: port distance. Stacked leave: require both distance from the
+    // port *and* tip travel past the port radius, so wide recipe ports stay
+    // buried at t=0 while the rise still waits until past the previous tip.
+    const dPort = _a.distanceTo(out);
+    const leaveDist = onStack
+      ? Math.min(dPort, Math.max(0, _a.distanceTo(tip) - portOffset))
+      : dPort;
+    addLeg(outPts, _a.clone().multiplyScalar(
+      pierceRadius(leaveDist, surface, buriedR, leavePierceBand),
+    ));
   }
   return { inPts, outPts };
 }

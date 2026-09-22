@@ -132,13 +132,15 @@ PATH="/Users/newyurk/.local/node-v24/bin:$PATH" \
   прежних ~8–9 при том же Ozaki.
 - Оси **`r0/r1 inner-2` теперь чисты** (~0,86 мм > 0,71 мм диаметра).
 - `stitches` + `pickup-volume` + `patterns`/`kagari` — зелёные.
-- **`locate-studio-overlap --assert-clear` ещё exit 1**: свидетель сместился на
-  `r0/inner-2` ↔ `r1/outer-3` (почти сонаправленные центры, зазор ~0,06 мм на
-  поверхности). Это уже не dive-corridor той же метки; следующий шаг —
-  подъём раннего фланка/leave позднего kai над прежним tip (same-set pack),
-  без возврата к `STACK_LIFT=1` на всём цветке (folded faces).
-
-Не закрывать #94, пока `--assert-clear` не зелёный.
+- **`locate-studio-overlap --assert-clear` → exit 2 (inconclusive / нет свидетеля)**
+  на двух рядах A: свидетель `r0/inner-2` ↔ `r1/outer-3` снят.
+  Причина была не в `sitA`/`arcPath`, а в **leave** stacked catch: подъём
+  по расстоянию до порта выходил на поверхность ещё в зоне предыдущего tip
+  (оси ~0,4 мм, dirDot≈1). Правка в `sewKagariLegs`: leave держит bury, пока
+  не уйдём и от порта, и дальше tip≥portOffset; along-path band `4·pearl`
+  (не `dropFloor`). Порты по-прежнему заглублены (`outgoingPort` тест зелёный).
+- Это **численный** clear ограниченного поиска, не полная приёмка #94 и не
+  human craft sign-off. over-1 / гладью — отдельно.
 
 ### Инвентарь чисел для прямого прокола иглы (22.09, до реализации)
 
