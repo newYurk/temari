@@ -1,0 +1,116 @@
+{
+  "fixture": {
+    "division": "simple",
+    "pole": 0,
+    "set": 0,
+    "rounds": 3,
+    "tip": "inner"
+  },
+  "note": "Recipe overOperations for stacked uwagake. Studio sitA/sitB still 0/1; annotateSetCrossings skips same-set. Not a mesh clearance certificate.",
+  "tips": [
+    {
+      "operationId": "kiku-8-point/p0/s0/r0/inner-2",
+      "kai": 0,
+      "over": [],
+      "overCount": 0,
+      "previous": "kiku-8-point/p0/s0/r0/outer-1"
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r0/inner-4",
+      "kai": 0,
+      "over": [],
+      "overCount": 0,
+      "previous": "kiku-8-point/p0/s0/r0/outer-3"
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r0/inner-6",
+      "kai": 0,
+      "over": [],
+      "overCount": 0,
+      "previous": "kiku-8-point/p0/s0/r0/outer-5"
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r0/inner-0",
+      "kai": 0,
+      "over": [],
+      "overCount": 0,
+      "previous": "kiku-8-point/p0/s0/r0/outer-7"
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r1/inner-2",
+      "kai": 1,
+      "over": [
+        "kiku-8-point/p0/s0/r0/inner-2"
+      ],
+      "overCount": 1,
+      "previous": "kiku-8-point/p0/s0/r1/outer-1"
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r1/inner-4",
+      "kai": 1,
+      "over": [
+        "kiku-8-point/p0/s0/r0/inner-4"
+      ],
+      "overCount": 1,
+      "previous": "kiku-8-point/p0/s0/r1/outer-3"
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r1/inner-6",
+      "kai": 1,
+      "over": [
+        "kiku-8-point/p0/s0/r0/inner-6"
+      ],
+      "overCount": 1,
+      "previous": "kiku-8-point/p0/s0/r1/outer-5"
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r1/inner-0",
+      "kai": 1,
+      "over": [
+        "kiku-8-point/p0/s0/r0/inner-0"
+      ],
+      "overCount": 1,
+      "previous": "kiku-8-point/p0/s0/r1/outer-7"
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r2/inner-2",
+      "kai": 2,
+      "over": [
+        "kiku-8-point/p0/s0/r0/inner-2",
+        "kiku-8-point/p0/s0/r1/inner-2"
+      ],
+      "overCount": 2,
+      "previous": "kiku-8-point/p0/s0/r2/outer-1"
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r2/inner-4",
+      "kai": 2,
+      "over": [
+        "kiku-8-point/p0/s0/r0/inner-4",
+        "kiku-8-point/p0/s0/r1/inner-4"
+      ],
+      "overCount": 2,
+      "previous": "kiku-8-point/p0/s0/r2/outer-3"
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r2/inner-6",
+      "kai": 2,
+      "over": [
+        "kiku-8-point/p0/s0/r0/inner-6",
+        "kiku-8-point/p0/s0/r1/inner-6"
+      ],
+      "overCount": 2,
+      "previous": "kiku-8-point/p0/s0/r2/outer-5"
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r2/inner-0",
+      "kai": 2,
+      "over": [
+        "kiku-8-point/p0/s0/r0/inner-0",
+        "kiku-8-point/p0/s0/r1/inner-0"
+      ],
+      "overCount": 2,
+      "previous": "kiku-8-point/p0/s0/r2/outer-7"
+    }
+  ]
+}
