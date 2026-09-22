@@ -1129,7 +1129,9 @@ function sequentialChains(arcs: Extract<Stitch, { kind: "arc" }>[]) {
  * One working thread per pole+set. GT14 parks Color A after a round, sews B,
  * resumes A — same pearl, not a new cord. Join across kai if the gap is
  * ≤ 2.2 pearls. Never weld a round closed: returning to the start mark is
- * a park on the mari, not the thread joining itself.
+ * a park on the mari, not the thread joining itself. The renderer still
+ * takes the inner uwagake bite at that mark (`appendParkBite`) so every kai
+ * does not leave a cusp on the same ray.
  */
 export function groupWorkingThreads(arcs: Extract<Stitch, { kind: "arc" }>[]) {
   const tagged: Extract<Stitch, { kind: "arc" }>[] = [];
