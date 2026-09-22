@@ -446,7 +446,8 @@ function kikuSkip(n: number) {
 /**
  * GT14 / TemariKai beginner: enter ~5 mm from the pole; first outer stitch
  * sits just below the pin ⅓ up from the equator. Later rounds: lay the thread
- * *parallel* to the first (GT14), inner one pearl #5 below, outer Ozaki
+ * *parallel* to the first (GT14), inner about 1½ pearl #5 below (lay-apart
+ * plus room for the poleward stacked bite), outer Ozaki
  * ~2 mm below the previous point so the turn lays flat. Work toward the
  * equator. `outer` is the first pin, not a short-V ceiling.
  * Default wanted is 3 kai (tests); studio starts at 1; title uses "fit".
@@ -476,8 +477,12 @@ export function kikuSpec(
       recipe: null,
     };
   }
-  // Шаг ряда — толщина нити этого рецепта, а не вписанная сюда перле №5.
-  const pitch = unitFromMm(STITCH_THREAD_MM[recipe.thread]);
+  // Шаг ряда — 1½ толщины нити: укладка «наружу и вниз» плюс место под
+  // poleward scoop позднего inner bite (biteAcross). Один pearl оставлял
+  // порты ~0,48 мм apart (< диаметра). Два pearl ломают трубки на плотной
+  // укладке. Рядов к экватору меньше, чем при шаге в один диаметр.
+  const thread = unitFromMm(STITCH_THREAD_MM[recipe.thread]);
+  const pitch = thread * 1.5;
   const stretch = unitFromMm(recipe.stretchMm);
   const inner = unitFromMm(recipe.innerMm);
   const outer = (Math.PI / 2) * (1 - recipe.outerFromEquator);
@@ -1100,7 +1105,9 @@ function stitchSamples(s: Extract<Stitch, { kind: "arc" }>, n = 20): Vec3[] {
 /**
  * Opposite-set threads sit on each other at the real kousa.
  * Same kai: B on A. Later kai: the new thread on every earlier opposite
- * set it actually meets. Parallel same-set flanks stay on the mari.
+ * set it actually meets. Parallel same-set flanks stay on the mari —
+ * same-set cross-kai tip pack is handled by row pitch / bite spacing,
+ * not by this annotator (lifting those ends folded tubes).
  */
 const arcSamples = new WeakMap<Extract<Stitch, { kind: "arc" }>, Vec3[]>();
 /** Sharpened crossings, kept per pair: neither stitch changes between rebuilds. */

@@ -110,7 +110,8 @@ function dot(a: Vec3, b: Vec3) {
 /**
  * Tiny bite across the jiwari: enter one side, scoop wrap+mark, exit the other.
  * Inner uwagake: wider with the stack, sitting slightly toward the pole so the
- * needle goes around previous rounds. Both flanks still meet at `mark`.
+ * needle goes around previous rounds (marks themselves step farther toward the
+ * equator each kai — see kikuSpec pitch). Both flanks still meet at `mark`.
  *
  * These points live on the unit sphere. The renderer still has to *sew* them —
  * a stored bite is not a dive.
@@ -124,7 +125,9 @@ export function biteAcross(
   const m = normalize(mark);
   const p = normalize(pole);
   const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
-  const center = stacked > 0 ? shiftTowardPole(p, m, pearl * stacked * 0.5) : m;
+  // Cap the poleward scoop: growing with stack count used to walk ports into
+  // the previous tip (0.48 mm gap < pearl diameter). Width still scales below.
+  const center = stacked > 0 ? shiftTowardPole(p, m, pearl * 0.35) : m;
   const half = unitFromMm(mm) * 0.5;
   const theta = Math.acos(Math.min(1, Math.max(-1, dot(p, center))));
   const sinT = Math.sin(theta);

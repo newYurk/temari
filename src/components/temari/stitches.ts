@@ -13,7 +13,9 @@ const ARC_SEGS = 32;
  * Rise over one thread underneath, in diameters of a round pearl.
  * Real kagari compresses: the working thread nestles into the one below,
  * it does not sit as a second garden hose. A full diameter was the pile
- * at the inner star.
+ * at the inner star. Assumptions still name the round-section ideal of
+ * one diameter; this factor is the studio nestle until a sourced compress
+ * model exists (#93).
  */
 const STACK_LIFT = 0.42;
 /** Cross-section height / width. Pearl cotton lies on the mari, not a pipe. */
@@ -406,13 +408,40 @@ export function sewKagariLegs(
   const angle = (a: THREE.Vector3, b: THREE.Vector3) =>
     a.clone().normalize().angleTo(b.clone().normalize());
   const lengthBound = Math.max(angle(from, tip) + angle(tip, inn), angle(out, tip) + angle(tip, to));
-  const n = Math.max(KAGARI_LEG_SEGS, Math.ceil(3 * lengthBound / (pearl / 6)));
+  const dropSpan = Math.max(fromR, toR) + stackClear - buriedR;
+  const n = Math.max(
+    KAGARI_LEG_SEGS,
+    Math.ceil(3 * lengthBound / (pearl / 6)),
+    // Elevated stacked surface → bury needs fine samples or the emerge jumps a pearl.
+    Math.ceil(dropSpan / (pearl * 0.4)),
+  );
+  const addLeg = (pts: THREE.Vector3[], p: THREE.Vector3) => {
+    // Cap per-sample radius change so an elevated stacked emerge cannot jump
+    // a whole pearl in one step (tube fold / port test).
+    if (pts.length > 0) {
+      const prev = pts[pts.length - 1]!;
+      const dr = p.length() - prev.length();
+      const limit = pearl * 0.85;
+      if (Math.abs(dr) > limit) {
+        const steps = Math.ceil(Math.abs(dr) / limit);
+        const aDir = prev.clone().normalize();
+        const bDir = p.clone().normalize();
+        for (let s = 1; s < steps; s++) {
+          const u = s / steps;
+          const dir = aDir.clone().lerp(bDir, u).normalize();
+          const rad = prev.length() + dr * u;
+          pts.push(dir.multiplyScalar(rad));
+        }
+      }
+    }
+    pts.push(p);
+  };
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     pickupDirection(fromDir, inC1, inC2, inn, t, _a);
     const stack = stackClear * smooth01(t);
     const surface = fromR + stack + fromSlope * t * (1 - t) ** 2;
-    inPts.push(_a.clone().multiplyScalar(pierceRadius(_a.distanceTo(inn), surface, buriedR)));
+    addLeg(inPts, _a.clone().multiplyScalar(pierceRadius(_a.distanceTo(inn), surface, buriedR)));
   }
   for (let i = 0; i < n; i++) {
     const t = i / n;
@@ -424,7 +453,7 @@ export function sewKagariLegs(
     const surface = toR + stack + toSlope * t * t * (t - 1) + lift;
     // Same pierceRadius as inbound: near the port the leave is buried even if
     // the tip lift term is large (matches the previous descend(surface+lift)).
-    outPts.push(_a.clone().multiplyScalar(pierceRadius(_a.distanceTo(out), surface, buriedR)));
+    addLeg(outPts, _a.clone().multiplyScalar(pierceRadius(_a.distanceTo(out), surface, buriedR)));
   }
   return { inPts, outPts };
 }
