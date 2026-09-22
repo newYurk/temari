@@ -282,7 +282,7 @@ export function sewKagariBite(
   kind: ThreadKind,
   enter?: [number, number, number],
   exit?: [number, number, number],
-  onStack = false,
+  onStack: boolean | number = false,
 ): THREE.Vector3[] {
   const { inPts, outPts } = sewKagariLegs(from, mark, to, kind, enter, exit, onStack);
   return [...inPts, ...outPts];
@@ -350,7 +350,8 @@ export function sewKagariLegs(
   kind: ThreadKind,
   enter?: [number, number, number],
   exit?: [number, number, number],
-  onStack = false,
+  /** False/0 = first row; true/1 = one under; n = overOperations.length under the tip. */
+  onStack: boolean | number = false,
   tangents?: { from: THREE.Vector3; to: THREE.Vector3 },
 ): { inPts: THREE.Vector3[]; outPts: THREE.Vector3[] } {
   const half = unitFromMm(kindMm(kind)) * 0.5;
@@ -360,7 +361,11 @@ export function sewKagariLegs(
   const tip = mark.clone().normalize();
   const inPts: THREE.Vector3[] = [];
   const outPts: THREE.Vector3[] = [];
-  const { inn, out } = reversePorts(tip, from, enter, exit, onStack, pearl);
+  // Depth follows recipe overs under this tip (cap matches stackBump). Boolean
+  // true keeps the old one-under path for unit tests.
+  const stackDepth = Math.min(3, typeof onStack === "number" ? Math.max(0, onStack) : onStack ? 1 : 0);
+  const stacked = stackDepth > 0;
+  const { inn, out } = reversePorts(tip, from, enter, exit, stacked, pearl);
   // Whole pearl under the cover (same floor as start/stop scoops).
   const buriedR = Math.min(
     scoopRadius(1, Math.min(fromR, toR), half),
@@ -369,20 +374,21 @@ export function sewKagariLegs(
   const lift0 = pearl * 1.4;
   const hug = unitFromMm(REVERSE_HUG_MM);
   // Marks of stacked inner tips are ~1 pearl apart; their ports can be ~0.5 mm
-  // apart — closer than the tube diameter. The later catch must meet its ports
-  // one pearl above the previous tip or the surface pierce corridors intersect.
-  // Ramp: 0 at the clip (no radius jump), full pearl at the port before diving.
-  const stackClear = onStack ? pearl : 0;
+  // apart — closer than the tube diameter. A later catch must meet its ports
+  // above every earlier tip it lists in overOperations, or leave/arrive pierce
+  // corridors share a ray (r1/outer↔r2/inner on three rows at depth=1).
+  // Ramp: 0 at the clip (no radius jump), full clear at the port before diving.
+  const stackClear = pearl * stackDepth;
   const dropFloor = Math.max(fromR - buriedR, toR - buriedR);
   // Keep the dive shorter than tip→port so the V crossing stays on the mari,
   // but not so short the tube folds (full-depth band overlapped stacked rows).
   const portOffset = Math.max(inn.distanceTo(tip), out.distanceTo(tip), pearl);
   const pierceBand = Math.min(dropFloor, portOffset * 0.85);
-  // Stacked leave: tip-gate clears the previous tip's surface. Band ≈2·pearl is
-  // the shortest that still clears r0↔r1 on two rows; pearl·4 kept leave buried
-  // into the next tip's arrive (r1/outer↔r2/inner on three rows). Steeper
-  // arrive pierce (0.6·port) folded tubes — leave alone for this slice.
-  const leavePierceBand = onStack ? Math.max(pierceBand, pearl * 2) : pierceBand;
+  // Stacked leave tip-gate clears the previous tip. Band ≈2·pearl clears
+  // r0↔r1; longer bury walked into the next tip's arrive on three rows.
+  // Leave path still crosses the next tip's meridian (see HANDOFF) — height
+  // alone does not separate that pair; do not invent a longer gate here.
+  const leavePierceBand = stacked ? Math.max(pierceBand, pearl * 2) : pierceBand;
   const pierceRadius = (distance: number, surface: number, atPort: number, band = pierceBand) => {
     if (distance >= band) return surface;
     const drop = surface - atPort;
@@ -401,11 +407,11 @@ export function sewKagariLegs(
     // Stacked catches: steer toward the far port, not the shared tip — the
     // previous row already owns that V. First-row outer reverse still aims
     // at the tip so the flanks meet as a V on the mari.
-    : slerpUnit(fromDir, onStack ? inn : tip, 1 / 3, new THREE.Vector3());
+    : slerpUnit(fromDir, stacked ? inn : tip, 1 / 3, new THREE.Vector3());
   const inC2 = slerpUnit(fromDir, inn, 2 / 3, new THREE.Vector3());
   const outC1 = slerpUnit(out, toDir, 1 / 3, new THREE.Vector3());
   const outC2 = tangents ? control(toDir, tangents.to, -toAngle)
-    : slerpUnit(onStack ? out : tip, toDir, 2 / 3, new THREE.Vector3());
+    : slerpUnit(stacked ? out : tip, toDir, 2 / 3, new THREE.Vector3());
   const slope = (tangent: THREE.Vector3, radial: THREE.Vector3, angle: number) =>
     tangent.dot(radial) / Math.max(tangent.clone().projectOnPlane(radial).length(), 1e-12) * angle * 3;
   const fromSlope = tangents ? slope(tangents.from, fromDir, fromAngle) : 0;
@@ -419,7 +425,7 @@ export function sewKagariLegs(
     Math.ceil(3 * lengthBound / (pearl / 6)),
     // Elevated stacked surface → bury needs fine samples or the emerge jumps a pearl.
     Math.ceil(dropSpan / (pearl * 0.4)),
-    onStack ? Math.ceil(leavePierceBand / (pearl * 0.35)) : 0,
+    stacked ? Math.ceil(leavePierceBand / (pearl * 0.35)) : 0,
   );
   const addLeg = (pts: THREE.Vector3[], p: THREE.Vector3) => {
     // Cap per-sample radius change so an elevated stacked emerge cannot jump
@@ -454,14 +460,16 @@ export function sewKagariLegs(
     pickupDirection(out, outC1, outC2, toDir, t, _a);
     const u = _a.distanceTo(tip) / hug;
     const over = Math.exp(-(u * u));
-    const stack = stackClear * smooth01(1 - t);
+    // Leave does not keep stackClear: rising to an elevated shelf near the tip
+    // puts the emerge in the next kai's arrive corridor (pitch ≈1½ pearl).
+    // Tip-gate bury clears the previous tip; arrive stackClear sits over this leave.
     const lift = lift0 * over * smooth01(_a.distanceTo(toDir) / unitFromMm(1.5));
-    const surface = toR + stack + toSlope * t * t * (t - 1) + lift;
+    const surface = toR + toSlope * t * t * (t - 1) + lift;
     // Arrive: port distance. Stacked leave: require both distance from the
     // port *and* tip travel past the port radius, so wide recipe ports stay
     // buried at t=0 while the rise still waits until past the previous tip.
     const dPort = _a.distanceTo(out);
-    const leaveDist = onStack
+    const leaveDist = stacked
       ? Math.min(dPort, Math.max(0, _a.distanceTo(tip) - portOffset))
       : dPort;
     addLeg(outPts, _a.clone().multiplyScalar(
@@ -524,11 +532,12 @@ function splitJoinAroundMark(
   mark: THREE.Vector3,
   kind: ThreadKind,
   bite?: { enter: [number, number, number]; exit: [number, number, number] },
-  onStack = false,
+  onStack: boolean | number = false,
 ): { head: THREE.Vector3[]; tail: THREE.Vector3[]; outPts: THREE.Vector3[] } {
+  const stackDepth = Math.min(3, typeof onStack === "number" ? Math.max(0, onStack) : onStack ? 1 : 0);
   // Clip outside the entire catch. A fixed fraction of one thread put
   // the join inside later, wider ports and made the cord double back.
-  const portExtent = onStack && bite ? Math.max(
+  const portExtent = stackDepth > 0 && bite ? Math.max(
     mark.clone().normalize().distanceTo(new THREE.Vector3(...bite.enter).normalize()),
     mark.clone().normalize().distanceTo(new THREE.Vector3(...bite.exit).normalize()),
   ) : 0;
@@ -538,7 +547,7 @@ function splitJoinAroundMark(
     return { head: pts, tail: piece, outPts: [] };
   }
   const { inPts, outPts } = sewKagariLegs(
-    clip.from, mark, clip.to, kind, bite?.enter, bite?.exit, onStack,
+    clip.from, mark, clip.to, kind, bite?.enter, bite?.exit, stackDepth,
     {
       from: clip.from.clone().sub(pts.at(-1)!),
       to: piece[clip.k]!.clone().sub(clip.to),
@@ -714,12 +723,19 @@ function stackedArcChainParts(
   let kai0 = chain[0]?.kai;
   let prevBite: { enter: [number, number, number]; exit: [number, number, number] } | undefined;
   let prevTip: "inner" | "outer" | undefined;
+  let prevStackDepth = 0;
   let emerge = true;
   let pending: THREE.Vector3[] | null = null;
   let kaiFirst: Extract<Stitch, { kind: "arc" }> | undefined;
-  const joinAt = (piece: THREE.Vector3[], laterInner: boolean) => {
+  const stackDepthOf = (s: Extract<Stitch, { kind: "arc" }>) => {
+    if (s.tip !== "inner") return 0;
+    const overs = s.operation?.overOperations?.length ?? 0;
+    if (overs > 0) return Math.min(3, overs);
+    return (s.kai ?? 0) > 0 ? 1 : 0;
+  };
+  const joinAt = (piece: THREE.Vector3[], stackDepth: number) => {
     const mark = pts[pts.length - 1]!;
-    return splitJoinAroundMark(pts, piece, mark, kind, prevBite, laterInner);
+    return splitJoinAroundMark(pts, piece, mark, kind, prevBite, stackDepth);
   };
   const closeKai = () => {
     if (pending && kaiFirst && pts.length > 1 && prevTip === "inner") {
@@ -727,7 +743,7 @@ function stackedArcChainParts(
       const mark = pts[pts.length - 1]!;
       const next0 = firstPiece[0];
       if (next0 && firstPiece.length > 1 && samePin(mark, next0)) {
-        const { head, tail } = joinAt(pending.slice(), (kaiFirst.kai ?? 0) > 0);
+        const { head, tail } = joinAt(pending.slice(), prevStackDepth);
         tube(head, false, false);
         tube(tail, false, false);
         pending = null;
@@ -744,7 +760,7 @@ function stackedArcChainParts(
     }
     pts = [];
   };
-  const joinPiece = (piece: THREE.Vector3[], kai: number | undefined) => {
+  const joinPiece = (piece: THREE.Vector3[], _kai: number | undefined) => {
     if (pts.length === 0) {
       pts.push(...piece);
       return;
@@ -753,14 +769,14 @@ function stackedArcChainParts(
     const next0 = piece[0]!;
     if (samePin(mark, next0) && pts.length > 1 && piece.length > 1) {
       if (prevTip === "inner") {
-        const { head, tail } = splitJoinAroundMark(pts, piece, mark, kind, prevBite, (kai ?? 0) > 0);
+        const { head, tail } = splitJoinAroundMark(pts, piece, mark, kind, prevBite, prevStackDepth);
         if (pending === null) pending = head;
         else tube(head, false, false);
         pts = tail;
         emerge = false;
         return;
       }
-      const { head, tail } = joinAt(piece, false);
+      const { head, tail } = joinAt(piece, 0);
       if (pending === null) pending = head;
       else tube(head, false, false);
       pts = tail;
@@ -789,6 +805,7 @@ function stackedArcChainParts(
         emerge = true;
         prevBite = undefined;
         prevTip = undefined;
+        prevStackDepth = 0;
         kaiFirst = undefined;
       }
       kai0 = s.kai;
@@ -798,6 +815,7 @@ function stackedArcChainParts(
     joinPiece(piece, s.kai);
     prevBite = s.bite;
     prevTip = s.tip;
+    prevStackDepth = stackDepthOf(s);
   }
   closeKai();
   return parts.filter((g) => (g.getAttribute("position")?.count ?? 0) > 0);

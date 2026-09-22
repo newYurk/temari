@@ -155,6 +155,22 @@ Leave tip-gate band укорочен с `4·pearl` до `2·pearl` (короче
 (`0.45`/`0.6·port`) и floor `stackClear` на leave дали folded faces — откачены.
 Свидетель на 3 рядах A и A+B **остаётся**. Не закрывать #94.
 
+**Диагноз r1/outer ↔ r2/inner (22.09, численно):** leave после `r1/inner-2` идёт
+по меридиану через место `r2/inner-2` (min dist к tip2 ≈0,4–0,6 mm < pearl) и
+выходит на поверхность в том же луче, куда ныряет arrive r2 (`dirDot≈1`, зазор
+осей ≪ diam). Это не лечится длиной tip-gate: `2·pearl` короче pitch не держит
+leave под tip2, `4·pearl` держит bury в зоне arrive. Азимутальный «shove» leave
+достаточной силы чистит tip2, но бьёт leave предыдущего ряда (`r0/outer↔r1/outer`
+на 2 рядах). `annotateSetCrossings` same-set / `sitA>1` — отдельно, раньше
+складывали трубки.
+
+**Срез в коде (не clear 3 рядов):** `sewKagariLegs` принимает `stackDepth` из
+`overOperations.length`; arrive поднимается на `pearl·depth`; leave **без**
+полочки `stackClear` (иначе emerge на стеллаже в коридоре следующего tip).
+Ширина inner bite: `corner·(1+min(1,overs))` — линейный `1+overs` давал
+`r2 portOffset > pitch`. Регрессия 2 рядов A: exit 2. Свидетель 3 рядов A:
+остаётся. Не закрывать #94.
+
 Не закрывать #94. Шаг ряда 1½× — инженерный зазор под порты; craft ~1× подряд — отдельно, без возврата к пересечениям портов «наугад».
 
 **Смежный источник (22.09):** EMARI / Giuffre–Stemkoski JHM 2020 — сферические
@@ -166,7 +182,8 @@ Leave tip-gate band укорочен с `4·pearl` до `2·pearl` (короче
 объявляет `over` предыдущий `r0/inner`; `r2/inner` — оба. Studio по-прежнему
 `sitA/sitB ∈ {0,1}` и пропускает same-set в `annotateSetCrossings` — поэтому на
 кадрах параллельные полосы, не переплетение. Следующий геометрический срез верха —
-поднять renderer по этой таблице, не по EMARI-кривым.
+маршрут leave/arrive у stacked tip (не меридиан через следующий tip), затем
+renderer по таблице overs; не EMARI-кривые.
 
 ### Инвентарь чисел для прямого прокола иглы (22.09, до реализации)
 

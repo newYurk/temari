@@ -902,7 +902,11 @@ function pushKikuLeg(
   via?: Vec3[],
 ): Vec3 {
   const biteMm =
-    to.t === "inner" ? cornerMm * (1 + over.length) : cornerMm;
+    to.t === "inner"
+      // Widen one pearl for any stack; linear * (1+overs) made later ports
+      // reach past the previous tip (r2 portOffset > pitch) and share the leave corridor.
+      ? cornerMm * (1 + Math.min(1, over.length))
+      : cornerMm;
   const bite = biteAcross(pole, to.at, biteMm, to.t === "inner" ? over.length : 0);
   ops.push({
     i: ops.length,
