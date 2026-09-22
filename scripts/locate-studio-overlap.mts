@@ -1,7 +1,10 @@
 /**
  * Bounded diagnostic on the ACTUAL ordinary-workshop triangles.
  * Finds a transverse surface intersection, not a gap between round proxy axes.
- * No hit is inconclusive: the search only covers the upper cap of two A rows.
+ * No hit is inconclusive: the search only covers the upper cap of the fixture.
+ *
+ * Default: two A rows (regression for the stacked leave tip-gate).
+ * Optional: --rounds=3|4, --set=all (A+B) for the next same-set / A·B witnesses.
  */
 import assert from 'node:assert/strict';
 import { Box3, Ray, Triangle, Vector3 } from 'three';
@@ -10,11 +13,15 @@ import { arcPath, createMotifGeometryParts } from '../src/components/temari/stit
 import { unitFromMm } from '../src/components/temari/measure.ts';
 
 const args = process.argv.slice(2);
-if (args.some(a => !['--rounds=1', '--rounds=2', '--assert-clear'].includes(a))
-  || args.filter(a => a.startsWith('--rounds=')).length > 1)
-  throw new Error('Usage: locate-studio-overlap.mts [--rounds=1|--rounds=2] [--assert-clear]');
-const rounds = args.includes('--rounds=1') ? 1 : 2;
-const arcs = stitchesFromOps(compileKiku('simple', 'out', 'even', 0, 0, rounds, 0));
+const roundArg = args.find(a => a.startsWith('--rounds='));
+const setArg = args.find(a => a.startsWith('--set='));
+const allowed = new Set(['--assert-clear', '--rounds=1', '--rounds=2', '--rounds=3', '--rounds=4', '--set=0', '--set=all']);
+if (args.some(a => !allowed.has(a)) || args.filter(a => a.startsWith('--rounds=')).length > 1
+  || args.filter(a => a.startsWith('--set=')).length > 1)
+  throw new Error('Usage: locate-studio-overlap.mts [--rounds=1|2|3|4] [--set=0|all] [--assert-clear]');
+const rounds = roundArg ? Number(roundArg.slice('--rounds='.length)) : 2;
+const onlySet = setArg?.endsWith('all') ? 'all' as const : 0;
+const arcs = stitchesFromOps(compileKiku('simple', 'out', 'even', 0, 0, rounds, onlySet));
 const parts = createMotifGeometryParts(arcs, 0, 'pearl5');
 const ringSize = 21;
 const paths = arcs.filter(s => s.kind === 'arc').map(s => ({ operation: s.operation, points: arcPath(s, 'pearl5') }));
@@ -86,7 +93,7 @@ search: for (let i = 0; i < bands.length; i++) for (let j = i + 1; j < bands.len
 }
 console.log(JSON.stringify({
   status: witness ? 'reproduced-surface-intersection' : 'inconclusive',
-  fixture: { division: 'simple', pole: 0, rounds, set: 0, thread: 'pearl5', circumferenceMm: 240 },
+  fixture: { division: 'simple', pole: 0, rounds, set: onlySet, thread: 'pearl5', circumferenceMm: 240 },
   parts: parts.length, witness,
   limits: 'Recipe IDs are nearest-midpoint candidates. Exact triangle witness is authoritative. Not a reconstruction of the user screenshot; not a complete collision validator.',
 }, null, 2));
