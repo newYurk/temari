@@ -121,22 +121,24 @@ PATH="/Users/newyurk/.local/node-v24/bin:$PATH" \
 
 ### Правка прямого прокола — в работе (22.09)
 
-В `sewKagariLegs` сделано (ветка `cursor/fix-stacked-inner-pickup-115f`):
+В `sewKagariLegs` / рецепте (ветка `cursor/fix-stacked-inner-pickup-115f`):
 
-- Короткая pierce-band (≤ 0,85·tip→port): снаружи — поверхность мари; внутри —
-  эллиптический спуск к `min(scoopRadius floor, 1 − NEEDLE_DEPTH_MM)`.
-- Stacked: управление к портам, не к общему tip; ramp `stackClear=pearl` к порту
-  перед нырком (0 на клипе — без скачка радиуса).
-- `stitches` + `pickup-volume` — зелёные. **`locate-studio-overlap --assert-clear`
-  всё ещё exit 1.**
+- Короткая pierce-band (≤ 0,85·tip→port) + эллиптический спуск к
+  `min(scoopRadius floor, 1 − NEEDLE_DEPTH_MM)`; stacked ведёт к портам и
+  ramp `stackClear=pearl` к порту; сэмплы без скачка радиуса >0,85 pearl.
+- **Шаг ряда `pitch = 1,5 × толщина нити`** (было 1×): место на укладку
+  «наружу и вниз» и на poleward scoop в `biteAcross` (сдвиг к полюсу
+  ограничен `0,35·pearl`, не `0,5·pearl·stacked`). `fit` стал 6 вместо
+  прежних ~8–9 при том же Ozaki.
+- Оси **`r0/r1 inner-2` теперь чисты** (~0,86 мм > 0,71 мм диаметра).
+- `stitches` + `pickup-volume` + `patterns`/`kagari` — зелёные.
+- **`locate-studio-overlap --assert-clear` ещё exit 1**: свидетель сместился на
+  `r0/inner-2` ↔ `r1/outer-3` (почти сонаправленные центры, зазор ~0,06 мм на
+  поверхности). Это уже не dive-corridor той же метки; следующий шаг —
+  подъём раннего фланка/leave позднего kai над прежним tip (same-set pack),
+  без возврата к `STACK_LIFT=1` на всём цветке (folded faces).
 
-Замер причины оставшегося свидетеля: метки r0/r1 inner-2 ~**0,71 мм** apart;
-ближайшие порты ~**0,48 мм** — меньше диаметра перле 0,71 мм. Окно клипа
-`REVERSE_JOIN_MM=6` у r0 покрывает зону портов r1. На одной высоте поверхности
-трубки обязаны пересечься; простой tip-lift / узкий clip ломают `pickup-volume`
-(folded faces) или section-gap. Следующий шаг — либо структурный подъём всего
-stacked catch над прежним tip (включая flank `arcPath` у метки), либо разведение
-портов/меток в рецепте; не возвращать длинный гладкий нырок через общий tip.
+Не закрывать #94, пока `--assert-clear` не зелёный.
 
 ### Инвентарь чисел для прямого прокола иглы (22.09, до реализации)
 

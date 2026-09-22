@@ -22,7 +22,8 @@
 | окно подъёма у острия `4 мм` | `stitches.ts` `REVERSE_HUG_MM` | **студийная отрисовка**: гауссов `lift0=pearl·1,4` на исходящей | исходящая поверх входящей у tip |
 | дно студийного scoop / глубина прокола | `kagari.ts` `scoopRadius`; `stitches.ts` `NEEDLE_DEPTH_MM=1` | **студийная отрисовка**: floor `1−half−0,3 мм`; прокол не глубже 1 мм под единичной сферой; pierce-band ≤ 0,85·tip→port | bury start/stop и короткий нырок у порта; не измеренная глубина иглы |
 | глубина S8 / upper | `s8-kiku.ts` 1,2 мм; upper `6r=2,13 мм` | **инженерные образцы**, не фото | лабораторные piercing/buried, не обычный studio renderer |
-| stacked port ramp | `stitches.ts` `stackClear=pearl` × `smooth01(t)` к порту | **студийная отрисовка**: метки рядов ~1 pearl, порты могут быть ~0,5 мм — без подъёма surface-коридоры пересекаются | later inner catch над предыдущим tip |
+| шаг ряда кику | `patterns.ts` `kikuSpec` `pitch = 1,5 × thread` | **наш выбор** поверх «≈ширина нити» TemariKai: +½ pearl под poleward scoop `biteAcross`; иначе порты < диаметра | сколько кругов влезает (`fit`); зазор stacked inner tips |
+| сдвиг stacked bite к полюсу | `kagari.ts` `biteAcross` | **студийная отрисовка**: `0,35·pearl` (было `0,5·pearl·stacked`) | порты inner uwagake; не выходить в предыдущий tip |
 | какие именно цвета у наборов A и B | `jiwari.ts` `kikuThreads` | **наш подбор**: GT14 требует две нити, но hue не называет | вид цветка |
 
 **Устарело (удалено из кода, не возвращать как факт):** `REVERSE_PORT_MM`, `REVERSE_CROSS_LIFT`, `INNER_LEAVE_LIFT` / `INNER_LEAVE_WIDTH` — прежние студийные константы; актуальны `REVERSE_JOIN_MM` / `REVERSE_HUG_MM` / `scoopRadius` / `lift0`.
