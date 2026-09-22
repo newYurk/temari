@@ -6,7 +6,7 @@ export type KagariTrace = {
   threadId: string;
   order: number;
   previousInThread: string | null;
-  /** Explicit park→resume passage; legacy renderer keeps this part hidden. */
+  /** Explicit park→resume event at the unchanged working end. */
   resume: KagariOp["resume"] | null;
   /** Compiler-declared bundle targets, not an inferred pairwise crossing table. */
   overOperations: string[];
@@ -20,6 +20,12 @@ export function traceKagariOperations(ops: readonly KagariOp[], recipeId: string
   const previousOp = new Map<string, KagariOp>();
   const samePoint = (a: readonly number[], b: readonly number[]) =>
     a.length === b.length && a.every((x, i) => Math.abs(x - b[i]!) < 1e-9);
+  const distance2 = (a: readonly number[], b: readonly number[]) =>
+    a.reduce((sum, x, i) => sum + (x - b[i]!) ** 2, 0);
+  const workingEnd = (op: KagariOp) =>
+    distance2(op.lay.from, op.bite.enter) < distance2(op.lay.from, op.bite.exit)
+      ? op.bite.enter
+      : op.bite.exit;
   let lastOrder = -1;
   return ops.map(op => {
     if (![op.i, op.pole, op.kai, op.mark.line].every(n => Number.isInteger(n) && n >= 0)
@@ -43,9 +49,8 @@ export function traceKagariOperations(ops: readonly KagariOp[], recipeId: string
     const prior = previousOp.get(threadId);
     if (op.resume) {
       if (!prior || prior.kai >= op.kai
-        || !samePoint(op.resume.from, prior.lay.to)
-        || !samePoint(op.resume.to, op.lay.from)) {
-        throw new RangeError(`${operationId}: park/resume must connect the previous working end to this row start.`);
+        || !samePoint(op.resume.at, workingEnd(prior))) {
+        throw new RangeError(`${operationId}: park/resume must continue from the previous working end.`);
       }
     } else if (prior && prior.kai < op.kai) {
       throw new RangeError(`${operationId}: new kai must explicitly resume its parked working thread.`);

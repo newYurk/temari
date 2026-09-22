@@ -960,6 +960,10 @@ export function compileKiku(
         if (onlySet !== "all" && pass !== onlySet) continue;
         const set = (pass === 0 ? 0 : 1) as 0 | 1;
         const thread = kikuColor(ring, color);
+        // `lay.from` remains the nominal top mark used to construct the next
+        // parallel flank. `resume.at` below preserves the real working end at
+        // the previous bite's exit. A complete renderer must replace this
+        // nominal start with the outgoing leg from that port.
         let cursor: Vec3 | null = null;
         let first = true;
         for (let sector = 0; sector < n; sector++) {
@@ -985,7 +989,7 @@ export function compileKiku(
             left.via,
           );
           if (first && parked[set]) {
-            ops[ops.length - 1]!.resume = { from: parked[set], to: left.a };
+            ops[ops.length - 1]!.resume = { at: parked[set] };
           }
           first = false;
           const over = stackOver(innerOver[line2] ?? [], crossing);
@@ -1004,7 +1008,8 @@ export function compileKiku(
           );
           innerOver[line2]?.push(ops.length - 1);
         }
-        parked[set] = cursor;
+        const last = ops[ops.length - 1];
+        parked[set] = last ? outgoingBitePort(last) : cursor;
       }
     }
   }
@@ -1016,8 +1021,10 @@ export function stitchesFromOps(ops: KagariOp[]): Stitch[] {
   const stitches: Stitch[] = ops.map((op, i) => {
     const prev = i > 0 ? ops[i - 1] : undefined;
     const sitTo = op.mark.t === "inner" && op.over.length > 0 ? 1 : 0;
-    const sitFrom =
-      prev && prev.pole === op.pole && prev.set === op.set && prev.mark.t === "inner" && prev.over.length > 0
+    const sitFrom = op.resume
+      ? 1
+      : prev && prev.pole === op.pole && prev.set === op.set
+        && prev.mark.t === "inner" && prev.over.length > 0
         ? 1
         : 0;
     return {
@@ -1047,6 +1054,13 @@ function dist2(a: Vec3, b: Vec3) {
   const dy = a[1] - b[1];
   const dz = a[2] - b[2];
   return dx * dx + dy * dy + dz * dz;
+}
+
+/** The working end after a bite: the port on the incoming flank's near side. */
+function outgoingBitePort(op: KagariOp): Vec3 {
+  return dist2(op.lay.from, op.bite.enter) < dist2(op.lay.from, op.bite.exit)
+    ? op.bite.enter
+    : op.bite.exit;
 }
 
 function sequentialChains(arcs: Extract<Stitch, { kind: "arc" }>[]) {

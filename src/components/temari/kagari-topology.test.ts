@@ -56,7 +56,7 @@ describe("recipe identities survive the workshop adapter", () => {
     const cut = source(); delete cut[16]!.resume;
     assert.throws(() => stitchesFromOps(cut), /explicitly resume its parked working thread/);
     const teleported = source();
-    teleported[16]!.resume = { ...teleported[16]!.resume!, from: teleported[16]!.lay.from };
-    assert.throws(() => stitchesFromOps(teleported), /park\/resume must connect/);
+    teleported[16]!.resume = { at: teleported[16]!.mark.at };
+    assert.throws(() => stitchesFromOps(teleported), /park\/resume must continue/);
   });
 });

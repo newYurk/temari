@@ -312,9 +312,14 @@ describe("kagari recipe atom", () => {
         const resume = current.operation?.resume;
         assert.ok(resume, "new kai explicitly resumes the parked working end");
         if (!resume) continue;
-        assert.ok(dist(resume.from, previous.b) < 1e-9, "resume starts at the previous parked end");
-        assert.ok(dist(resume.to, current.a) < 1e-9, "hidden passage exits at the new row start");
-        assert.ok(dist(resume.from, resume.to) > 0, "park/resume is not a welded loop");
+        assert.ok(previous.bite);
+        if (!previous.bite) continue;
+        const near = dist(previous.a, previous.bite.enter) < dist(previous.a, previous.bite.exit)
+          ? previous.bite.enter
+          : previous.bite.exit;
+        assert.ok(dist(resume.at, near) < 1e-9, "resume retains the previous exit port");
+        assert.ok(dist(current.a, previous.b) > 0,
+          "the next row's nominal mark is lower while resume retains the real port");
       }
     }
   });

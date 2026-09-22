@@ -82,8 +82,8 @@ export type KagariOp = {
   mark: KagariMark;
   lay: { from: Vec3; to: Vec3; via?: Vec3[] };
   bite: KagariBite;
-  /** Same working end parked after the previous kai, then carried inside the wrap. */
-  resume?: { from: Vec3; to: Vec3 };
+  /** Same working end parked after the previous kai and resumed on the surface. */
+  resume?: { at: Vec3 };
   /** Previous ops this bite goes over (uwagake at the pole). */
   over: number[];
 };
