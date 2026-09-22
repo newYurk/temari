@@ -378,10 +378,11 @@ export function sewKagariLegs(
   // but not so short the tube folds (full-depth band overlapped stacked rows).
   const portOffset = Math.max(inn.distanceTo(tip), out.distanceTo(tip), pearl);
   const pierceBand = Math.min(dropFloor, portOffset * 0.85);
-  // Stacked leave must clear the previous tip's surface flank before rising.
-  // Port-only pierce climbed through r0/inner (~0.4 mm axes, dirDot≈1).
-  // Do not cap this along-path band with dropFloor (a radius delta).
-  const leavePierceBand = onStack ? Math.max(pierceBand, pearl * 4) : pierceBand;
+  // Stacked leave: tip-gate clears the previous tip's surface. Band ≈2·pearl is
+  // the shortest that still clears r0↔r1 on two rows; pearl·4 kept leave buried
+  // into the next tip's arrive (r1/outer↔r2/inner on three rows). Steeper
+  // arrive pierce (0.6·port) folded tubes — leave alone for this slice.
+  const leavePierceBand = onStack ? Math.max(pierceBand, pearl * 2) : pierceBand;
   const pierceRadius = (distance: number, surface: number, atPort: number, band = pierceBand) => {
     if (distance >= band) return surface;
     const drop = surface - atPort;
