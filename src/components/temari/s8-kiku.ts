@@ -111,6 +111,8 @@ export type S8KikuInput = Partial<S8KikuDimensions> & {
   /** Shift the first marking ray by one eighth-turn for the second working set. */
   phase?: 0 | 1;
   stage?: S8KikuStage;
+  /** Complete uwagake rows to plan; defaults to 2 for row2 and 1 otherwise. */
+  rows?: number;
   handedness?: 1 | -1;
   /** A Simple 8 pole; the default is +Y. */
   center?: PointMm;
@@ -165,6 +167,7 @@ export type S8KikuRefinement = { windowId: string; from: number; to: number; len
 export type S8KikuResult = {
   status: 'accepted' | 'rejected' | 'unresolved';
   stage: S8KikuStage;
+  rows: number;
   dimensions: S8KikuDimensions;
   factors: number[];
   canonical: boolean;
@@ -323,6 +326,7 @@ export function planS8Kiku(input: S8KikuInput = {}) {
     } else if (!Number.isFinite(d[key]) || d[key] <= 0) throw new RangeError(`${key} must be finite and positive`);
   }
   const stage = input.stage ?? 'stitch', handedness = input.handedness ?? 1, s0 = input.startTip ?? 0;
+  const requestedRows = input.rows ?? (stage === 'row2' ? 2 : 1);
   const phase = input.phase ?? 0;
   if (phase !== 0 && phase !== 1) throw new RangeError('Simple 8 phase must be 0 or 1.');
   if (![0, 2, 4, 6].includes(s0)) throw new RangeError('startTip must be an upper tip: 0, 2, 4 or 6.');
@@ -332,6 +336,10 @@ export function planS8Kiku(input: S8KikuInput = {}) {
   const overridden = [...S8_KIKU_ACCEPTANCE_KEYS.filter(k => d[k] !== S8_KIKU_DIMENSIONS[k]),
     ...(input.solverOptions && Object.keys(input.solverOptions).length ? ['solverOptions'] : [])];
   if (stage !== 'stitch' && stage !== 'round' && stage !== 'row2') throw new RangeError('Unknown Simple 8 stage.');
+  if (!Number.isInteger(requestedRows) || requestedRows < 1 || requestedRows > 10
+    || (stage === 'stitch' && requestedRows !== 1)) {
+    throw new RangeError('Simple 8 rows must be an integer from 1 to 10 (stitch stage is one row).');
+  }
   if (handedness !== 1 && handedness !== -1) throw new RangeError('handedness must be +1 or -1');
   if (factors.length < 3 || factors.length > 6 || factors.some((f, i) => !(f >= 1) || (i > 0 && f < factors[i - 1] * 1.25)))
     throw new RangeError('A Simple 8 ladder needs three to six factors, each at least 1.25 times the previous one.');
@@ -377,7 +385,7 @@ export function planS8Kiku(input: S8KikuInput = {}) {
   const same = (a: S8Catch, b: S8Catch) => a.tip === b.tip && a.row === b.row;
 
   // Chronology: catches in working order; the leg between consecutive ports.
-  const rows = stage === 'row2' ? 2 : 1, round = [1, 2, 3, 4, 5, 6, 7];
+  const rows = requestedRows, round = [1, 2, 3, 4, 5, 6, 7];
   const catches: S8Catch[] = stage === 'stitch' ? [1, 2].map(k => ({ tip: tipAt(k), row: 0 }))
     : Array.from({ length: rows }, (_, row) => [...(row ? [{ tip: s0, row }] : []), ...round.map(k => ({ tip: tipAt(k), row }))]).flat();
   const openEnd: S8Catch = stage === 'stitch' ? { tip: tipAt(3), row: 0 } : { tip: s0, row: rows };
@@ -486,6 +494,77 @@ export function planS8Kiku(input: S8KikuInput = {}) {
     bite, markOf, hullCorridor, bites, startCurves, hiddenCurves, hiddenCurvature, solverOptions: input.solverOptions };
 }
 export type S8KikuPlan = ReturnType<typeof planS8Kiku>;
+
+/**
+ * Deterministic unsolved construction used only to inspect/integrate the
+ * sourced topology. Acceptance still requires `buildS8KikuLevel` and its
+ * contact solve; callers must not label this seed as a finished Kiku.
+ */
+export function seedS8KikuCoupon(plan: S8KikuPlan): C8ThreadCoupon {
+  const spans: ThreadSpan[] = [], operations: ThreadOperation[] = [];
+  const op = (kind: ThreadOperationKind, step: number, markIndex?: number) => {
+    const value: ThreadOperation = {
+      id: `s8-seed-op-${operations.length + 1}-${kind}`,
+      order: operations.length,
+      step,
+      kind,
+      spanIds: [],
+      ...(markIndex === undefined ? {} : { markId: `mark-${markIndex + 1}` }),
+      ...(kind === 'catch' ? { captureIds: [`jiwari-${markIndex}`], pass: 'under' as const } : {}),
+    };
+    operations.push(value);
+    return value;
+  };
+  const put = (operation: ThreadOperation, zone: ThreadZone, curve: ThreadCurve) => {
+    const span: ThreadSpan = {
+      id: `s8-seed-span-${spans.length + 1}`,
+      opId: operation.id,
+      threadId: 's8-kiku-seed-thread',
+      step: operation.step,
+      zone,
+      curve,
+    };
+    spans.push(span);
+    operation.spanIds.push(span.id);
+  };
+  const startOp = op('start', 0);
+  plan.startCurves.forEach(s => put(startOp, s.zone, s.curve));
+  plan.legPieces.forEach((pieces, legIndex) => {
+    const lay = op('lay', legIndex + 1);
+    pieces.forEach(piece => {
+      const curves = piece.kind === 'arc' ? [piece.curve] : piece.window.seed;
+      curves.forEach(curve => put(lay, 'surface', curve));
+    });
+    const { to, open } = plan.legs[legIndex];
+    if (!open) {
+      const capture = op('catch', legIndex + 1, to.tip);
+      plan.bite(to).forEach(curve => put(capture, 'piercing', curve));
+    }
+  });
+  op('finish', plan.legPieces.length);
+  return {
+    kind: 'engineering-thread-path',
+    bodyRadiusMm: plan.R,
+    threadId: 's8-kiku-seed-thread',
+    threadRadiusMm: plan.r,
+    spans,
+    operations,
+    supports: plan.supports,
+    marks: plan.frames.map(f => ({
+      id: `mark-${f.index + 1}`,
+      rayIndex: f.index,
+      circleId: f.circleId,
+      role: f.role === 'upper' ? 'inner' : 'outer',
+      distanceMm: f.distanceMm,
+      positionMm: f.markMm,
+    })),
+    fixture: { ...plan.d, rows: plan.rows, seedOnly: 1 },
+    assumptions: [
+      'Unsolved S8 Kiku seed: sourced operation order and explicit needle passages, not an accepted contact path.',
+    ],
+  };
+}
+
 /** Fixed environment for a later, independent working thread. Never a renderer lift. */
 export type S8KikuEnvironment = {
   marking: MarkingSupport[];
@@ -746,7 +825,8 @@ export function judgeS8Kiku(plan: S8KikuPlan, levels: S8KikuLevel[], perturbed: 
       diagnostics.push(`${w.id}: sensitive to the constraint sampling (length ${c.lengthDifferenceMm.toExponential(2)}, shape ${c.shapeDifferenceMm.toExponential(2)}).`);
   }
   const asymptotic = refinements.filter(x => perWindow(refinements, x.windowId).slice(-S8_KIKU_ASYMPTOTIC_REFINEMENTS).includes(x));
-  return { status: rejected ? 'rejected' : diagnostics.length ? 'unresolved' : 'accepted', stage: plan.stage, dimensions: d,
+  return { status: rejected ? 'rejected' : diagnostics.length ? 'unresolved' : 'accepted',
+    stage: plan.stage, rows: plan.rows, dimensions: d,
     factors: plan.factors, canonical: plan.canonical, tips: plan.tips, windows: plan.windows, levels, perturbed, refinements, conditioning,
     bites: plan.bites,
     metrics: { lengthDifferenceMm: Math.max(0, ...asymptotic.map(x => x.lengthDifferenceMm)),
@@ -768,14 +848,18 @@ export function computeS8Kiku(input: S8KikuInput = {}): S8KikuResult {
     const levels = plan.factors.map(f => buildS8KikuLevel(plan, f));
     return judgeS8Kiku(plan, levels, buildS8KikuLevel(plan, plan.factors.at(-1)!, 2 * probes));
   }
-  // Rule 1 for later rounds: an earlier round is laid thread, accepted by its own
-  // ladder; the ladder of the last round refines only that round, on the finest
-  // construction of the earlier one. The first round is the 'round' stage exactly.
-  const first = computeS8Kiku({ ...input, stage: 'round' });
-  const base = first.levels.at(-1)!, lastRound = plan.rows - 1;
+  // Rule 1 for later rounds: all earlier rows are laid thread, accepted by
+  // their own ladders; the current ladder refines only its last row over the
+  // finest complete construction of rows 0…n-2.
+  const earlier = computeS8Kiku({
+    ...input,
+    stage: plan.rows === 2 ? 'round' : 'row2',
+    rows: plan.rows - 1,
+  });
+  const base = earlier.levels.at(-1)!, lastRound = plan.rows - 1;
   const levels = plan.factors.map(f => buildS8KikuLevel(plan, f, probes, base));
   const perturbed = buildS8KikuLevel(plan, plan.factors.at(-1)!, 2 * probes, base);
-  return combineS8Rounds(first, judgeS8Kiku(plan, levels, perturbed, w => w.round === lastRound));
+  return combineS8Rounds(earlier, judgeS8Kiku(plan, levels, perturbed, w => w.round === lastRound));
 }
 
 /**
@@ -783,13 +867,15 @@ export function computeS8Kiku(input: S8KikuInput = {}): S8KikuResult {
  * Refinement and sampling results and metrics cover both rounds; the levels are
  * those of the last round (complete threads over the finest first round).
  */
-export function combineS8Rounds(first: S8KikuResult, last: S8KikuResult): S8KikuResult {
-  const status = first.status === 'rejected' || last.status === 'rejected' ? 'rejected'
-    : first.status === 'accepted' && last.status === 'accepted' ? 'accepted' : 'unresolved';
+export function combineS8Rounds(earlier: S8KikuResult, last: S8KikuResult): S8KikuResult {
+  const status = earlier.status === 'rejected' || last.status === 'rejected' ? 'rejected'
+    : earlier.status === 'accepted' && last.status === 'accepted' ? 'accepted' : 'unresolved';
+  const earlierLabel = earlier.rows === 1 ? 'Round 1' : `Rows 1…${earlier.rows}`;
   return { ...last, status,
-    refinements: [...first.refinements, ...last.refinements], conditioning: [...first.conditioning, ...last.conditioning],
-    metrics: { ...last.metrics, lengthDifferenceMm: Math.max(first.metrics.lengthDifferenceMm, last.metrics.lengthDifferenceMm),
-      maxShapeDifferenceMm: Math.max(first.metrics.maxShapeDifferenceMm, last.metrics.maxShapeDifferenceMm) },
-    diagnostics: [...first.diagnostics.map(x => `Round 1: ${x}`), ...last.diagnostics.map(x => `Round 2 (complete thread): ${x}`)],
-    earlierRounds: [first] };
+    refinements: [...earlier.refinements, ...last.refinements], conditioning: [...earlier.conditioning, ...last.conditioning],
+    metrics: { ...last.metrics, lengthDifferenceMm: Math.max(earlier.metrics.lengthDifferenceMm, last.metrics.lengthDifferenceMm),
+      maxShapeDifferenceMm: Math.max(earlier.metrics.maxShapeDifferenceMm, last.metrics.maxShapeDifferenceMm) },
+    diagnostics: [...earlier.diagnostics.map(x => `${earlierLabel}: ${x}`),
+      ...last.diagnostics.map(x => `Round ${last.rows} (complete thread): ${x}`)],
+    earlierRounds: [...(earlier.earlierRounds ?? []), earlier] };
 }

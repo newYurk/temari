@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildS8KikuLevel, combineS8Rounds, judgeS8Kiku, planS8Kiku, S8_KIKU_DIMENSIONS, S8_KIKU_LADDER, type S8KikuLevel, type S8KikuResult } from './s8-kiku';
+import { buildS8KikuLevel, combineS8Rounds, judgeS8Kiku, planS8Kiku, seedS8KikuCoupon, S8_KIKU_DIMENSIONS, S8_KIKU_LADDER, type S8KikuLevel, type S8KikuResult } from './s8-kiku';
+import { createThreadSpanMesh } from './thread-path-mesh';
 import { shapeDifferenceMm } from './thick-rope-ladder';
 import { evaluateCurve } from './thread-geometry';
 import type { ThreadCurve } from './thread-path';
@@ -110,6 +111,34 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
     assert.throws(() => planS8Kiku({ stage: 'row2', lowerRowAdvanceMm: .4 }), RangeError);
   });
 
+  it('plans later rows with the same continuous chronology', () => {
+    const plan = planS8Kiku({ stage: 'row2', rows: 3 });
+    assert.equal(plan.rows, 3);
+    assert.equal(plan.catches.length, 7 + 8 + 8);
+    assert.deepEqual(plan.openEnd, { tip: 0, row: 3 });
+    assert.equal(plan.windows.length, 16 * 3);
+    assert.deepEqual([...new Set(plan.windows.map(w => w.round))], [0, 1, 2]);
+    assert.throws(() => planS8Kiku({ stage: 'row2', rows: 0 }), /rows/);
+    assert.throws(() => planS8Kiku({ stage: 'row2', rows: 11 }), /rows/);
+  });
+
+  it('builds a continuous exact-mesh seed for inspecting later rows', () => {
+    const plan = planS8Kiku({ stage: 'row2', rows: 3 });
+    const coupon = seedS8KikuCoupon(plan);
+    assert.equal(coupon.operations[0]?.kind, 'start');
+    assert.equal(coupon.operations.at(-1)?.kind, 'finish');
+    for (let i = 1; i < coupon.spans.length; i++) {
+      const previous = coupon.spans[i - 1]!, current = coupon.spans[i]!;
+      assert.ok(norm(sub(evaluateCurve(previous.curve, 1), evaluateCurve(current.curve, 0))) < 1e-8,
+        `seed discontinuity at ${current.id}`);
+    }
+    for (const span of coupon.spans) {
+      const mesh = createThreadSpanMesh(span, coupon.threadRadiusMm, coupon.bodyRadiusMm);
+      assert.ok(mesh.geometry.getAttribute('position').count > 0);
+      mesh.geometry.dispose();
+    }
+  });
+
   it('builds congruent plans from every upper start tip (a quarter turn about the pole)', () => {
     // Rodrigues rotation by +90 degrees about the pole, independent of the plan's frames.
     const turn = ([x, y, z]: PointMm): PointMm => [z, y, -x];
@@ -198,13 +227,14 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
 
 describe('Simple 8 control kiku: two rounds', () => {
   it('accepts two rounds only when both are accepted and reports both', () => {
-    const result = (status: S8KikuResult['status'], id: string, length: number, diagnostics: string[] = []) => ({
-      status, diagnostics, refinements: [{ windowId: id, from: 1, to: 2, lengthDifferenceMm: length, shapeDifferenceMm: length }],
+    const result = (status: S8KikuResult['status'], id: string, length: number,
+      diagnostics: string[] = [], rows = 1) => ({
+      status, rows, diagnostics, refinements: [{ windowId: id, from: 1, to: 2, lengthDifferenceMm: length, shapeDifferenceMm: length }],
       conditioning: [{ windowId: id, from: 2, to: 2, lengthDifferenceMm: 0, shapeDifferenceMm: 0 }],
       metrics: { lengthDifferenceMm: length, maxShapeDifferenceMm: 2 * length, curvatureLimit: .8 }, levels: [], coupon: {} }) as unknown as S8KikuResult;
     const statuses = ['accepted', 'unresolved', 'rejected'] as const;
     for (const a of statuses) for (const b of statuses) for (const [la, lb] of [[1e-3, 2e-3], [3e-3, 2e-3]]) {
-      const lastResult = result(b, 'departure-0-r2', lb, b === 'accepted' ? [] : ['last']);
+      const lastResult = result(b, 'departure-0-r2', lb, b === 'accepted' ? [] : ['last'], 2);
       const combined = combineS8Rounds(result(a, 'departure-0', la, a === 'accepted' ? [] : ['first']), lastResult);
       const expected = a === 'rejected' || b === 'rejected' ? 'rejected' : a === 'accepted' && b === 'accepted' ? 'accepted' : 'unresolved';
       assert.equal(combined.status, expected, `${a} + ${b}`);
