@@ -49,12 +49,14 @@ export const S8_KIKU_DIMENSIONS = Object.freeze({
   rowAdvanceMm: 0.45,
   wrapHalfBiteMm: 1,
   /**
-   * Row-2 lower stitch: this much farther along the ray. At the 13.6 degree lower
-   * V a thread-width advance would drive the new leg into the earlier ports; the
-   * smallest clear advance for great-circle legs is about 2.6 mm, rounded up to
-   * 0.5 mm (engineering value; real yarn compresses).
+   * Later lower stitch along the marking ray. Craft (owner 22.09): lay the next
+   * thread snug against the previous flanks (one diameter, no gap), then pierce
+   * where that lay meets the guideline. Into this tip's ~13.6° V that natural
+   * advance is 2r/sin(α/2) ≈ 3.4 mm for r=0.2 — not an equal “outer pitch”
+   * rule and not a clearance for great-circle legs. The default matches that
+   * packed pierce; override only for diagnostics.
    */
-  lowerRowAdvanceMm: 3,
+  lowerRowAdvanceMm: 3.4,
   supportMarginMm: 2,
   poleGapMm: 1,
   tailLeadMm: 4,
@@ -373,7 +375,21 @@ export function planS8Kiku(input: S8KikuInput = {}) {
     frame: { radial: f.m, outward: f.outward, progress: f.progress },
     entry: f.at(d.halfBiteMm, 0, S), exit: f.at(-d.halfBiteMm, 0, S) }));
   const windowLength = (tip: number) => frames[tip].role === 'upper' ? d.upperWindowMm : d.lowerWindowMm;
-  // Row k: upper stitches k thread widths lower and wider (round 2: wrapHalfBite), lower stitches k advances lower.
+  // Packed lower pierce: snug flank lay (one diameter) into the tip V meets the
+  // guideline this far along the ray. Used when the caller did not override.
+  const lowerPackedAdvanceMm = (() => {
+    const lower = frames.find(f => f.role === 'lower');
+    if (!lower) return d.lowerRowAdvanceMm;
+    const left = frames[(lower.index + 7) % 8]!, right = frames[(lower.index + 1) % 8]!;
+    const half = angleBetween(toward(lower.markMm, left.markMm), toward(lower.markMm, right.markMm)) / 2;
+    const s = Math.sin(half);
+    return s > 1e-9 ? (2 * r) / s : d.lowerRowAdvanceMm;
+  })();
+  if (!('lowerRowAdvanceMm' in input) || input.lowerRowAdvanceMm === undefined) {
+    (d as S8KikuDimensions).lowerRowAdvanceMm = lowerPackedAdvanceMm;
+  }
+  // Row k: upper stitches k thread widths lower and wider (round 2: wrapHalfBite);
+  // lower stitches k packed pierces farther out (snug flank lay → ray crossing).
   const rowHalf = (tip: number, row: number) => frames[tip].role === 'lower' || row === 0 ? d.halfBiteMm
     : row === 1 ? d.wrapHalfBiteMm : d.halfBiteMm + row * (d.wrapHalfBiteMm - d.halfBiteMm);
   const rowAlong = (tip: number, row: number) => row * (frames[tip].role === 'upper' ? d.rowAdvanceMm : d.lowerRowAdvanceMm);

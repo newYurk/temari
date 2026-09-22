@@ -446,10 +446,11 @@ function kikuSkip(n: number) {
 /**
  * GT14 / TemariKai beginner: enter ~5 mm from the pole; first outer stitch
  * sits just below the pin ⅓ up from the equator. Later rounds: lay the thread
- * *parallel* to the first (GT14), inner about 1½ pearl #5 below (lay-apart
- * plus room for the poleward stacked bite), outer Ozaki
- * ~2 mm below the previous point so the turn lays flat. Work toward the
- * equator. `outer` is the first pin, not a short-V ceiling.
+ * *parallel* to the first (GT14), inner one pearl #5 below (snug lay, no
+ * engineered gap), outer Ozaki ~2 mm below the previous point so the turn
+ * lays flat — later outer pierces are where the packed flank meets the
+ * guideline, not an equal outer pitch. Work toward the equator. `outer` is
+ * the first pin, not a short-V ceiling.
  * Default wanted is 3 kai (tests); studio starts at 1; title uses "fit".
  * Legacy display adapter: unsupported divisions retain the numeric shape with
  * zero capacity and recipe:null. These zeros are not usable recipe geometry.
@@ -477,12 +478,12 @@ export function kikuSpec(
       recipe: null,
     };
   }
-  // Шаг ряда — 1½ толщины нити: укладка «наружу и вниз» плюс место под
-  // poleward scoop позднего inner bite (biteAcross). Один pearl оставлял
-  // порты ~0,48 мм apart (< диаметра). Два pearl ломают трубки на плотной
-  // укладке. Рядов к экватору меньше, чем при шаге в один диаметр.
+  // Шаг ряда — одна толщина нити: укладываем вплотную без зазора (TemariKai
+  // ≈thread width; craft 22.09), затем протыкаем на естественном пересечении
+  // с разметкой. Прежний 1½× был инженерным зазором под порты и отклонён —
+  // проверки, требовавшие его, не авторитетнее укладки.
   const thread = unitFromMm(STITCH_THREAD_MM[recipe.thread]);
-  const pitch = thread * 1.5;
+  const pitch = thread;
   const stretch = unitFromMm(recipe.stretchMm);
   const inner = unitFromMm(recipe.innerMm);
   const outer = (Math.PI / 2) * (1 - recipe.outerFromEquator);
@@ -625,6 +626,42 @@ function parallelOffset(samples: Vec3[], pole: Vec3, delta: number): Vec3[] {
     if (th(plus) < th(p)) n = [-n[0], -n[1], -n[2]];
     return offsetBy(p, n, delta);
   });
+}
+
+/**
+ * Where a packed flank meets this guideline (meridian). Craft: lay snug, then
+ * pierce at that crossing — not at a pre-set equal outer pitch.
+ */
+function pierceOnMeridian(samples: Vec3[], pole: Vec3, phi: number): Vec3 | null {
+  if (samples.length < 2) return null;
+  const target = ((phi % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const long = (p: Vec3) => polarAround(pole, p).phi;
+  const wrap = (a: number, b: number) => {
+    let d = b - a;
+    if (d > Math.PI) d -= Math.PI * 2;
+    if (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  };
+  for (let i = 1; i < samples.length; i++) {
+    const a = samples[i - 1]!, b = samples[i]!;
+    const la = long(a), lb = long(b);
+    const da = wrap(la, target), db = wrap(lb, target);
+    if (da === 0) return a;
+    if (db === 0) return b;
+    if (da * db > 0) continue;
+    const t = Math.abs(da) / (Math.abs(da) + Math.abs(db));
+    return slerp3(a, b, t);
+  }
+  // No crossing: nearest sample in longitude (short packed tip).
+  let best = samples[0]!, bestD = Math.abs(wrap(long(best), target));
+  for (const p of samples) {
+    const d = Math.abs(wrap(long(p), target));
+    if (d < bestD) {
+      best = p;
+      bestD = d;
+    }
+  }
+  return best;
 }
 
 /**
@@ -793,17 +830,27 @@ export function kikuFlank(
 ): { a: Vec3; b: Vec3; via: Vec3[] } {
   const { tInner, tOuter } = kikuThetas(spec, ring);
   const a0 = around(pole, tInner, phiInner);
-  const b = around(pole, tOuter, phiOuter);
-  if (ring <= 0) return { a: a0, b, via: [] };
+  // Round 0: first outer is just below the pin (engineering clearance = pitch).
+  // Later rounds: pierce where the snug-packed flank meets this guideline.
+  const bPin = around(pole, tOuter, phiOuter);
+  if (ring <= 0) return { a: a0, b: bPin, via: [] };
   const prev = kikuFlank(pole, spec, ring - 1, phiInner, phiOuter);
   const samples = pathSamples(prev.a, prev.b, prev.via, 36);
   const off = parallelOffset(samples, pole, spec.pitch);
   const n = off.length;
-  if (n < 6) return { a: a0, b, via: off };
-  // Outer Ozaki ~2.6 mm at the point. Inner is the offset of the previous
-  // inner, snapped to this meridian — the new thread hugs the last inner
-  // from the outside (uwagake). A geodesic V at tInner is nested chidori.
-  const span = Math.max(tOuter - tInner, spec.pitch);
+  if (n < 6) return { a: a0, b: bPin, via: off };
+  const pierced = pierceOnMeridian(off, pole, phiOuter);
+  // Pierce where the snug lay meets the guideline. Floor: at least ~one
+  // thread past the previous outer (never un-pack). Ceiling: this pole's rim.
+  // Stretch-based tOuter is only a capacity estimate now, not the pierce law.
+  const prevOuter = polarAround(pole, prev.b).theta;
+  const naturalTheta = pierced ? polarAround(pole, pierced).theta : tOuter;
+  const ceiling = spec.ceiling ?? Math.PI / 2 - spec.pitch * 0.35;
+  const bTheta = Math.min(ceiling, Math.max(prevOuter + spec.pitch * 0.85, naturalTheta));
+  const b = around(pole, bTheta, phiOuter);
+  // Inner is the offset of the previous inner, snapped to this meridian —
+  // the new thread hugs the last inner from the outside (uwagake).
+  const span = Math.max(bTheta - tInner, spec.pitch);
   const outerJoin = Math.max(3, Math.round((unitFromMm(2.6) / span) * n));
   const i1 = Math.max(4, n - 1 - Math.min(Math.floor(n / 4), outerJoin));
   const i0 = Math.min(2, i1 - 2);

@@ -26,7 +26,7 @@ describe("kagari recipe atom", () => {
     assert.ok(Math.abs(spec.inner - unitFromMm(KIKU_8_POINT.innerMm)) < 1e-9);
     assert.ok(Math.abs(spec.outer - (Math.PI / 2) * (1 - KIKU_8_POINT.outerFromEquator)) < 1e-9);
     assert.ok(Math.abs(spec.stretch - unitFromMm(2)) < 1e-9, "Ozaki 2 mm is the corner turn, recorded on the recipe");
-    assert.ok(Math.abs(spec.pitch - unitFromMm(0.71) * 1.5) < 1e-6, "flanks pack at 1½ pearl #5 (lay + stacked bite room)");
+    assert.ok(Math.abs(spec.pitch - unitFromMm(0.71)) < 1e-6, "flanks pack snug at one pearl #5 (no engineered gap)");
   });
 
   it("bite sits across the mark, not along the meridian", () => {
@@ -157,7 +157,7 @@ describe("kagari recipe atom", () => {
     }
   });
 
-  it("later kai: inner one thread, outer Ozaki stretch; flanks stay parallel mid-petal", () => {
+  it("later kai: inner one thread, outer packed pierce; flanks stay parallel mid-petal", () => {
     const spec = kikuSpec("simple", "even");
     const ops = compileKiku("simple", "out", "even", 0);
     const outer0 = ops.find((op) => op.kai === 0 && op.mark.t === "outer");
@@ -169,7 +169,8 @@ describe("kagari recipe atom", () => {
     const th = (p: [number, number, number]) => Math.acos(Math.min(1, Math.max(-1, p[1])));
     const dOut = th(outer1.mark.at) - th(outer0.mark.at);
     const dIn = th(inner1.mark.at) - th(inner0.mark.at);
-    assert.ok(Math.abs(dOut - spec.stretch) < 1e-6, `outer step ${dOut} is Ozaki stretch`);
+    // Outer = snug flank ∩ guideline (≈0.6 mm here), not a rigid Ozaki 2 mm step.
+    assert.ok(dOut > spec.pitch * 0.5 && dOut < spec.stretch * 0.85, `outer packed pierce ${dOut}`);
     assert.ok(Math.abs(dIn - spec.pitch) < spec.pitch * 0.45, `inner step ${dIn} is about one thread`);
     assert.ok(outer1.lay.via && outer1.lay.via.length > 4, "later kai follow the offset path, not a free geodesic");
   });
@@ -345,9 +346,9 @@ describe("kagari recipe atom", () => {
     // reaches too far would quietly drop crossings and show up here. Sharpening
     // lowered the point counts (56 → 48 at three rounds): crossings that the
     // sample grid placed apart turn out to be the same meeting.
-    // 1½-pearl row pitch (thread + stacked-bite room) changes the pack: three
-    // rounds keep 72 clustered sites, ten rounds 512 (was 48 / 352 at 1-pearl).
-    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 72], [10, 160, 152, 512]]) {
+    // Snug one-pearl row pitch (craft pack, owner 22.09). Crossing counts
+    // measured at this density after natural outer pierce.
+    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 48], [10, 160, 152, 440]]) {
       const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, layers!, "all"))
         .filter((s) => s.kind === "arc");
       assert.equal(stitches.length, arcs, `arcs at ${layers} rounds`);

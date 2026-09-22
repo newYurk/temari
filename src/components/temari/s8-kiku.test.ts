@@ -79,7 +79,7 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
   });
 
   it('plans the second uwagake row: wider upper stitches, lower stitches farther out, rows in order', () => {
-    const plan = planS8Kiku({ stage: 'row2' }), d = S8_KIKU_DIMENSIONS, round = [1, 2, 3, 4, 5, 6, 7];
+    const plan = planS8Kiku({ stage: 'row2' }), d = plan.d, round = [1, 2, 3, 4, 5, 6, 7];
     assert.deepEqual(plan.catches, [...round.map(tip => ({ tip, row: 0 })), { tip: 0, row: 1 }, ...round.map(tip => ({ tip, row: 1 }))]);
     assert.deepEqual(plan.openEnd, { tip: 0, row: 2 });
     assert.deepEqual(plan.windows.map(w => w.id), ['departure-0', ...round.flatMap(t => [`approach-${t}`, `departure-${t}`]), 'closing-0',
@@ -91,16 +91,20 @@ describe('Simple 8 control kiku: plan (no solves)', () => {
     const round1 = planS8Kiku({ stage: 'round' });
     round1.windows.forEach((w, i) => assert.deepEqual(plan.windows[i].seed, w.seed));
     const R = plan.R, geodesic = (a: PointMm, b: PointMm) => R * Math.atan2(norm([a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]), dot(a, b));
+    // Lower advance is the packed pierce 2r/sin(α/2) into the tip V, not a frozen constant.
+    assert.ok(Math.abs(d.lowerRowAdvanceMm - 3.4) < 0.05, `packed lower advance ${d.lowerRowAdvanceMm}`);
     for (const c of plan.catches.filter(x => x.row === 1)) {
       const upper = plan.tips[c.tip].role === 'upper', w = plan.bites.find(x => x.tip === c.tip && x.row === 1)!;
-      // Upper: one thread width lower and wide enough for the bundle; lower: farther out along the same ray.
+      // Upper: one thread width lower and wide enough for the bundle; lower: packed
+      // pierce on the ray after a snug flank lay (≈2r/sin(α/2) into the tip V).
       // The frame offsets in the tangent plane at the mark: arc length R atan(advance / R).
       near(geodesic(plan.markOf(c), plan.tips[c.tip].markMm), R * Math.atan((upper ? d.rowAdvanceMm : d.lowerRowAdvanceMm) / R), 1e-9);
       const [lo, hi] = upper ? [.95, 1.25] : [.55, .8];
       assert.ok(w.entryHalfWidthMm > lo && w.entryHalfWidthMm < hi && w.exitHalfWidthMm > lo && w.exitHalfWidthMm < hi, JSON.stringify(w));
-      // The hidden passages of the two rows at one tip keep a full thread diameter apart
-      // (the start tip has no first-round stitch: the thread starts there).
-      if (c.tip === plan.startTip) continue;
+      // Lower tips step outward along the ray; keep a full diameter between
+      // successive hidden passages. Upper later bites go *under* the previous
+      // tip bundle — side-by-side 2r is the wrong check there.
+      if (c.tip === plan.startTip || upper) continue;
       const samples = (curves: ReturnType<typeof plan.bite>) => curves.flatMap(curve => Array.from({ length: 101 }, (_, i) => evaluateCurve(curve, i / 100)));
       const a = samples(plan.bite({ tip: c.tip, row: 0 })), b = samples(plan.bite(c));
       const gap = Math.min(...a.flatMap(p => b.map(q => norm(sub(p, q)))));

@@ -385,13 +385,14 @@ export function sewKagariLegs(
   // corridors share a ray (r1/outer↔r2/inner on three rows at depth=1).
   // Ramp: 0 at the clip (no radius jump), full clear at the port before diving.
   //
-  // TemariKai uwagake (verified 22.09 on toolkit pages, not paraphrase):
-  // carry the working thread *over* previous rounds, lay parallel (~1 thread
-  // width), then take the stitch under the tip bundle; eye-of-needle stroke
-  // opens the wedge; stretch points ~2 mm for #5. Moderate tension (kagari).
-  // Craft does *not* reserve an empty corridor for a future exit — the needle
-  // pierces the wrap where needed. Studio goal for depth≥2: arrive rides
-  // over the laid leave until near the port, then dives under the bundle.
+  // TemariKai uwagake (verified 22.09 on toolkit pages; craft confirmed 22.09):
+  // lay the working thread snug (~1 thread width, no gap), carry it *over*
+  // previous rounds, then pierce under the tip bundle at the natural
+  // guideline crossing. Eye-of-needle stroke opens the wedge; stretch points
+  // ~2 mm for #5. Moderate tension (kagari). Craft does *not* reserve an empty
+  // corridor for a future exit — the needle pierces the wrap where needed.
+  // Studio goal for depth≥2: arrive rides over the laid leave until near the
+  // far edge of the pile, then dives under the bundle — not a tall separate U.
   const stackClear = pearl * stackDepth;
   const dropFloor = Math.max(fromR - buriedR, toR - buriedR);
   // Keep the dive shorter than tip→port so the V crossing stays on the mari,
@@ -478,8 +479,8 @@ export function sewKagariLegs(
     const u = _a.distanceTo(tip) / hug;
     const over = Math.exp(-(u * u));
     // Leave does not keep stackClear: rising to an elevated shelf near the tip
-    // puts the emerge in the next kai's arrive corridor (pitch ≈1½ pearl).
-    // Tip-gate bury clears the previous tip; arrive stackClear sits over this leave.
+    // puts the emerge in the next kai's arrive corridor. Tip-gate bury clears
+    // the previous tip; arrive stackClear sits over this leave.
     const lift = lift0 * over * smooth01(_a.distanceTo(toDir) / unitFromMm(1.5));
     const surface = toR + toSlope * t * t * (t - 1) + lift;
     // Arrive: port distance. Stacked leave: require both distance from the
