@@ -306,8 +306,12 @@ function reversePorts(
   halfWidth = unitFromMm(STITCH_THREAD_MM.pearl5),
 ): { inn: THREE.Vector3; out: THREE.Vector3 } {
   const t = tip.clone().normalize();
+  // Recipe stacked bites request 2·pearl across the mark; on the sphere the
+  // chord reads ~1.995·pearl (FP / normalize). Requiring ≥2·pearl dropped
+  // preservePorts and synthesized ±pearl ports on the tip — leave then shared
+  // that ray with arrive (r1/outer↔r2/inner). Accept near-full span.
   if (preservePorts && enter && exit
-    && new THREE.Vector3(...enter).distanceTo(new THREE.Vector3(...exit)) >= halfWidth * 2) {
+    && new THREE.Vector3(...enter).distanceTo(new THREE.Vector3(...exit)) >= halfWidth * 1.9) {
     const a = new THREE.Vector3(...enter).normalize();
     const b = new THREE.Vector3(...exit).normalize();
     const f = from.clone().normalize();
@@ -365,7 +369,12 @@ export function sewKagariLegs(
   // true keeps the old one-under path for unit tests.
   const stackDepth = Math.min(3, typeof onStack === "number" ? Math.max(0, onStack) : onStack ? 1 : 0);
   const stacked = stackDepth > 0;
-  const { inn, out } = reversePorts(tip, from, enter, exit, stacked, pearl);
+  // Depth≥1 used to fail preservePorts (bite chord ~1.995 < 2·pearl) and fall
+  // back to synthetic ±pearl ports — that accidental path is what cleared r0↔r1
+  // with the leave tip-gate. Depth≥2 must keep recipe ports (poleward + wide
+  // bite) or leave shares the synthetic ray with arrive. Do not re-enable
+  // preserve at depth 1 in this slice.
+  const { inn, out } = reversePorts(tip, from, enter, exit, stackDepth >= 2, pearl);
   // Whole pearl under the cover (same floor as start/stop scoops).
   const buriedR = Math.min(
     scoopRadius(1, Math.min(fromR, toR), half),
@@ -378,6 +387,14 @@ export function sewKagariLegs(
   // above every earlier tip it lists in overOperations, or leave/arrive pierce
   // corridors share a ray (r1/outer↔r2/inner on three rows at depth=1).
   // Ramp: 0 at the clip (no radius jump), full clear at the port before diving.
+  //
+  // TemariKai uwagake (verified 22.09 on toolkit pages, not paraphrase):
+  // carry the working thread *over* previous rounds, lay parallel (~1 thread
+  // width), then take the stitch under the tip bundle; eye-of-needle stroke
+  // opens the wedge; stretch points ~2 mm for #5. Moderate tension (kagari).
+  // Craft does *not* reserve an empty corridor for a future exit — the needle
+  // pierces the wrap where needed. Studio goal for depth≥2: arrive rides
+  // over the laid leave until near the port, then dives under the bundle.
   const stackClear = pearl * stackDepth;
   const dropFloor = Math.max(fromR - buriedR, toR - buriedR);
   // Keep the dive shorter than tip→port so the V crossing stays on the mari,
@@ -386,8 +403,8 @@ export function sewKagariLegs(
   const pierceBand = Math.min(dropFloor, portOffset * 0.85);
   // Stacked leave tip-gate clears the previous tip. Band ≈2·pearl clears
   // r0↔r1; longer bury walked into the next tip's arrive on three rows.
-  // Leave path still crosses the next tip's meridian (see HANDOFF) — height
-  // alone does not separate that pair; do not invent a longer gate here.
+  // Leave path still crosses the next tip's meridian (see HANDOFF) — fix with
+  // incoming-over + poleward ports for depth≥2, not a longer leave gate.
   const leavePierceBand = stacked ? Math.max(pierceBand, pearl * 2) : pierceBand;
   const pierceRadius = (distance: number, surface: number, atPort: number, band = pierceBand) => {
     if (distance >= band) return surface;
@@ -451,7 +468,10 @@ export function sewKagariLegs(
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     pickupDirection(fromDir, inC1, inC2, inn, t, _a);
-    const stack = stackClear * smooth01(t);
+    // Depth≥2: reach full stackClear early so arrive rides over the previous
+    // leave (TemariKai: carry over, then stitch under the tip bundle).
+    const stackT = stackDepth >= 2 ? Math.min(1, t / 0.4) : t;
+    const stack = stackClear * smooth01(stackT);
     const surface = fromR + stack + fromSlope * t * (1 - t) ** 2;
     addLeg(inPts, _a.clone().multiplyScalar(pierceRadius(_a.distanceTo(inn), surface, buriedR)));
   }

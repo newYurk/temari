@@ -903,9 +903,10 @@ function pushKikuLeg(
 ): Vec3 {
   const biteMm =
     to.t === "inner"
-      // Widen one pearl for any stack; linear * (1+overs) made later ports
-      // reach past the previous tip (r2 portOffset > pitch) and share the leave corridor.
-      ? cornerMm * (1 + Math.min(1, over.length))
+      // Widen one pearl for any stack; depth≥2 adds another ¼ pearl as the
+      // eye-stroke stand-in so leave clears the far (exit) port by ≳1·pearl.
+      // Linear *(1+overs) made later ports reach past the previous tip.
+      ? cornerMm * (1 + Math.min(1, over.length) + (over.length >= 2 ? 0.6 : 0))
       : cornerMm;
   const bite = biteAcross(pole, to.at, biteMm, to.t === "inner" ? over.length : 0);
   ops.push({

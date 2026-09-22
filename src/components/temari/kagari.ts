@@ -125,9 +125,16 @@ export function biteAcross(
   const m = normalize(mark);
   const p = normalize(pole);
   const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
-  // Cap the poleward scoop: growing with stack count used to walk ports into
-  // the previous tip (0.48 mm gap < pearl diameter). Width still scales below.
-  const center = stacked > 0 ? shiftTowardPole(p, m, pearl * 0.35) : m;
+  // Cap the poleward scoop: growing linearly with stack walked ports into
+  // the previous tip (0.48 mm gap < pearl). Depth≥2 needs more poleward so
+  // tip ports sit off the previous kai's leave through this meridian
+  // (TemariKai eye-stroke opens wedge room; studio stand-in). tip1→port must
+  // stay ≳1·pearl: at pitch 1.5, 1.05·pearl poleward ≈ 0.45 mark gap and
+  // ~1.4 tip1→port with 2·pearl bite half-width.
+  const poleShift = stacked <= 0 ? 0
+    : stacked >= 2 ? pearl * 1.2
+    : pearl * 0.35;
+  const center = poleShift > 0 ? shiftTowardPole(p, m, poleShift) : m;
   const half = unitFromMm(mm) * 0.5;
   const theta = Math.acos(Math.min(1, Math.max(-1, dot(p, center))));
   const sinT = Math.sin(theta);
