@@ -331,11 +331,9 @@ function reversePorts(
 
 /**
  * Visible needle only. Craft: the thread follows a straight needle through
- * the wrap — surface approach, radial pierce at the far port, undrawn buried
- * return under the mark, radial emerge at the near port, then leave over the
- * arriving flank. No smooth/Gaussian dive across the tip corridor (that made
- * stacked rows share one immerse height). Depth is engineering (NEEDLE_DEPTH_MM
- * / scoopRadius floor), not TemariKai's ~2 mm surface scoop.
+ * the wrap — stay on the mari until a short pierce band at the far port,
+ * elliptical drop to the bury floor there, undrawn buried return under the
+ * mark, rise out of the near port, then leave over the arriving flank.
  *
  * Inner uwagake keeps wider recipe ports; the buried bar between ports is not
  * drawn as a visible cord.
@@ -365,6 +363,22 @@ export function sewKagariLegs(
   );
   const lift0 = pearl * 1.4;
   const hug = unitFromMm(REVERSE_HUG_MM);
+  // Marks of stacked inner tips are ~1 pearl apart; their ports can be ~0.5 mm
+  // apart — closer than the tube diameter. The later catch must meet its ports
+  // one pearl above the previous tip or the surface pierce corridors intersect.
+  // Ramp: 0 at the clip (no radius jump), full pearl at the port before diving.
+  const stackClear = onStack ? pearl : 0;
+  const dropFloor = Math.max(fromR - buriedR, toR - buriedR);
+  // Keep the dive shorter than tip→port so the V crossing stays on the mari,
+  // but not so short the tube folds (full-depth band overlapped stacked rows).
+  const portOffset = Math.max(inn.distanceTo(tip), out.distanceTo(tip), pearl);
+  const pierceBand = Math.min(dropFloor, portOffset * 0.85);
+  const pierceRadius = (distance: number, surface: number, atPort: number) => {
+    if (distance >= pierceBand) return surface;
+    const drop = surface - atPort;
+    const u = Math.max(0, Math.min(1, 1 - distance / pierceBand));
+    return surface - drop * (1 - Math.sqrt(Math.max(0, 1 - u * u)));
+  };
   const fromDir = from.clone().normalize();
   const toDir = to.clone().normalize();
   const control = (at: THREE.Vector3, tangent: THREE.Vector3, angle: number) => {
@@ -374,11 +388,14 @@ export function sewKagariLegs(
   const fromAngle = fromDir.angleTo(tip) / 3;
   const toAngle = toDir.angleTo(tip) / 3;
   const inC1 = tangents ? control(fromDir, tangents.from, fromAngle)
-    : slerpUnit(fromDir, tip, 1 / 3, new THREE.Vector3());
+    // Stacked catches: steer toward the far port, not the shared tip — the
+    // previous row already owns that V. First-row outer reverse still aims
+    // at the tip so the flanks meet as a V on the mari.
+    : slerpUnit(fromDir, onStack ? inn : tip, 1 / 3, new THREE.Vector3());
   const inC2 = slerpUnit(fromDir, inn, 2 / 3, new THREE.Vector3());
   const outC1 = slerpUnit(out, toDir, 1 / 3, new THREE.Vector3());
   const outC2 = tangents ? control(toDir, tangents.to, -toAngle)
-    : slerpUnit(tip, toDir, 2 / 3, new THREE.Vector3());
+    : slerpUnit(onStack ? out : tip, toDir, 2 / 3, new THREE.Vector3());
   const slope = (tangent: THREE.Vector3, radial: THREE.Vector3, angle: number) =>
     tangent.dot(radial) / Math.max(tangent.clone().projectOnPlane(radial).length(), 1e-12) * angle * 3;
   const fromSlope = tangents ? slope(tangents.from, fromDir, fromAngle) : 0;
@@ -387,34 +404,24 @@ export function sewKagariLegs(
     a.clone().normalize().angleTo(b.clone().normalize());
   const lengthBound = Math.max(angle(from, tip) + angle(tip, inn), angle(out, tip) + angle(tip, to));
   const n = Math.max(KAGARI_LEG_SEGS, Math.ceil(3 * lengthBound / (pearl / 6)));
-  // Enough pierce samples that each radial step stays under one pearl (test).
-  const pierceN = Math.max(8, Math.ceil((Math.max(fromR, toR) - buriedR) / (pearl / 4)));
-  // Surface approach to the far port — stay on the mari until the pierce.
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     pickupDirection(fromDir, inC1, inC2, inn, t, _a);
-    const surface = fromR + fromSlope * t * (1 - t) ** 2;
-    inPts.push(_a.clone().multiplyScalar(surface));
-  }
-  // Snap the last approach sample onto the port ray so the pierce is radial.
-  inPts[inPts.length - 1] = inn.clone().multiplyScalar(fromR);
-  for (let i = 1; i <= pierceN; i++) {
-    const t = i / pierceN;
-    inPts.push(inn.clone().multiplyScalar(fromR + (buriedR - fromR) * t));
-  }
-  // Straight emerge, then surface leave with a tip lift so outgoing clears arriving.
-  for (let i = 0; i < pierceN; i++) {
-    const t = i / pierceN;
-    outPts.push(out.clone().multiplyScalar(buriedR + (toR - buriedR) * t));
+    const stack = stackClear * smooth01(t);
+    const surface = fromR + stack + fromSlope * t * (1 - t) ** 2;
+    inPts.push(_a.clone().multiplyScalar(pierceRadius(_a.distanceTo(inn), surface, buriedR)));
   }
   for (let i = 0; i < n; i++) {
     const t = i / n;
     pickupDirection(out, outC1, outC2, toDir, t, _a);
     const u = _a.distanceTo(tip) / hug;
     const over = Math.exp(-(u * u));
+    const stack = stackClear * smooth01(1 - t);
     const lift = lift0 * over * smooth01(_a.distanceTo(toDir) / unitFromMm(1.5));
-    const surface = toR + toSlope * t * t * (t - 1) + lift;
-    outPts.push(_a.clone().multiplyScalar(surface));
+    const surface = toR + stack + toSlope * t * t * (t - 1) + lift;
+    // Same pierceRadius as inbound: near the port the leave is buried even if
+    // the tip lift term is large (matches the previous descend(surface+lift)).
+    outPts.push(_a.clone().multiplyScalar(pierceRadius(_a.distanceTo(out), surface, buriedR)));
   }
   return { inPts, outPts };
 }
