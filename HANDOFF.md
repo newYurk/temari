@@ -119,6 +119,25 @@ PATH="/Users/newyurk/.local/node-v24/bin:$PATH" \
    баг на месте). После правки — exit ≠1 в смысле clear, плюс кадры сверху/сбоку
    и `pickup-volume` / `stitches` без folded faces.
 
+### Правка прямого прокола — в работе (22.09)
+
+В `sewKagariLegs` сделано (ветка `cursor/fix-stacked-inner-pickup-115f`):
+
+- Короткая pierce-band (≤ 0,85·tip→port): снаружи — поверхность мари; внутри —
+  эллиптический спуск к `min(scoopRadius floor, 1 − NEEDLE_DEPTH_MM)`.
+- Stacked: управление к портам, не к общему tip; ramp `stackClear=pearl` к порту
+  перед нырком (0 на клипе — без скачка радиуса).
+- `stitches` + `pickup-volume` — зелёные. **`locate-studio-overlap --assert-clear`
+  всё ещё exit 1.**
+
+Замер причины оставшегося свидетеля: метки r0/r1 inner-2 ~**0,71 мм** apart;
+ближайшие порты ~**0,48 мм** — меньше диаметра перле 0,71 мм. Окно клипа
+`REVERSE_JOIN_MM=6` у r0 покрывает зону портов r1. На одной высоте поверхности
+трубки обязаны пересечься; простой tip-lift / узкий clip ломают `pickup-volume`
+(folded faces) или section-gap. Следующий шаг — либо структурный подъём всего
+stacked catch над прежним tip (включая flank `arcPath` у метки), либо разведение
+портов/меток в рецепте; не возвращать длинный гладкий нырок через общий tip.
+
 ### Инвентарь чисел для прямого прокола иглы (22.09, до реализации)
 
 Владелец: нить следует **прямой игле** внутри мари — surface → pierce → buried → pierce → surface;

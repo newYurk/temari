@@ -334,6 +334,9 @@ function reversePorts(
  * the wrap — stay on the mari until a short pierce band at the far port,
  * elliptical drop to the bury floor there, undrawn buried return under the
  * mark, rise out of the near port, then leave over the arriving flank.
+ * Stacked catches steer to the ports (not the shared tip) and ramp one pearl
+ * of height toward the port before diving. Depth is engineering
+ * (`NEEDLE_DEPTH_MM` / `scoopRadius` floor), not TemariKai's ~2 mm surface scoop.
  *
  * Inner uwagake keeps wider recipe ports; the buried bar between ports is not
  * drawn as a visible cord.

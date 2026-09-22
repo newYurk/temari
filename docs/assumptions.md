@@ -20,8 +20,9 @@
 | подхват `0,71 мм` поперёк метки | `kagari.ts` `cornerMm` | **наш выбор**: равен толщине перле №5 | ширина подхвата у метки |
 | окно клипа обратного подхвата `6 мм` | `stitches.ts` `REVERSE_JOIN_MM` | **студийная отрисовка**: обрезка фланка снаружи всего catch; для stacked — не меньше `portExtent+pearl` | где кончается surface и начинается видимый нырок |
 | окно подъёма у острия `4 мм` | `stitches.ts` `REVERSE_HUG_MM` | **студийная отрисовка**: гауссов `lift0=pearl·1,4` на исходящей | исходящая поверх входящей у tip |
-| дно студийного scoop | `kagari.ts` `scoopRadius` | **студийная отрисовка**: `1−half−0,3 мм` (пол pearl под cover); на C24 ось ~1,01 мм ниже оси на мари | bury start/stop и нынешний гладкий нырок; не измеренная глубина иглы |
+| дно студийного scoop / глубина прокола | `kagari.ts` `scoopRadius`; `stitches.ts` `NEEDLE_DEPTH_MM=1` | **студийная отрисовка**: floor `1−half−0,3 мм`; прокол не глубже 1 мм под единичной сферой; pierce-band ≤ 0,85·tip→port | bury start/stop и короткий нырок у порта; не измеренная глубина иглы |
 | глубина S8 / upper | `s8-kiku.ts` 1,2 мм; upper `6r=2,13 мм` | **инженерные образцы**, не фото | лабораторные piercing/buried, не обычный studio renderer |
+| stacked port ramp | `stitches.ts` `stackClear=pearl` × `smooth01(t)` к порту | **студийная отрисовка**: метки рядов ~1 pearl, порты могут быть ~0,5 мм — без подъёма surface-коридоры пересекаются | later inner catch над предыдущим tip |
 | какие именно цвета у наборов A и B | `jiwari.ts` `kikuThreads` | **наш подбор**: GT14 требует две нити, но hue не называет | вид цветка |
 
 **Устарело (удалено из кода, не возвращать как факт):** `REVERSE_PORT_MM`, `REVERSE_CROSS_LIFT`, `INNER_LEAVE_LIFT` / `INNER_LEAVE_WIDTH` — прежние студийные константы; актуальны `REVERSE_JOIN_MM` / `REVERSE_HUG_MM` / `scoopRadius` / `lift0`.
