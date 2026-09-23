@@ -353,9 +353,9 @@ describe("kagari recipe atom", () => {
     // wedge pulls earlier legs onto the line at the upper tips, so the deep
     // flower meets fewer A/B crossings there (440 → 365; 368 with the
     // two-thread first bite; 272 once the bottom stitch is stretched 2 mm and
-    // the petals lengthen); the same count comes out with the cap rejection
-    // switched off.
-    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 48], [10, 160, 152, 272]]) {
+    // the petals lengthen; 338 with the wedge widening a thread on each side a
+    // round); the same count comes out with the cap rejection switched off.
+    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 48], [10, 160, 152, 338]]) {
       const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, layers!, "all"))
         .filter((s) => s.kind === "arc");
       assert.equal(stitches.length, arcs, `arcs at ${layers} rounds`);
