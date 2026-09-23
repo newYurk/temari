@@ -231,16 +231,9 @@ export function arcPath(
   const lift = (t: number, dir: THREE.Vector3) => {
     // Preserve the path's declared lift at every orientation. This legacy
     // stack estimate is not a contact solver; latitude cannot correct it.
-    const bump = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts));
-    // Near-tip A/B kousa must clear the earlier tip's leave crest (lift0≈1.4·pearl
-    // in sewKagariLegs), not only STACK_LIFT·diameter≈0.84·pearl — otherwise the
-    // later set visually dives under the earlier tip bar.
-    const tipKousa = bump > 0 && (sitAts ?? []).some(
-      (a) => Math.abs(t - a.t) < 0.08 && (a.t < 0.28 || a.t > 0.72),
-    );
-    // Clear leave crest (lift0 = 1.4·pearl) plus half the lower tube.
-    const step = tipKousa ? diameter * (1.4 + 0.5) : diameter * STACK_LIFT;
-    const extra = uniform + bump * step;
+    // Flank sitAts: one STACK_LIFT step. Tip-crest clear for opposite-set
+    // kousa is the wide soft hill after tip join — not a tall local bump here.
+    const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts)) * diameter * STACK_LIFT;
     return dir.clone().multiplyScalar(1 + half * STITCH_FLAT + extra);
   };
   if (via.length === 0) {
@@ -495,6 +488,8 @@ export function sewKagariLegs(
     // Leave does not keep stackClear: rising to an elevated shelf near the tip
     // puts the emerge in the next kai's arrive corridor. Tip-gate bury clears
     // the previous tip; arrive stackClear sits over this leave.
+    // Leave rides over arrive of the *same* tip (lift0). Opposite-set kousa
+    // clears this crest with a wide soft hill after the join — not stackClear.
     const lift = lift0 * over * smooth01(_a.distanceTo(toDir) / unitFromMm(1.5));
     const surface = toR + toSlope * t * t * (t - 1) + lift;
     // Arrive: port distance. Stacked leave: require both distance from the
@@ -554,6 +549,45 @@ function clipAroundMark(
 }
 
 /**
+ * Soft radial sit on an already-built tip path. Tip join replaces arcPath and
+ * would erase opposite-set sitAts; re-apply a wide gentle hill that clears the
+ * earlier leave crest (lift0) without a short stackClear shelf.
+ *
+ * `side`: arrive = end of the leg into this tip (sitAts near t=1); leave = start
+ * of the outgoing leg (sitAts near t=0). Raising the wrong end built humps at
+ * outer tips where kousa is not.
+ */
+function raiseSitAtsNearTip(
+  pts: THREE.Vector3[],
+  tip: THREE.Vector3,
+  sitAts: readonly { t: number; n: number }[] | undefined,
+  kind: ThreadKind,
+  side: "arrive" | "leave",
+): void {
+  if (!sitAts?.length || pts.length < 2) return;
+  const relevant = sitAts.filter((a) => (side === "arrive" ? a.t > 0.72 : a.t < 0.28));
+  if (!relevant.length) return;
+  const n = Math.min(2, Math.max(1, ...relevant.map((a) => a.n)));
+  const pearl = unitFromMm(kindMm(kind));
+  // Clear leave crest (lift0=1.4·pearl) by a thin margin — one layer, spread
+  // over ~8 mm so it reads as drape, not a bridge.
+  const amount = pearl * (1.4 + 0.25) * n;
+  const falloff = unitFromMm(8);
+  const tipU = tip.clone().normalize();
+  for (const p of pts) {
+    const r = p.length();
+    // Buried pierce stays under the wrap; only raise surface cord.
+    if (r < 0.995) continue;
+    const ang = p.clone().normalize().angleTo(tipU);
+    if (ang >= falloff) continue;
+    const w = 1 - ang / falloff;
+    const smooth = w * w * (3 - 2 * w);
+    const extra = amount * smooth;
+    p.multiplyScalar((r + extra) / r);
+  }
+}
+
+/**
  * Cut the working thread at an outer mark: arriving dives across the
  * jiwari, leaving comes out over it. Drawing the buried bite as one
  * cord was the hole-and-loop at the tip. Both kinds of mark have buried ports.
@@ -565,6 +599,8 @@ function splitJoinAroundMark(
   kind: ThreadKind,
   bite?: { enter: [number, number, number]; exit: [number, number, number] },
   onStack: boolean | number = false,
+  arriveSitAts?: readonly { t: number; n: number }[],
+  leaveSitAts?: readonly { t: number; n: number }[],
 ): { head: THREE.Vector3[]; tail: THREE.Vector3[]; outPts: THREE.Vector3[] } {
   const stackDepth = Math.min(3, typeof onStack === "number" ? Math.max(0, onStack) : onStack ? 1 : 0);
   // Clip outside the entire catch. A fixed fraction of one thread put
@@ -585,6 +621,10 @@ function splitJoinAroundMark(
       to: piece[clip.k]!.clone().sub(clip.to),
     },
   );
+  // Arrive sits on earlier opposite set near this tip; leave may start a leg
+  // whose kousa is near t=0 (next stitch's sitAts).
+  raiseSitAtsNearTip(inPts, mark, arriveSitAts, kind, "arrive");
+  raiseSitAtsNearTip(outPts, mark, leaveSitAts ?? arriveSitAts, kind, "leave");
   return {
     head: [...pts, clip.from, ...inPts],
     tail: [...outPts, clip.to, ...piece.slice(clip.k)],
@@ -769,6 +809,7 @@ export function stackedArcChainParts(
   let prevBite: { enter: [number, number, number]; exit: [number, number, number] } | undefined;
   let prevTip: "inner" | "outer" | undefined;
   let prevStackDepth = 0;
+  let prevSitAts: readonly { t: number; n: number }[] | undefined;
   let emerge = true;
   let pending: THREE.Vector3[] | null = null;
   let kaiFirst: Extract<Stitch, { kind: "arc" }> | undefined;
@@ -776,18 +817,20 @@ export function stackedArcChainParts(
     if (s.tip !== "inner") return 0;
     const overs = s.operation?.overOperations?.length ?? 0;
     if (overs > 0) return Math.min(3, overs);
-    // Same-kai opposite set (GT14 A then B): kousa sits inside the tip join
-    // clip (~6 mm). sitMid on arcPath is erased there and sewKagariLegs only
-    // knew same-meridian overOperations — so B0 lost its over-A lift while A's
-    // leave tip still rose by lift0, and gold went under white. Treat a tip
-    // kousa as one under so arrive gets stackClear = pearl + lift0.
-    const tipKousa = (s.sitAts ?? []).some((a) => a.t > 0.72 || a.t < 0.28);
-    if (tipKousa) return 1;
+    // Do NOT promote opposite-set tip kousa to stackClear — that built the
+    // rectangular bridges. sitAts are re-applied gently after the tip join.
     return (s.kai ?? 0) > 0 ? 1 : 0;
   };
-  const joinAt = (piece: THREE.Vector3[], stackDepth: number) => {
+  const joinAt = (
+    piece: THREE.Vector3[],
+    stackDepth: number,
+    arriveSitAts?: readonly { t: number; n: number }[],
+    leaveSitAts?: readonly { t: number; n: number }[],
+  ) => {
     const mark = pts[pts.length - 1]!;
-    return splitJoinAroundMark(pts, piece, mark, kind, prevBite, stackDepth);
+    return splitJoinAroundMark(
+      pts, piece, mark, kind, prevBite, stackDepth, arriveSitAts, leaveSitAts,
+    );
   };
   const closeKai = () => {
     if (pending && kaiFirst && pts.length > 1 && prevTip === "inner") {
@@ -795,7 +838,9 @@ export function stackedArcChainParts(
       const mark = pts[pts.length - 1]!;
       const next0 = firstPiece[0];
       if (next0 && firstPiece.length > 1 && samePin(mark, next0)) {
-        const { head, tail } = joinAt(pending.slice(), prevStackDepth);
+        const { head, tail } = joinAt(
+          pending.slice(), prevStackDepth, prevSitAts, kaiFirst.sitAts,
+        );
         tube(head, false, false);
         tube(tail, false, false);
         pending = null;
@@ -812,7 +857,10 @@ export function stackedArcChainParts(
     }
     pts = [];
   };
-  const joinPiece = (piece: THREE.Vector3[], _kai: number | undefined) => {
+  const joinPiece = (
+    piece: THREE.Vector3[],
+    sitAts?: readonly { t: number; n: number }[],
+  ) => {
     if (pts.length === 0) {
       pts.push(...piece);
       return;
@@ -821,14 +869,16 @@ export function stackedArcChainParts(
     const next0 = piece[0]!;
     if (samePin(mark, next0) && pts.length > 1 && piece.length > 1) {
       if (prevTip === "inner") {
-        const { head, tail } = splitJoinAroundMark(pts, piece, mark, kind, prevBite, prevStackDepth);
+        const { head, tail } = splitJoinAroundMark(
+          pts, piece, mark, kind, prevBite, prevStackDepth, prevSitAts, sitAts,
+        );
         if (pending === null) pending = head;
         else tube(head, false, false);
         pts = tail;
         emerge = false;
         return;
       }
-      const { head, tail } = joinAt(piece, 0);
+      const { head, tail } = joinAt(piece, 0, sitAts, sitAts);
       if (pending === null) pending = head;
       else tube(head, false, false);
       pts = tail;
@@ -858,16 +908,18 @@ export function stackedArcChainParts(
         prevBite = undefined;
         prevTip = undefined;
         prevStackDepth = 0;
+        prevSitAts = undefined;
         kaiFirst = undefined;
       }
       kai0 = s.kai;
     }
     if (piece.length < 2) continue;
     if (!kaiFirst) kaiFirst = s;
-    joinPiece(piece, s.kai);
+    joinPiece(piece, s.sitAts);
     prevBite = s.bite;
     prevTip = s.tip;
     prevStackDepth = stackDepthOf(s);
+    prevSitAts = s.sitAts;
   }
   closeKai();
   return parts.filter((g) => (g.getAttribute("position")?.count ?? 0) > 0);

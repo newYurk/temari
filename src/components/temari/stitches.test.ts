@@ -81,6 +81,12 @@ describe("GT14 A then B: later set sits over earlier at tip kousa", () => {
           rB + 1e-4 >= rA,
           `B must sit over A at tip kousa (rB=${rB} rA=${rA} dist=${c.dist})`,
         );
+        // Soft hill may clear leave crest (~1.4·pearl) but must not be a
+        // stackClear bridge (pearl+lift0 on a short arrive ramp ≈ 2.4·pearl).
+        assert.ok(
+          rB - rA < pearl * 2.0,
+          `B-over-A must be a soft hill, not a bridge (gap=${rB - rA})`,
+        );
       }
     }
     assert.ok(meetings >= 4, `expected A/B meetings near tip, got ${meetings}`);
