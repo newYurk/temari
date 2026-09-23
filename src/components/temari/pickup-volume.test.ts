@@ -14,11 +14,11 @@ function ring(g: BufferGeometry, index: number) {
   return { center: vertices[0]!.clone().add(vertices[10]!).multiplyScalar(.5), vertices };
 }
 
-function foldedFaces(pole: number, rounds: number) {
+function foldedFaces(pole: number, rounds: number, pile = false) {
   const arcs = stitchesFromOps(compileKiku("simple", "out", "even", pole, 0, rounds, 0));
   let visible = 0;
   let folded = 0;
-  for (const geometry of createMotifGeometryParts(arcs, 0)) {
+  for (const geometry of createMotifGeometryParts(arcs, 0, undefined, { pile })) {
     const p = geometry.getAttribute("position"), n = geometry.getAttribute("normal"), indices = geometry.index!;
     for (let i = 0; i < indices.count; i += 3) {
       const a = indices.getX(i), b = indices.getX(i + 1), c = indices.getX(i + 2);
@@ -36,8 +36,8 @@ function foldedFaces(pole: number, rounds: number) {
 }
 
 describe("finite-volume Kiku pickups", () => {
-  it("has no inverted visible tube faces through ten packed rows", {
-    todo: "renderer by chronology (night queue 6–7): ten rows still fold tube faces at the tips",
+  it("has no inverted visible tube faces through ten packed rows (old path, ?pile=0)", {
+    todo: "old path, 10 rows: 595 folded faces at the tips (pole 0, set A, fd05afd)",
   }, () => {
     // Cut from ten rows to five on 22.09 while tuning tip heights; restored
     // as the full-flower contract (night queue task 4).
@@ -48,7 +48,7 @@ describe("finite-volume Kiku pickups", () => {
     }
   });
 
-  it("has no inverted visible tube faces through five packed rows, including the closing pickup", () => {
+  it("has no inverted visible tube faces through five packed rows, including the closing pickup (old path, ?pile=0)", () => {
     // Snug one-pearl pitch densifies the flower; ten-round residual folds are
     // tracked with arrive-over / under-whole-pile work (#94), not a reason to
     // reopen an engineered 1½× gap (owner 22.09: pack then pierce).
@@ -74,6 +74,18 @@ describe("finite-volume Kiku pickups", () => {
         }
         assert.ok(visible > 10000);
         assert.equal(folded, 0, `pole ${pole}, ${rounds} rounds: folded visible faces`);
+      }
+    }
+  });
+
+  it("has no inverted visible tube faces through five rows in the pile render (the workshop default)", {
+    todo: "pile: 137 / 1689 / 3891 folded faces at 1 / 3 / 5 rows, 10481 at 10 (pole 0, set A, c252318) — steep rises; spec/pile-render.md",
+  }, () => {
+    for (const pole of [0, 1]) {
+      for (const rounds of [1, 3, 5]) {
+        const { visible, folded } = foldedFaces(pole, rounds, true);
+        assert.ok(visible > 10000);
+        assert.equal(folded, 0, `pile, pole ${pole}, ${rounds} rounds: folded visible faces`);
       }
     }
   });
