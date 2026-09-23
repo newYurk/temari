@@ -2,7 +2,7 @@
  * Planar map of one kiku tip in the pile render (spec/pile-render.md): every
  * piece of thread seen from above, a colour per round, dashed where it is
  * inside the wrap, line width by height; round dots are marks, crosses are the
- * recipe ports. Red rings mark sharp turns (hooks). Prints per piece its
+ * recipe ports; --recipe overlays the recipe lay in thin white. Red rings mark sharp turns (hooks). Prints per piece its
  * sharpest turn, highest point and steepest slope.
  *
  *   node --import tsx scripts/kiku-tip-map.mts --rounds=4 --set=0 --tip=inner-2 --out=screenshots/tip-map.html
@@ -10,7 +10,7 @@
 import { writeFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { compileKiku, stitchesFromOps } from '../src/components/temari/patterns.ts';
-import { pileParts } from '../src/components/temari/stitches.ts';
+import { arcPath, pileParts } from '../src/components/temari/stitches.ts';
 import { MARI_C_CM } from '../src/components/temari/measure.ts';
 
 const arg = (n: string, f: string) => process.argv.find(a => a.startsWith(`--${n}=`))?.slice(n.length + 3) ?? f;
@@ -84,6 +84,18 @@ parts.forEach((part, pi) => {
     svg += `<circle cx="${c[0]}" cy="${c[1]}" r="10" fill="none" stroke="red" stroke-width="2"/>`;
   }
 });
+// recipe lay (what patterns.ts asks for, before the renderer rebuilds legs near the tip): thin white
+if (process.argv.includes('--recipe')) {
+  for (const st of stitches as any[]) {
+    if (st.kind !== 'arc') continue;
+    const P = arcPath({ ...st, sitA: 0, sitB: 0, sitMid: 0, sitMidT: undefined, sitAts: undefined }, 'pearl5').map(map);
+    for (let i = 1; i < P.length; i++) {
+      if (!inWin(P[i]) && !inWin(P[i - 1])) continue;
+      const a = px(P[i - 1]), b = px(P[i]);
+      svg += `<line x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}" stroke="#fff" stroke-opacity="0.9" stroke-width="1.2"/>`;
+    }
+  }
+}
 // marks and ports
 for (const op of ops) {
   const at = map(new THREE.Vector3(...op.mark.at));
