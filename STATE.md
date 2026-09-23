@@ -1,10 +1,10 @@
 # Темари — техническое ведение и следующий этап
 
-Обновлено 23 сентября 2026 года. Рабочая ветка `codex/temari-next` (PR #92) передана главному
-инженеру-агенту для слияния в `main` — порядок и решения до слияния в верхнем разделе
-[HANDOFF.md](HANDOFF.md). Рабочее дерево ветки: `/Users/newyurk/Desktop/Home/Projects/temari/.grok/worktrees/codex-temari-next`.
-Навигация, а не журнал: хроника срезов — [docs/journal.md](docs/journal.md), задачи и
-проверки — [HANDOFF.md](HANDOFF.md).
+Обновлено 23 сентября 2026 года (передача `373c32a`, код `9e49867`, 409 тестов: 406 pass, 3 todo).
+Ветка `codex/temari-next` (PR #92) передана главному инженеру-агенту для слияния в `main` — порядок,
+решения до слияния и известные дефекты в верхнем разделе [HANDOFF.md](HANDOFF.md); issues размечены 23.09.
+Рабочее дерево ветки: `/Users/newyurk/Desktop/Home/Projects/temari/.grok/worktrees/codex-temari-next`.
+Навигация, а не журнал: хроника — [docs/journal.md](docs/journal.md), задачи и проверки — [HANDOFF.md](HANDOFF.md).
 
 **Ревью цикла 22.09 (23.09):** [разбор](reviews/2026-09-23-kiku-loop-review.md),
 [ремесло верхнего стежка](docs/craft-questions.md), [матрица способностей](spec/kiku-capabilities.md).
