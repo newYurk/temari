@@ -131,7 +131,7 @@ export default function UpperBundleControl() {
   };
   return <section className="absolute inset-0 flex flex-col bg-linen" aria-label="Контроль трёх верхних подхватов">
     <header className="z-10 flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
-      <strong>Верхний подхват · три визита</strong><a className="underline" href="./">К мастерской</a>
+      <strong>Верхний подхват · три визита</strong><nav className="flex gap-3"><a className="underline" href="?upper-bundle=1&control=needle">Прямой проход</a><a className="underline" href="./">К мастерской</a></nav>
     </header>
     <div className="relative min-h-0 flex-1">
       {mode === 'map' ? <BundleMap bundle={bundle} count={count} whole={wholeMap} /> :

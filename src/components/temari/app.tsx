@@ -5,6 +5,7 @@ import { unlock } from "./feel";
 
 const UpperKikuControl = lazy(() => import("./UpperKikuControl"));
 const UpperBundleControl = lazy(() => import("./UpperBundleControl"));
+const NeedleChannelControl = lazy(() => import("./NeedleChannelControl"));
 
 export function TemariApp() {
   const [on, setOn] = useState(false);
@@ -12,6 +13,8 @@ export function TemariApp() {
     && new URLSearchParams(window.location.search).get("upper-kiku") === "1");
   const [bundleControl] = useState(() => typeof window !== "undefined"
     && new URLSearchParams(window.location.search).get("upper-bundle") === "1");
+  const [needleControl] = useState(() => typeof window !== "undefined"
+    && new URLSearchParams(window.location.search).get("control") === "needle");
 
   useEffect(() => {
     setOn(true);
@@ -22,7 +25,8 @@ export function TemariApp() {
       className="relative h-dvh overflow-hidden bg-linen text-ink"
       onPointerDownCapture={() => unlock()}
     >
-      {bundleControl ? <Suspense fallback={<p role="status">Загрузка трёх подхватов…</p>}><UpperBundleControl /></Suspense>
+      {bundleControl && needleControl ? <Suspense fallback={<p role="status">Загрузка прямого прохода…</p>}><NeedleChannelControl /></Suspense>
+      : bundleControl ? <Suspense fallback={<p role="status">Загрузка трёх подхватов…</p>}><UpperBundleControl /></Suspense>
       : upperControl ? <Suspense fallback={<p role="status">Загрузка контроля…</p>}><UpperKikuControl /></Suspense> : <>
       <div
         className="absolute inset-x-0 z-0"

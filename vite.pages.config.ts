@@ -8,6 +8,12 @@ import { runtimeModelSource } from "./scripts/lib/stitch-diagram-data.ts";
 
 export default defineConfig(({ command }) => ({
   define: {
+    __NEEDLE_CHANNEL_SOURCE__: JSON.stringify({
+      mode: command === "build" ? "build" : "development-startup",
+      model: runtimeModelSource(fileURLToPath(new URL(".", import.meta.url)), "src/components/temari/single-needle-catch.ts"),
+      renderer: runtimeModelSource(fileURLToPath(new URL(".", import.meta.url)), "src/components/temari/NeedleChannelControl.tsx"),
+      dependencies: createHash("sha256").update(readFileSync(new URL("./package-lock.json", import.meta.url))).digest("hex"),
+    }),
     __UPPER_BUNDLE_SOURCE__: JSON.stringify({
       mode: command === "build" ? "build" : "development-startup",
       model: runtimeModelSource(fileURLToPath(new URL(".", import.meta.url)), "src/components/temari/upper-bundle.ts", "src/components/temari/upper-bundle.worker.ts"),
