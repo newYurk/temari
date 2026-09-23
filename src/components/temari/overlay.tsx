@@ -1,11 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { THREAD_COLORS } from "./palettes";
 import { PUZZLES } from "./puzzles";
 import { fillsMatch, polePositions } from "./division";
 import { useTemari } from "./store";
-import { unlock } from "./feel";
 import { ActionBar } from "./ActionBar";
 import { IconPoles } from "./icons";
 
@@ -34,21 +32,17 @@ function useChromeVar(
 
 export function Overlay() {
   const mode = useTemari((s) => s.mode);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (new URLSearchParams(window.location.search).get("kiku") !== "1") return;
-    useTemari.getState().showExample();
+    if (new URLSearchParams(window.location.search).get("kiku") === "1") {
+      useTemari.getState().showExample();
+      return;
+    }
+    if (useTemari.getState().mode === "title") useTemari.getState().enterStudio();
   }, []);
 
-  if (mode === "title") {
-    return (
-      <div className="pointer-events-none absolute inset-0 z-20">
-        <TitleLayer />
-      </div>
-    );
-  }
-
-  return <Workbench />;
+  return mode === "title" ? null : <Workbench />;
 }
 
 function RecenterButton({ className }: { className?: string }) {
@@ -71,84 +65,18 @@ function RecenterButton({ className }: { className?: string }) {
       title={label}
       onClick={resetView}
       className={cn(
-        "pointer-events-auto flex size-10 items-center justify-center rounded-full bg-linen/80 text-ink ring-1 ring-line",
+        "pointer-events-auto flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-full bg-linen/80 px-2.5 text-sm text-ink ring-1 ring-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:px-3",
         className,
       )}
     >
       <IconPoles next={nextNorth ? "north" : "south"} className="size-5" />
+      <span className="max-w-32 text-xs sm:max-w-none sm:text-sm">{n === 2 ? label : "Следующий полюс"}</span>
     </button>
-  );
-}
-
-function TitleLayer() {
-  const enterStudio = useTemari((s) => s.enterStudio);
-  const wrapColor = useTemari((s) => s.wrapColor);
-  const setWrapColor = useTemari((s) => s.setWrapColor);
-  const topRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  useChromeVar("--temari-chrome-top", topRef);
-  useChromeVar("--temari-chrome-bottom", bottomRef);
-
-  return (
-    <div className="flex h-full flex-col px-5 py-6 md:px-10 md:py-10">
-      <div ref={topRef} className="flex items-start justify-between gap-4 pt-[env(safe-area-inset-top)]">
-        <div className="max-w-md">
-          <h1 className="temari-rise font-display text-4xl font-medium tracking-tight text-ink md:text-5xl">
-            Темари
-          </h1>
-          <p className="temari-rise temari-rise-2 mt-2 max-w-sm text-sm leading-relaxed text-stone">
-            Вышивайте на готовом шаре: выберите разметку, поставьте метки
-            и начните с кику — узора хризантемы.
-          </p>
-        </div>
-        <RecenterButton />
-      </div>
-      <div className="min-h-0 flex-1" aria-hidden />
-      <div ref={bottomRef} className="temari-rise temari-rise-3 pointer-events-auto max-w-md pb-[env(safe-area-inset-bottom)]">
-        <div className="mb-3 flex items-center gap-2">
-          {THREAD_COLORS.map((color, i) => (
-            <button
-              key={color}
-              type="button"
-              aria-label={`Цвет ${i + 1}`}
-              onClick={() => setWrapColor(i)}
-              className={cn(
-                "size-8 rounded-full",
-                wrapColor === i ? "ring-2 ring-ink ring-offset-2 ring-offset-linen" : "ring-1 ring-line",
-              )}
-              style={{ backgroundColor: color }}
-            />
-          ))}
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-          <Button
-            onPointerDown={() => unlock()}
-            onClick={enterStudio}
-            className="bg-ink text-linen"
-          >
-            К вышивке
-          </Button>
-          <a
-            href="./design.html"
-            className="inline-flex h-9 items-center px-2 text-xs tracking-wide text-stone underline-offset-4 hover:text-ink hover:underline"
-          >
-            как устроена вышивка
-          </a>
-          <a
-            href="./lab.html"
-            className="inline-flex h-9 items-center px-2 text-xs tracking-wide text-stone underline-offset-4 hover:text-ink hover:underline"
-          >
-            исследование C8
-          </a>
-        </div>
-      </div>
-    </div>
   );
 }
 
 function Workbench() {
   const mode = useTemari((s) => s.mode);
-  const toTitle = useTemari((s) => s.toTitle);
   const puzzleIndex = useTemari((s) => s.puzzleIndex);
   const solved = useTemari((s) => s.solved);
   const fills = useTemari((s) => s.fills);
@@ -169,13 +97,7 @@ function Workbench() {
         className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-4 pt-4 md:px-8 md:pt-8"
       >
         <div className="pt-[env(safe-area-inset-top)]">
-          <button
-            type="button"
-            onClick={toTitle}
-            className="pointer-events-auto relative z-20 font-display text-xl font-medium tracking-tight text-ink"
-          >
-            Темари
-          </button>
+          <p className="font-display text-xl font-medium tracking-tight text-ink">Темари</p>
         </div>
         <div className="flex items-start gap-2 pt-[env(safe-area-inset-top)]">
           {mode === "kata" && puzzle ? (

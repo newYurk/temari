@@ -7,7 +7,7 @@
  *
  * Picker UI comes later. Geometry reads thickness from here.
  */
-import { STITCH_THREAD_MM, unitFromMm } from "./measure";
+import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 export type ThreadRole = "wrap" | "mark" | "stitch";
 export type ThreadKind = "serger" | "pearl5" | "pearl8" | "mouline" | "metallic";
 

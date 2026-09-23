@@ -100,6 +100,9 @@ function tone(
 export function haptic(pattern: number | number[]) {
   try {
     if (typeof navigator === "undefined" || !navigator.vibrate) return;
+    // Automatic examples can start before any gesture. Browsers reject haptics
+    // in that state; wait for real interaction rather than making a blocked call.
+    if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
     if (Array.isArray(pattern)) navigator.vibrate(pattern);
     else navigator.vibrate(pattern);
   } catch {

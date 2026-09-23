@@ -1,0 +1,6 @@
+#ab-view { width: 100%; aspect-ratio: 1; overflow: hidden; border-radius: 12px; background: #e3ddd3; touch-action: none; }
+#ab-view canvas { display: block; width: 100%; height: 100%; }
+#ab-report { max-width: 100%; max-height: 26rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
+#ab-status { padding: 12px 0; border-top: 1px solid #c5bbab; border-bottom: 1px solid #c5bbab; line-height: 1.5; }
+.ab-workbench .buttons button { background: transparent; color: inherit; border-color: #bfb5a6; }
+.ab-workbench .buttons button[aria-pressed="true"] { background: #3a3630; color: #fff7ed; border-color: #3a3630; }

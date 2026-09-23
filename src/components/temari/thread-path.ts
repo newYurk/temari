@@ -48,7 +48,13 @@ export type ThreadCrossing = {
   opId: string;
   /** Consecutive windows allow a crossing through a smooth curve join. */
   working: ThreadWindow[];
+  /** A support or a single previously laid span; with targetChain, its first window. */
   target: ThreadTarget;
+  /**
+   * Optional consecutive G1 windows of one previously laid thread, e.g. a
+   * computed multi-piece span. Exactly one crossing is required over the chain.
+   */
+  targetChain?: ThreadWindow[];
   pass: "over" | "under";
 };
 export type ThreadCapture = {

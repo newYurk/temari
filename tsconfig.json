@@ -17,6 +17,8 @@
     "src/components",
     "src/lib/utils.ts",
     "src/pages.tsx",
+    "src/passport.tsx",
+    "src/s8-ab-view.ts",
     "src/lab.ts",
     "src/spatial-catch.worker.ts",
     "vite.pages.config.ts"

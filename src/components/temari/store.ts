@@ -31,6 +31,7 @@ import {
   kikuWorkingPins,
   kikuMarksReady,
   snapToKikuMark,
+  kikuPinHint,
   KIKU_PIN_MISS,
   sameFocus,
   slotKey,
@@ -44,7 +45,7 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import * as feel from "./feel";
-import { c8Pins, c10Pins, jiwariNormals, jiwariVisiblePins, simplePins, type JiwariPhase } from "./jiwari";
+import { c8Pins, c10Pins, kikuThreads, kikuThreadsFor, jiwariNormals, jiwariVisiblePins, simplePins, type JiwariPhase } from "./jiwari";
 
 export type Mode = "title" | "studio" | "kata";
 
@@ -60,10 +61,14 @@ type Save = {
   craft?: Craft;
   pins?: Pin[];
   pinArcs?: PinArc[];
+  /** The two working threads of a kiku; older saves have none. */
+  kagariColors?: [number, number];
 };
 
 const SAVE_KEY = "temari-v1";
 const MAX_PINS = 48;
+const INITIAL_WRAP = 0;
+const INITIAL_WRAP_HEX = threadHex(INITIAL_WRAP);
 
 function isDivision(value: unknown): value is Division {
   return value === "simple" || value === "c8" || value === "c10";
@@ -97,6 +102,11 @@ function isPins(value: unknown): value is Pin[] {
       typeof (item as Pin).id === "string" &&
       isVec3((item as Pin).p),
   );
+}
+
+function isPair(value: unknown): value is [number, number] {
+  return Array.isArray(value) && value.length === 2 &&
+    value.every((n) => typeof n === "number" && Number.isFinite(n));
 }
 
 function isArcs(value: unknown): value is PinArc[] {
@@ -135,18 +145,21 @@ function writeSave(save: Save) {
 const initial = loadSave();
 
 let studioDraft: Omit<Save, "v" | "solved"> = {
-  division: isDivision(initial.division) ? initial.division : "c8",
+  division: isDivision(initial.division) ? initial.division : "simple",
   paletteId: isPaletteId(initial.paletteId) ? initial.paletteId : "beni",
   selectedColor:
-    typeof initial.selectedColor === "number"
+    typeof initial.selectedColor === "number" && Number.isFinite(initial.selectedColor)
       ? clampColor(initial.selectedColor)
-      : 0,
-  fills: Array.isArray(initial.fills) ? initial.fills : emptyFills("c8"),
+      : kikuThreads(INITIAL_WRAP)[0],
+  fills: Array.isArray(initial.fills) ? initial.fills : [],
   motif: isMotifId(initial.motif) ? initial.motif : "none",
   sewn: isSewn(initial.sewn) ? initial.sewn : [],
   craft: isCraft(initial.craft) ? initial.craft : "wind",
   pins: isPins(initial.pins) ? initial.pins : [],
   pinArcs: isArcs(initial.pinArcs) ? initial.pinArcs : [],
+  kagariColors: isPair(initial.kagariColors)
+    ? [clampColor(initial.kagariColors[0]), clampColor(initial.kagariColors[1])]
+    : undefined,
 };
 
 function persist(solved: string[]) {
@@ -198,6 +211,19 @@ type TemariState = {
   kagariFocus: Vec3 | null;
   kagariKept: Stitch[];
   kagariSet: 0 | 1;
+  /**
+   * A kiku is sewn with two working threads that alternate by rounds, and a
+   * thread keeps its colour: what set B is sewn in does not repaint set A.
+   */
+  kagariColors: [number, number];
+  /**
+   * Which of the two threads the palette paints: 0 or 1 once the player chose
+   * «1» or «2», null to follow the thread in hand. Any change of the hand (a
+   * group finished, undone, a new flower) returns it to null.
+   */
+  kagariEdit: 0 | 1 | null;
+  /** One entry per group of petals laid, so «Отменить» can take a group back. */
+  kagariHistory: KagariStep[];
   facingPole: number;
   startPin: Vec3 | null;
   originNonce: number;
@@ -215,6 +241,8 @@ type TemariState = {
   setMotif: (id: MotifId) => void;
   setCraft: (craft: Craft) => void;
   setColor: (index: number) => void;
+  /** Choose which working thread of a kiku the palette paints. */
+  editThread: (slot: 0 | 1) => void;
   setWrapColor: (index: number) => void;
   paint: (region: number) => void;
   sew: (slot: KikuSlot) => void;
@@ -241,9 +269,22 @@ type TemariState = {
   startKagari: () => void;
   advanceKagari: () => void;
   fillKiku: () => void;
+  /**
+   * Sew every row this pole still has room for, in the order the hand would:
+   * one kai of the first four, then of the second four, and so on. One undo.
+   */
+  finishKiku: () => void;
+  /** Grow this pole by `count` kais, or to the equator. Plays the stitches. */
+  sewKikuRows: (count: number | "all") => void;
   setStartPin: (local: Vec3) => void;
   setFacingPole: (index: number) => void;
   showExample: () => void;
+  /**
+   * Test shortcut: S8 marking finished and the kiku working pins set at the
+   * pole that faces the viewer, without touching the view. Sewing starts with
+   * «Начать кику»; a flower already sewn at another pole stays.
+   */
+  quickKiku: () => void;
 };
 
 function rememberStudio(state: TemariState) {
@@ -258,6 +299,7 @@ function rememberStudio(state: TemariState) {
     craft: state.craft,
     pins: state.pins,
     pinArcs: state.pinArcs,
+    kagariColors: state.kagariColors,
   };
   persist(state.solved);
 }
@@ -306,21 +348,73 @@ function withKikuMarks(
 
 function idleKagari(): Pick<
   TemariState,
-  "kagariPlan" | "kagariLaid" | "kagariPlaying" | "kagariFocus" | "kagariKept"
+  "kagariPlan" | "kagariLaid" | "kagariPlaying" | "kagariFocus" | "kagariKept" | "kagariHistory"
 > {
-  return { kagariPlan: [], kagariLaid: 0, kagariPlaying: false, kagariFocus: null, kagariKept: [] };
+  return { kagariPlan: [], kagariLaid: 0, kagariPlaying: false, kagariFocus: null, kagariKept: [],
+    kagariHistory: [] };
+}
+
+/** What a group of petals is undone back to: the thread as it stood before it. */
+type KagariStep = Pick<
+  TemariState,
+  "kagariPlan" | "kagariLaid" | "kagariFocus" | "kagariKept" | "kagariSet" | "kikuLayers"
+  | "craft" | "pins"
+>;
+
+function kagariStep(s: TemariState): KagariStep {
+  return { kagariPlan: s.kagariPlan, kagariLaid: s.kagariLaid, kagariFocus: s.kagariFocus,
+    kagariKept: s.kagariKept, kagariSet: s.kagariSet, kikuLayers: s.kikuLayers, craft: s.craft,
+    pins: s.pins };
+}
+
+/**
+ * Stitches that grow this pole's flower from the rows it has to `toLayer`.
+ * First four are one round; after the other four each kai packs both groups —
+ * GT14 alternate, not all-of-A then all-of-B, so layers are grown one by one.
+ */
+function kikuExtra(s: TemariState, toLayer: number): Stitch[] {
+  const plan = (layers: number, onlySet: 0 | 1) =>
+    motifStitchPlan(s.division, "kiku", s.kagariDir, s.kagariSpacing, s.facingPole,
+      s.kagariColors[onlySet], layers, onlySet);
+  const extra: Stitch[] = [];
+  for (let layer = s.kikuLayers + 1; layer <= toLayer; layer++) {
+    for (const onlySet of [0, 1] as const) {
+      extra.push(...plan(layer, onlySet).slice(plan(layer - 1, onlySet).length));
+    }
+  }
+  return extra;
+}
+
+/** Deeper than a flower has groups; a long session cannot grow it without bound. */
+function pushKagari(s: TemariState) {
+  return [...s.kagariHistory, kagariStep(s)].slice(-20);
+}
+
+function draftKagariColors(wrapColor: number): [number, number] {
+  return isPair(studioDraft.kagariColors)
+    ? [clampColor(studioDraft.kagariColors[0]), clampColor(studioDraft.kagariColors[1])]
+    : kikuThreads(wrapColor);
+}
+
+/** Restore preferences before an action can persist the new workshop state. */
+function draftStudioSettings(wrapColor: number) {
+  return {
+    division: studioDraft.division,
+    paletteId: studioDraft.paletteId,
+    selectedColor: studioDraft.selectedColor,
+    fills: padFills(studioDraft.fills, studioDraft.division),
+    kagariColors: draftKagariColors(wrapColor),
+  };
 }
 
 export const useTemari = create<TemariState>((set, get) => ({
-  mode: "title",
-  division: "simple",
-  paletteId: "beni",
-  motif: "kiku",
-  craft: "wind",
-  selectedColor: 0,
-  wrapColor: 0,
-  wrapHex: "#8f3d32",
-  fills: emptyFills("simple"),
+  // Workshop first: a prepared mari. Wrap colour is a workshop control.
+  mode: "studio",
+  ...draftStudioSettings(INITIAL_WRAP),
+  motif: "none",
+  craft: "pin",
+  wrapColor: INITIAL_WRAP,
+  wrapHex: INITIAL_WRAP_HEX,
   sewn: [],
   pins: [],
   pinArcs: [],
@@ -334,16 +428,16 @@ export const useTemari = create<TemariState>((set, get) => ({
   history: [],
   sewnHistory: [],
   pinHistory: [],
-  wrapCount: 0,
+  wrapCount: 1,
   wrapUndoNonce: 0,
   wrapResetNonce: 0,
   viewNonce: 0,
   viewPole: 0,
   poseDirty: true,
-  wrapProgress: 0,
+  wrapProgress: 1,
   threadWidth: 0.42,
-  wrapStarted: false,
-  layerDone: false,
+  wrapStarted: true,
+  layerDone: true,
   wrapPass: 3,
   kikuLayers: 1,
   kagariDir: "out",
@@ -354,6 +448,8 @@ export const useTemari = create<TemariState>((set, get) => ({
   kagariFocus: null,
   kagariKept: [],
   kagariSet: 0,
+  kagariEdit: null,
+  kagariHistory: [],
   facingPole: 0,
   startPin: null,
   originNonce: 0,
@@ -364,18 +460,14 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   enterStudio: () => {
     feel.unlock();
-    const division = studioDraft.division;
-    const hasPaint = studioDraft.fills.some((v) => v >= 0);
     set({
       mode: "studio",
-      division,
-      paletteId: studioDraft.paletteId,
+      ...draftStudioSettings(get().wrapColor),
       motif: "none",
       craft: "pin",
-      selectedColor: studioDraft.selectedColor,
+      kagariEdit: null,
       wrapColor: get().wrapColor,
       wrapHex: get().wrapHex,
-      fills: hasPaint ? padFills(studioDraft.fills, division) : emptyFills(division),
       sewn: [],
       pins: [],
       pinArcs: [],
@@ -634,7 +726,16 @@ export const useTemari = create<TemariState>((set, get) => ({
       const next = state.jiwariLaid + 1;
       feel.stitch();
       if (next >= 5) {
-        set({ jiwariPhase: "done", jiwariLaid: 5, pins: simplePins("done") });
+        const marks = kikuWorkingPins("simple", state.facingPole);
+        set({
+          jiwariPhase: "done",
+          jiwariLaid: 5,
+          pins: [],
+          motif: "kiku",
+          craft: "pin",
+          activePin: null,
+          pinNote: kikuPinHint(0, marks.length),
+        });
       } else {
         set({ jiwariLaid: next });
       }
@@ -714,14 +815,16 @@ export const useTemari = create<TemariState>((set, get) => ({
         }
         const complete = s.kagariLaid >= s.kagariPlan.length && s.kagariPlan.length > 0;
         if (complete && s.kagariSet === 0) {
-          set({ kagariSet: 1 });
+          // The hand takes the second thread: the palette shows what it holds.
+          set({ kagariSet: 1, selectedColor: s.kagariColors[1], kagariEdit: null, kagariHistory: pushKagari(s) });
           get().startKagari();
           return;
         }
         if (complete && s.kagariSet === 1) {
           const next = nextKagariPole(s.division, s.motif, s.kagariPlan, s.kagariKept);
           if (next != null && s.facingPole === next) {
-            set({ kagariSet: 0, kikuLayers: 1 });
+            set({ kagariSet: 0, kikuLayers: 1, selectedColor: s.kagariColors[0], kagariEdit: null,
+              kagariHistory: pushKagari(s) });
             get().startKagari();
           }
           return;
@@ -743,7 +846,9 @@ export const useTemari = create<TemariState>((set, get) => ({
       pins: pinningKiku ? [] : get().jiwariOn && get().motif !== "none"
         ? withKikuMarks(get(), id) : get().pins,
       pinArcs: pinningKiku ? [] : get().pinArcs,
-      pinNote: null,
+      pinNote: pinningKiku
+        ? kikuPinHint(0, kikuWorkingPins(get().division, get().facingPole).length)
+        : null,
       activePin: null,
       ...idleKagari(),
     });
@@ -760,34 +865,57 @@ export const useTemari = create<TemariState>((set, get) => ({
     rememberStudio(get());
   },
 
+  editThread: (slot) => {
+    const state = get();
+    set({ kagariEdit: slot, selectedColor: state.kagariColors[slot] });
+  },
   setColor: (index) => {
     const selectedColor = clampColor(index);
     const state = get();
-    if (state.motif === "kiku" && motifSupport(state.division, state.motif).supported && state.kagariPlan.length > 0) {
-      const fresh = motifStitchPlan(
-        state.division,
-        state.motif,
-        state.kagariDir,
-        state.kagariSpacing,
-        state.facingPole,
-        selectedColor,
-        state.kikuLayers,
-        state.motif === "kiku" ? state.kagariSet : "all",
-      );
+    // The palette holds the thread in hand. With the first group finished the
+    // hand has already taken the second thread, even though the set only turns
+    // over when «Вторая группа» is pressed.
+    const laidOut = state.kagariPlan.length > 0 && state.kagariLaid >= state.kagariPlan.length;
+    const inHand: 0 | 1 = state.kagariSet === 0 && laidOut ? 1 : state.kagariSet;
+    // The thread chosen with «1»/«2», else the one in hand. Outside a kiku the
+    // pick is the first working thread; the second one is kept.
+    const target: 0 | 1 = state.motif === "kiku" ? (state.kagariEdit ?? inHand) : 0;
+    const kagariColors: [number, number] = target === 1
+      ? [state.kagariColors[0], selectedColor]
+      : [selectedColor, state.kagariColors[1]];
+    // Repainting touches only the thread in hand, and only where it is not laid
+    // yet. It changes the colour of those stitches and nothing else: rebuilding
+    // the plan from the recipe used to put one set's stitches at another set's
+    // places once a grown round held both, which moved thread that was about to
+    // be sewn.
+    if (state.motif === "kiku" && state.kagariPlan.length > 0) {
       const plan = state.kagariPlan.map((stitch, i) =>
-        i >= state.kagariLaid ? (fresh[i] ?? stitch) : stitch,
+        i >= state.kagariLaid && (stitch.kind === "arc" ? (stitch.set ?? inHand) === target : target === inHand)
+          ? { ...stitch, color: selectedColor }
+          : stitch,
       );
-      set({ selectedColor, kagariPlan: plan });
+      set({ selectedColor, kagariColors, kagariPlan: plan });
     } else {
-      set({ selectedColor });
+      set({ selectedColor, kagariColors });
     }
     rememberStudio(get());
   },
   setWrapColor: (index) => {
-    if (get().mode === "studio" && get().layerDone) return;
+    if (get().mode === "kata") return;
     const wrapColor = clampColor(index);
+    if (wrapColor === get().wrapColor) return;
     const wrapHex = threadHex(wrapColor);
-    set({ wrapColor, wrapHex, selectedColor: wrapColor });
+    const kagariColors = kikuThreadsFor(get().kagariColors, wrapColor);
+    const selectedColor = kagariColors.includes(get().selectedColor)
+      ? get().selectedColor
+      : kagariColors[0];
+    set({
+      wrapColor,
+      wrapHex,
+      kagariColors,
+      selectedColor,
+      wrapResetNonce: get().wrapResetNonce + 1,
+    });
     rememberStudio(get());
   },
 
@@ -875,10 +1003,18 @@ export const useTemari = create<TemariState>((set, get) => ({
       ? state.pins.filter((_, i) => i !== hit)
       : [...state.pins, { id: mark?.id ?? `p-${Date.now().toString(36)}-${state.pins.length}`, p }];
     feel.pin();
+    const note = state.motif === "kiku"
+      ? kikuPinHint(
+          kikuWorkingPins(state.division, state.facingPole).filter((m) =>
+            pins.some((pin) => pin.p[0] * m.p[0] + pin.p[1] * m.p[1] + pin.p[2] * m.p[2] > 0.995),
+          ).length,
+          kikuWorkingPins(state.division, state.facingPole).length,
+        )
+      : null;
     set({
       pins,
       activePin: null,
-      pinNote: null,
+      pinNote: note,
       pinHistory: [...state.pinHistory, snap].slice(-40),
     });
     rememberStudio(get());
@@ -944,14 +1080,25 @@ export const useTemari = create<TemariState>((set, get) => ({
     }
     if (state.craft === "pin" || state.motif === "none") {
       const prev = state.pinHistory[state.pinHistory.length - 1];
-      if (!prev) return;
-      set({
-        pins: prev.pins,
-        pinArcs: prev.pinArcs,
-        activePin: prev.activePin,
-        pinNote: null,
-        pinHistory: state.pinHistory.slice(0, -1),
-      });
+      // With no pin step left, the thread is next: marks first, then the flower.
+      if (prev) {
+        set({
+          pins: prev.pins,
+          pinArcs: prev.pinArcs,
+          activePin: prev.activePin,
+          pinNote: null,
+          pinHistory: state.pinHistory.slice(0, -1),
+        });
+        rememberStudio(get());
+        return;
+      }
+    }
+    const group = state.kagariHistory[state.kagariHistory.length - 1];
+    if (group) {
+      // A laid group goes back whole: the needle stops where it entered it, and
+      // the hand holds the thread of the group it has returned to.
+      set({ ...group, kagariPlaying: false, selectedColor: state.kagariColors[group.kagariSet], kagariEdit: null,
+        kagariHistory: state.kagariHistory.slice(0, -1) });
       rememberStudio(get());
       return;
     }
@@ -1053,18 +1200,22 @@ export const useTemari = create<TemariState>((set, get) => ({
       facingPole: next,
       viewNonce: state.viewNonce + 1,
       poseDirty: false,
+      // A flower there starts with the first working thread again.
+      ...(flipped && state.motif === "kiku" ? { selectedColor: state.kagariColors[0], kagariEdit: null } : {}),
+      // Turning to another pole starts a new flower there; what is sewn stays sewn.
       ...(flipped && state.motif === "kiku"
         ? {
             pins: [],
             craft: "pin" as const,
             activePin: null,
-            pinNote: null,
+            pinNote: kikuPinHint(0, kikuWorkingPins(state.division, next).length),
             kagariSet: 0 as const,
             kikuLayers: 1,
             kagariPlan: [],
             kagariLaid: 0,
             kagariPlaying: false,
             kagariFocus: null,
+            kagariKept: [...state.kagariKept, ...state.kagariPlan.slice(0, state.kagariLaid)],
           }
         : {}),
     });
@@ -1144,7 +1295,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       state.kagariDir,
       state.kagariSpacing,
       which,
-      state.selectedColor,
+      state.motif === "kiku" ? state.kagariColors[state.kagariSet] : state.selectedColor,
       state.kikuLayers,
       onlySet,
     );
@@ -1155,9 +1306,10 @@ export const useTemari = create<TemariState>((set, get) => ({
         : state.motif === "kiku" && state.kagariSet === 1
           ? prev
           : prev.filter((stitch) => stitchPoleIndex(stitch, state.division, state.motif) !== which);
-    const first = plan.length > 0 ? 1 : 0;
-    if (first) feel.stitch();
+    const first = 0;
     set({
+      // A group opened from here is the first one; later groups record their own step.
+      ...(state.kagariPlan.length === 0 ? { kagariHistory: pushKagari(state) } : {}),
       kagariPlan: plan,
       kagariLaid: first,
       kagariPlaying: plan.length > first,
@@ -1180,7 +1332,23 @@ export const useTemari = create<TemariState>((set, get) => ({
     const next = state.kagariLaid + 1;
     if (next >= state.kagariPlan.length) {
       feel.kikuFill();
-      set({ kagariLaid: state.kagariPlan.length, kagariPlaying: false });
+      // Pins are pulled as the work covers them: none are left in a finished flower.
+      const full = state.motif === "kiku" && state.kagariSet === 1 &&
+        state.kikuLayers >= kikuSpec(state.division, state.kagariSpacing, "fit").capacity;
+      const marks = full ? kikuWorkingPins(state.division, state.facingPole) : [];
+      // The first group finished: the hand takes the second thread now, so the
+      // palette shows what it holds rather than what was just sewn.
+      const takesSecond = state.motif === "kiku" && state.kagariSet === 0 &&
+        state.kagariPlan.length > 0;
+      set({
+        kagariLaid: state.kagariPlan.length,
+        kagariPlaying: false,
+        ...(takesSecond ? { selectedColor: state.kagariColors[1], kagariEdit: null } : {}),
+        ...(full
+          ? { pins: state.pins.filter((pin) => !marks.some((m) => pin.id === m.id ||
+              pin.p[0] * m.p[0] + pin.p[1] * m.p[1] + pin.p[2] * m.p[2] > 0.995)) }
+          : {}),
+      });
       return;
     }
     feel.stitch();
@@ -1214,41 +1382,7 @@ export const useTemari = create<TemariState>((set, get) => ({
         const spec = kikuSpec(state.division, state.kagariSpacing, "fit");
         if (state.kagariSet === 0) return;
         if (state.kikuLayers >= spec.capacity) return;
-        const nextL = state.kikuLayers + 1;
-        const extraOf = (onlySet: 0 | 1) => {
-          const before = motifStitchPlan(
-            state.division,
-            "kiku",
-            state.kagariDir,
-            state.kagariSpacing,
-            state.facingPole,
-            state.selectedColor,
-            state.kikuLayers,
-            onlySet,
-          ).length;
-          return motifStitchPlan(
-            state.division,
-            "kiku",
-            state.kagariDir,
-            state.kagariSpacing,
-            state.facingPole,
-            state.selectedColor,
-            nextL,
-            onlySet,
-          ).slice(before);
-        };
-        // First four are one round. After the other four, Fill packs the next
-        // kai of both — GT14 alternate, not all-of-A then all-of-B.
-        const extra = [...extraOf(0), ...extraOf(1)];
-        if (extra.length === 0) return;
-        feel.stitch();
-        set({
-          kikuLayers: nextL,
-          kagariPlan: [...state.kagariPlan, ...extra],
-          kagariPlaying: true,
-          kagariFocus: stitchFocus(extra[0], state.division, "kiku"),
-        });
-        rememberStudio(get());
+        get().sewKikuRows(1);
         return;
       }
       get().startKagari();
@@ -1305,6 +1439,91 @@ export const useTemari = create<TemariState>((set, get) => ({
       originNonce: state.originNonce + 1,
     });
   },
+  finishKiku: () => {
+    get().sewKikuRows("all");
+  },
+  sewKikuRows: (count) => {
+    const state = get();
+    if (state.mode !== "studio" || !state.layerDone) return;
+    if (state.motif !== "kiku" || state.kagariPlaying) return;
+    if (!kikuMarksReady(state.pins, state.division, state.facingPole)) return;
+    if (state.kagariSet === 0 || state.kagariPlan.length === 0) return;
+    if (state.kagariLaid < state.kagariPlan.length) {
+      set({ kagariPlaying: true });
+      return;
+    }
+    const spec = kikuSpec(state.division, state.kagariSpacing, "fit");
+    if (state.kikuLayers >= spec.capacity) return;
+    const add = count === "all" ? spec.capacity - state.kikuLayers : Math.max(1, Math.floor(count));
+    const toLayer = Math.min(spec.capacity, state.kikuLayers + add);
+    if (toLayer <= state.kikuLayers) return;
+    const extra = kikuExtra(state, toLayer);
+    if (extra.length === 0) return;
+    feel.stitch();
+    set({
+      kikuLayers: toLayer,
+      kagariHistory: pushKagari(state),
+      kagariPlan: [...state.kagariPlan, ...extra],
+      kagariPlaying: true,
+      kagariFocus: stitchFocus(extra[0], state.division, "kiku"),
+    });
+    rememberStudio(get());
+  },
+  quickKiku: () => {
+    const s = get();
+    if (s.mode !== "studio") return;
+    feel.unlock();
+    feel.pin();
+    const facingPole = s.facingPole < polePositions("simple").length ? s.facingPole : 0;
+    const sameBall = s.division === "simple" && s.jiwariOn && s.jiwariPhase === "done" && s.motif === "kiku";
+    const sewnBefore = sameBall ? [...s.kagariKept, ...s.kagariPlan.slice(0, s.kagariLaid)] : [];
+    const pair = sameBall ? s.kagariColors : kikuThreadsFor(s.kagariColors, s.wrapColor);
+    set({
+      layerDone: true,
+      wrapProgress: 1,
+      wrapStarted: true,
+      wrapSeed: "full",
+      wrapPass: 3,
+      division: "simple",
+      motif: "kiku",
+      // The pin tool keeps the working pole fixed, so a nudge cannot move the flower.
+      craft: "pin",
+      facingPole,
+      // Turn that pole to the eye: the marks are then a wide ring, not a rim of dots.
+      viewPole: facingPole,
+      viewNonce: s.viewNonce + 1,
+      poseDirty: false,
+      fills: sameBall ? s.fills : emptyFills("simple"),
+      // The same pair of threads carries on around one ball; a new ball keeps
+      // the player's pair, bar a thread that would vanish on its wrap. Either
+      // way the hand takes the first thread, the group this step prepares.
+      kagariColors: pair,
+      selectedColor: pair[0],
+      kagariEdit: null,
+      jiwariOn: true,
+      jiwariPhase: "done",
+      jiwariLaid: 5,
+      pins: withKikuMarks({ division: "simple", pins: [], jiwariLaid: 5, jiwariPhase: "done", facingPole }, "kiku"),
+      pinArcs: [],
+      activePin: null,
+      pinNote: null,
+      pinHistory: [],
+      sewn: [],
+      sewnHistory: [],
+      hover: -1,
+      hoverSlot: null,
+      kagariDir: "out",
+      kagariSet: 0,
+      kikuLayers: 1,
+      ...idleKagari(),
+      // The flower at this pole starts again; flowers at other poles stay sewn.
+      kagariKept: sewnBefore.filter((stitch) => stitchPoleIndex(stitch, "simple", "kiku") !== facingPole),
+      // Starting over on a pole that already carries a flower must not lose it
+      // silently: «Отменить» puts the thread back the way it was.
+      kagariHistory: sewnBefore.length > 0 ? pushKagari(s) : [],
+    });
+    rememberStudio(get());
+  },
   showExample: () => {
     feel.unlock();
     feel.layer();
@@ -1332,7 +1551,11 @@ export const useTemari = create<TemariState>((set, get) => ({
       wrapSeed: "full",
       startPin: null,
       hoverSlot: null,
-      selectedColor: 0,
+      // The example is a ball like any other: a pair of threads that reads on
+      // its wrap, not a fixed colour that can land invisible on a red one.
+      selectedColor: kikuThreads(get().wrapColor)[0],
+      kagariColors: kikuThreads(get().wrapColor),
+      kagariEdit: null,
       kagariDir: "out",
       kagariSet: 0,
       kikuLayers: 1,

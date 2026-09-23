@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import type { Stitch, Vec3 } from "./patterns";
-import { MARI_C_CM, MARI_R_CM, WRAP_OVERLAP, unitFromMm, wrapsToCover } from "./measure";
+import type { Stitch, Vec3 } from "./patterns.ts";
+import { MARI_C_CM, MARI_R_CM, WRAP_OVERLAP, unitFromMm, wrapsToCover } from "./measure.ts";
 
 export { MARI_C_CM, MARI_R_CM };
 

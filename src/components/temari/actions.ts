@@ -23,6 +23,7 @@ export type TemariCraftState = {
   kagariDir: KagariDir;
   kagariSpacing: KagariSpacing;
   kagariSet: 0 | 1;
+  kagariHistory: unknown[];
   kagariIdleComplete: boolean;
   kikuLayers: number;
   kikuFit: number;
@@ -49,8 +50,8 @@ export function getCraftState(): TemariCraftState {
     s.mode === "kata"
       ? s.history.length === 0
       : s.craft === "pin" || s.motif === "none"
-        ? s.pinHistory.length === 0
-        : s.sewnHistory.length === 0;
+        ? s.pinHistory.length === 0 && s.kagariHistory.length === 0
+        : s.sewnHistory.length === 0 && s.kagariHistory.length === 0;
   return {
     mode: s.mode,
     layerDone: s.layerDone,
@@ -66,6 +67,7 @@ export function getCraftState(): TemariCraftState {
     kagariDir: s.kagariDir,
     kagariSpacing: s.kagariSpacing,
     kagariSet: s.kagariSet,
+    kagariHistory: s.kagariHistory,
     kagariIdleComplete:
       !s.kagariPlaying && s.kagariPlan.length > 0 && s.kagariLaid >= s.kagariPlan.length,
     kikuLayers: s.kikuLayers,
@@ -291,6 +293,46 @@ export const CRAFT_ACTIONS: CraftAction[] = [
     getDisabledReason: () => null,
   },
   {
+    id: "quick-kiku",
+    label: "Кику здесь",
+    cluster: "kagari",
+    canExecute: (s) => s.mode === "studio",
+    getDisabledReason: (s) => (s.mode === "studio" ? null : "Откройте мастерскую"),
+  },
+  {
+    id: "kiku-finish",
+    label: "Дошить",
+    cluster: "kagari",
+    // Only with both groups standing, the row finished and room left at this pole.
+    canExecute: (s) =>
+      s.mode === "studio" && s.motif === "kiku" && s.kikuMarksReady &&
+      s.kagariIdleComplete && s.kagariSet === 1 && s.kikuLayers < s.kikuFit,
+    getDisabledReason: (s) =>
+      s.motif !== "kiku"
+        ? "Сначала выберите кику"
+        : !s.kagariIdleComplete || s.kagariSet === 0
+          ? "Сначала обе группы лепестков"
+          : s.kikuLayers >= s.kikuFit
+            ? "Экватор этого полюса. Дальше — переверните шар."
+            : null,
+  },
+  {
+    id: "kiku-rows",
+    label: "Ряды",
+    cluster: "kagari",
+    canExecute: (s) =>
+      s.mode === "studio" && s.motif === "kiku" && s.kikuMarksReady &&
+      s.kagariIdleComplete && s.kagariSet === 1 && s.kikuLayers < s.kikuFit,
+    getDisabledReason: (s) =>
+      s.motif !== "kiku"
+        ? "Сначала выберите кику"
+        : !s.kagariIdleComplete || s.kagariSet === 0
+          ? "Сначала обе группы лепестков"
+          : s.kikuLayers >= s.kikuFit
+            ? "Экватор этого полюса. Дальше — переверните шар."
+            : null,
+  },
+  {
     id: "example",
     label: "Пример",
     cluster: "correction",
@@ -366,6 +408,16 @@ export function dispatchCommand(actionId: string, payload?: unknown) {
       return;
     case "example":
       s.showExample();
+      return;
+    case "quick-kiku":
+      s.quickKiku();
+      return;
+    case "kiku-finish":
+      s.finishKiku();
+      return;
+    case "kiku-rows":
+      if (payload === "all") s.sewKikuRows("all");
+      else if (typeof payload === "number") s.sewKikuRows(payload);
       return;
     case "layer":
       if (typeof payload === "number") s.setKikuLayers(s.kikuLayers + payload);

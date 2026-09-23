@@ -26,7 +26,7 @@ describe("kagari recipe atom", () => {
     assert.ok(Math.abs(spec.inner - unitFromMm(KIKU_8_POINT.innerMm)) < 1e-9);
     assert.ok(Math.abs(spec.outer - (Math.PI / 2) * (1 - KIKU_8_POINT.outerFromEquator)) < 1e-9);
     assert.ok(Math.abs(spec.stretch - unitFromMm(2)) < 1e-9, "Ozaki 2 mm is the corner turn, recorded on the recipe");
-    assert.ok(Math.abs(spec.pitch - unitFromMm(0.71)) < 1e-6, "flanks pack at one pearl #5");
+    assert.ok(Math.abs(spec.pitch - unitFromMm(0.71)) < 1e-6, "flanks pack snug at one pearl #5 (no engineered gap)");
   });
 
   it("bite sits across the mark, not along the meridian", () => {
@@ -75,6 +75,37 @@ describe("kagari recipe atom", () => {
     assert.ok(
       later.every((op) => op.over.length === op.kai),
       "each inner bite stacks the previous kai on that meridian",
+    );
+  });
+
+  it("inner rounds step one pearl; they do not skip after a doubled first", () => {
+    const spec = kikuSpec("simple", "even");
+    const ops = compileKiku("simple", "out", "even", 0, 0, 6);
+    const th = (p: [number, number, number]) =>
+      Math.acos(Math.min(1, Math.max(-1, p[1])));
+    const inners = [0, 1, 2, 3, 4, 5].map((kai) => {
+      const op = ops.find((o) => o.kai === kai && o.set === 0 && o.mark.t === "inner");
+      assert.ok(op);
+      const via = op!.lay.via ?? [];
+      const viaMin = Math.min(th(op!.mark.at), ...via.map(th));
+      return { kai, mark: th(op!.mark.at), viaMin, bite: th(op!.bite.enter) };
+    });
+    for (let i = 1; i < inners.length; i++) {
+      const dMark = inners[i]!.mark - inners[i - 1]!.mark;
+      // GT14: the next top stitch one thread below the previous one.
+      assert.ok(
+        Math.abs(dMark - spec.pitch) < spec.pitch * 0.45,
+        `kai ${i - 1}→${i} mark step ${dMark} vs pitch ${spec.pitch}`,
+      );
+      const dVia = inners[i]!.viaMin - inners[i - 1]!.viaMin;
+      assert.ok(
+        Math.abs(dVia - spec.pitch) < spec.pitch * 0.35,
+        `kai ${i - 1}→${i} path step ${dVia} — a doubled first then a skip`,
+      );
+    }
+    assert.ok(
+      inners[0]!.viaMin >= inners[0]!.mark - 1e-6,
+      "kai 0 stays on the mark — no macaroni into the cap",
     );
   });
 
@@ -127,7 +158,7 @@ describe("kagari recipe atom", () => {
     }
   });
 
-  it("later kai: inner one thread, outer Ozaki stretch; flanks stay parallel mid-petal", () => {
+  it("later kai: inner one thread, outer stretched 2 mm; flanks stay parallel mid-petal", () => {
     const spec = kikuSpec("simple", "even");
     const ops = compileKiku("simple", "out", "even", 0);
     const outer0 = ops.find((op) => op.kai === 0 && op.mark.t === "outer");
@@ -139,8 +170,10 @@ describe("kagari recipe atom", () => {
     const th = (p: [number, number, number]) => Math.acos(Math.min(1, Math.max(-1, p[1])));
     const dOut = th(outer1.mark.at) - th(outer0.mark.at);
     const dIn = th(inner1.mark.at) - th(inner0.mark.at);
-    assert.ok(Math.abs(dOut - spec.stretch) < 1e-6, `outer step ${dOut} is Ozaki stretch`);
-    assert.ok(Math.abs(dIn - spec.pitch) < 1e-6, `inner step ${dIn} is one thread`);
+    // TemariKai stretch points / GT14: the #5 bottom stitch about 2 mm below the
+    // previous one. The 0.85-thread floor of 22.09 stacked the rows (night task 3).
+    assert.ok(Math.abs(dOut - spec.stretch) < 1e-6, `outer step ${dOut} is the stretch`);
+    assert.ok(Math.abs(dIn - spec.pitch) < spec.pitch * 0.45, `inner step ${dIn} is about one thread`);
     assert.ok(outer1.lay.via && outer1.lay.via.length > 4, "later kai follow the offset path, not a free geodesic");
   });
 
@@ -190,7 +223,9 @@ describe("kagari recipe atom", () => {
     const w = (op: typeof inner0) => dist(op.bite.enter, op.bite.exit);
     assert.ok(w(innerN) > w(inner0) * 1.8, "later inner bite wraps the stack");
     assert.ok(w(outerN) < w(innerN) * 0.6, "outer point stays a tiny scoop");
-    assert.ok(innerN.bite.enter[1] > innerN.mark.at[1], "inner scoop sits toward the pole");
+    assert.ok(Math.abs(innerN.bite.enter[1] - innerN.mark.at[1]) < 1e-9
+      && Math.abs(innerN.bite.exit[1] - innerN.mark.at[1]) < 1e-9,
+      "later top stitch stays at its equatorward row mark, not back toward the pole");
     assert.ok(dist(innerN.lay.to, innerN.mark.at) < 1e-9, "flanks still meet on the mark");
   });
 
@@ -273,6 +308,22 @@ describe("kagari recipe atom", () => {
       );
       const kais = [...new Set(chain.map((s) => s.kai))];
       assert.deepEqual(kais, [0, 1, 2], "same pearl resumes across kai");
+      for (let i = 1; i < chain.length; i++) {
+        const current = chain[i]!;
+        const previous = chain[i - 1]!;
+        if (current.kai === previous.kai) continue;
+        const resume = current.operation?.resume;
+        assert.ok(resume, "new kai explicitly resumes the parked working end");
+        if (!resume) continue;
+        assert.ok(previous.bite);
+        if (!previous.bite) continue;
+        const near = dist(previous.a, previous.bite.enter) < dist(previous.a, previous.bite.exit)
+          ? previous.bite.enter
+          : previous.bite.exit;
+        assert.ok(dist(resume.at, near) < 1e-9, "resume retains the previous exit port");
+        assert.ok(dist(current.a, previous.b) > 0,
+          "the next row's nominal mark is lower while resume retains the real port");
+      }
     }
   });
 
@@ -289,6 +340,32 @@ describe("kagari recipe atom", () => {
     }
     const a = stitches.filter((s) => s.kind === "arc" && s.set === 0);
     assert.ok(a.every((s) => s.kind !== "arc" || !s.sitMid), "A stays on the mari");
+  });
+
+  it("finds the same crossings in a deep flower as in a shallow one", () => {
+    // The pair loop rejects distant stitches by their caps before measuring, and
+    // sharpens what it keeps. These counts are what that finds; a rejection that
+    // reaches too far would quietly drop crossings and show up here. Sharpening
+    // lowered the point counts (56 → 48 at three rounds): crossings that the
+    // sample grid placed apart turn out to be the same meeting.
+    // Snug one-pearl row pitch (craft pack, owner 22.09). Crossing counts
+    // measured at this density after natural outer pierce. 23.09: the uwagake
+    // wedge pulls earlier legs onto the line at the upper tips, so the deep
+    // flower meets fewer A/B crossings there (440 → 365; 368 with the
+    // two-thread first bite; 272 once the bottom stitch is stretched 2 mm and
+    // the petals lengthen; 338 while the wedge widened a thread on each side
+    // a round, back to 272 at one thread in total — GT14's wedge); the same
+    // count comes out with the cap rejection switched off.
+    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 48], [10, 160, 152, 272]]) {
+      const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, layers!, "all"))
+        .filter((s) => s.kind === "arc");
+      assert.equal(stitches.length, arcs, `arcs at ${layers} rounds`);
+      assert.equal(stitches.filter((s) => s.kind === "arc" && s.sitMid).length, carrying,
+        `stitches carrying a crossing at ${layers} rounds`);
+      assert.equal(
+        stitches.reduce((n, s) => n + (s.kind === "arc" ? s.sitAts?.length ?? 0 : 0), 0),
+        points, `crossing points at ${layers} rounds`);
+    }
   });
 
   it("later kai sits on earlier opposite set at the real crossing", () => {

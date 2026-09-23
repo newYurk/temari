@@ -1,4 +1,5 @@
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
+import type { DivisionId } from "./division-config.ts";
 
 type Vec3 = [number, number, number];
 
@@ -13,6 +14,8 @@ export type RecipeStitch = "uwagake-chidori" | "chidori" | "sakasa";
 /** Geometry for one pattern implementation. Names live in library.ts, not here. */
 export type PatternRecipe = {
   id: string;
+  /** Exact configuration; `requires` below is only the legacy runtime adapter. */
+  divisionId: DivisionId;
   requires: "simple" | "c8" | "c10";
   stitch: RecipeStitch;
   /** facing-pole: sew the pole in frame; both is a finished teaching ball. */
@@ -21,6 +24,12 @@ export type PatternRecipe = {
   innerMm: number;
   /** Fraction of pole–equator measured up from the equator. */
   outerFromEquator: number;
+  /**
+   * Нить, которой этот рецепт шьётся. От её толщины считаются шаг ряда и
+   * ширина подхвата у метки: до этого поля перле №5 была вписана в трёх местах
+   * кода и ни в одном — в данных, поэтому сменить нить было нечем.
+   */
+  thread: keyof typeof STITCH_THREAD_MM;
   crossing: Crossing;
   /**
    * Bite width across the mark, millimetres on the mari.
@@ -38,12 +47,14 @@ export type PatternRecipe = {
 
 export const KIKU_8_POINT: PatternRecipe = {
   id: "kiku-8-point",
+  divisionId: "s8",
   requires: "simple",
   stitch: "uwagake-chidori",
   centers: "facing-pole",
   sets: 2,
   innerMm: 5,
   outerFromEquator: 1 / 3,
+  thread: "pearl5",
   crossing: "over-all",
   cornerMm: 0.71,
   stretchMm: 2,
@@ -71,6 +82,8 @@ export type KagariOp = {
   mark: KagariMark;
   lay: { from: Vec3; to: Vec3; via?: Vec3[] };
   bite: KagariBite;
+  /** Same working end parked after the previous kai and resumed on the surface. */
+  resume?: { at: Vec3 };
   /** Previous ops this bite goes over (uwagake at the pole). */
   over: number[];
 };
@@ -99,7 +112,8 @@ function dot(a: Vec3, b: Vec3) {
 /**
  * Tiny bite across the jiwari: enter one side, scoop wrap+mark, exit the other.
  * Inner uwagake: wider with the stack, sitting slightly toward the pole so the
- * needle goes around previous rounds. Both flanks still meet at `mark`.
+ * needle goes around previous rounds (marks themselves step farther toward the
+ * equator each kai — see kikuSpec pitch). Both flanks still meet at `mark`.
  *
  * These points live on the unit sphere. The renderer still has to *sew* them —
  * a stored bite is not a dive.
@@ -112,21 +126,17 @@ export function biteAcross(
 ): KagariBite {
   const m = normalize(mark);
   const p = normalize(pole);
-  const across = normalize(cross(m, p));
-  if (hypot3(across) < 1e-6) return { enter: m, exit: m };
-  const center = stacked > 0 ? shiftTowardPole(p, m, unitFromMm(STITCH_THREAD_MM.pearl5) * 0.45) : m;
+  // GT14: every later top stitch is wider and *below* the previous stitch.
+  // `kikuThetas` has already moved this mark equatorward by one row pitch.
+  // Shifting its bite back toward the pole cancels that instruction and
+  // bunches successive catches onto the earlier tip.
+  const center = m;
   const half = unitFromMm(mm) * 0.5;
-  const enter = normalize([
-    center[0] - across[0] * half,
-    center[1] - across[1] * half,
-    center[2] - across[2] * half,
-  ]);
-  const exit = normalize([
-    center[0] + across[0] * half,
-    center[1] + across[1] * half,
-    center[2] + across[2] * half,
-  ]);
-  return { enter, exit };
+  const theta = Math.acos(Math.min(1, Math.max(-1, dot(p, center))));
+  const sinT = Math.sin(theta);
+  if (sinT < 1e-6) return { enter: center, exit: center };
+  const ang = half / sinT;
+  return { enter: rotateAxis(center, p, -ang), exit: rotateAxis(center, p, ang) };
 }
 
 /**
@@ -211,6 +221,58 @@ export function stackOver(previous: number[], crossing: Crossing): number[] {
  * Closest approach of two unit-sphere polylines, as parameters in [0, 1].
  * Used for the A/B kousa: the crossing is near the inner marks, not mid-flank.
  */
+/**
+ * Sharpen a closest approach found on samples.
+ *
+ * Samples locate a crossing no better than the spacing between them, and that
+ * spacing is as wide as the hump a cord makes there — so the hump was landing
+ * beside the crossing instead of on it. Two points are enough to start; this
+ * walks in on the real curves, halving the window each round.
+ */
+export function refineApproach(
+  pointA: (t: number) => Vec3,
+  pointB: (t: number) => Vec3,
+  tA: number,
+  tB: number,
+  windowA: number,
+  windowB: number,
+  rounds = 5,
+  grid = 2,
+): { tA: number; tB: number; dist: number } {
+  const clamp = (t: number) => (t < 0 ? 0 : t > 1 ? 1 : t);
+  const gap = (ta: number, tb: number) => {
+    const a = pointA(ta);
+    const b = pointB(tb);
+    return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  };
+  let bestA = clamp(tA);
+  let bestB = clamp(tB);
+  let best = gap(bestA, bestB);
+  let spanA = windowA;
+  let spanB = windowB;
+  for (let round = 0; round < rounds; round++) {
+    let nextA = bestA;
+    let nextB = bestB;
+    for (let i = -grid; i <= grid; i++) {
+      const ta = clamp(bestA + (i / grid) * spanA);
+      for (let j = -grid; j <= grid; j++) {
+        const tb = clamp(bestB + (j / grid) * spanB);
+        const d = gap(ta, tb);
+        if (d < best) {
+          best = d;
+          nextA = ta;
+          nextB = tb;
+        }
+      }
+    }
+    bestA = nextA;
+    bestB = nextB;
+    spanA /= grid;
+    spanB /= grid;
+  }
+  return { tA: bestA, tB: bestB, dist: best };
+}
+
 export function closestApproachT(
   a: readonly Vec3[],
   b: readonly Vec3[],
@@ -391,54 +453,29 @@ export function smallCircleJoin(from: Vec3, to: Vec3, pole: Vec3, n: number): Ve
 }
 
 /**
- * Inner uwagake: a pearl bite *across* the jiwari.
- * A small-circle around the pole is a 90° noodle on the cap — macaroni from above.
- * The visible bead is one pearl, not a loop.
+ * Inner uwagake: the V turns on the mark, on top of the stack.
+ * A dash across the jiwari kinks into a W. A loop toward the pole is
+ * macaroni on the cap. The scoop under the wrap is not drawn.
  */
-export function innerBiteJoin(from: Vec3, mark: Vec3, to: Vec3, pearl: number, n = 4): Vec3[] {
-  const m = normalize(mark);
-  const pole: Vec3 = m[1] >= 0 ? [0, 1, 0] : [0, -1, 0];
-  let across = cross(m, pole);
-  if (hypot3(across) < 1e-8) across = [1, 0, 0];
-  across = normalize(across);
+export function innerBiteJoin(from: Vec3, mark: Vec3, to: Vec3, pearl: number, n = 12): Vec3[] {
   const r = 0.5 * ((hypot3(from) || 1) + (hypot3(to) || 1));
-  const half = pearl * 0.45;
-  const mk = (s: number): Vec3 => {
-    const q = normalize([m[0] + across[0] * s, m[1] + across[1] * s, m[2] + across[2] * s]);
-    return [q[0] * r, q[1] * r, q[2] * r];
-  };
-  let enter = mk(-half);
-  let exit = mk(half);
-  const d = (a: Vec3, b: Vec3) => {
-    const dx = a[0] - b[0];
-    const dy = a[1] - b[1];
-    const dz = a[2] - b[2];
-    return dx * dx + dy * dy + dz * dz;
-  };
-  if (d(from, exit) + d(to, enter) < d(from, enter) + d(to, exit)) {
-    const tmp = enter;
-    enter = exit;
-    exit = tmp;
-  }
-  const out: Vec3[] = [];
-  const cap = Math.abs(m[1]);
-  const push = (a: Vec3, b: Vec3, steps: number) => {
-    for (let i = 1; i <= steps; i++) {
-      const p = slerp3(a, b, i / steps);
-      const L = hypot3(p) || 1;
-      if (Math.abs(p[1]) / L > cap) {
-        const rho = Math.sqrt(Math.max(0, 1 - cap * cap));
-        const pr = Math.hypot(p[0], p[2]) || 1e-9;
-        out.push([(p[0] / pr) * rho * L, Math.sign(p[1]) * cap * L, (p[2] / pr) * rho * L]);
-      } else {
-        out.push(p);
-      }
-    }
-  };
-  push(from, enter, n);
-  push(enter, exit, Math.max(2, n));
-  push(exit, to, n);
-  return out;
+  const m = normalize(mark);
+  const tip: Vec3 = [m[0] * r, m[1] * r, m[2] * r];
+  const steps = Math.max(8, n);
+  return sphereBezier(from, tip, to, steps).map((p) => clampNotPastPole(p, mark));
+}
+
+/**
+ * Outer kiku point: the two flanks meet as a V at the mark.
+ * A dash across the meridian is a zipper of rungs down the petal.
+ * A U past the mark is a tail toward the equator.
+ */
+export function outerBiteJoin(from: Vec3, mark: Vec3, to: Vec3, pearl: number, n = 12): Vec3[] {
+  const r = 0.5 * ((hypot3(from) || 1) + (hypot3(to) || 1));
+  const pole: Vec3 = mark[1] >= 0 ? [0, 1, 0] : [0, -1, 0];
+  const tip = shiftTowardPole(pole, normalize(mark), pearl * 0.08);
+  const b: Vec3 = [tip[0] * r, tip[1] * r, tip[2] * r];
+  return sphereBezier(from, b, to, Math.max(8, n));
 }
 
 /**

@@ -1,7 +1,8 @@
 import { polePositions, type Division } from "./division.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 import { COLOR_COUNT } from "./palettes.ts";
-import { biteAcross, closestApproachT, stackOver, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
+import { biteAcross, closestApproachT, refineApproach, stackOver, KIKU_8_POINT, type KagariOp, type PatternRecipe } from "./kagari.ts";
+import { traceKagariOperations, type KagariTrace } from "./kagari-topology";
 
 export type KikuSlot = { pole: number; ring: number; sector: number };
 
@@ -73,11 +74,15 @@ export type Stitch =
       /** Later kai sitting on earlier opposite-set threads at real crossings. */
       sitAts?: { t: number; n: number }[];
       bite?: { enter: Vec3; exit: Vec3 };
+      /** Inner uwagake sits on the stack; outer is a reverse pickup. */
+      tip?: "inner" | "outer";
       via?: Vec3[];
       /** Working thread: one cord per pole+set, parked between kai. */
       set?: 0 | 1;
       pole?: number;
       kai?: number;
+      /** Preserved recipe chronology; legacy/free arcs may have no operation trace. */
+      operation?: KagariTrace;
     }
   | { kind: "loop"; points: Vec3[]; color: number; lift?: number };
 
@@ -440,10 +445,12 @@ function kikuSkip(n: number) {
 
 /**
  * GT14 / TemariKai beginner: enter ~5 mm from the pole; first outer stitch
- * sits just below the pin ⅓ up from the equator. Later rounds: lay the
- * thread *parallel* to the first (GT14), inner one pearl #5 below, outer
- * Ozaki ~2 mm below the previous point so the turn lays flat. Work toward
- * the equator. `outer` is the first pin, not a short-V ceiling.
+ * sits just below the pin ⅓ up from the equator. Later rounds: lay the thread
+ * *parallel* to the first (GT14), inner one pearl #5 below (snug lay, no
+ * engineered gap), outer Ozaki ~2 mm below the previous point so the turn
+ * lays flat — later outer pierces are where the packed flank meets the
+ * guideline, not an equal outer pitch. Work toward the equator. `outer` is
+ * the first pin, not a short-V ceiling.
  * Default wanted is 3 kai (tests); studio starts at 1; title uses "fit".
  * Legacy display adapter: unsupported divisions retain the numeric shape with
  * zero capacity and recipe:null. These zeros are not usable recipe geometry.
@@ -471,17 +478,25 @@ export function kikuSpec(
       recipe: null,
     };
   }
-  const pitch = unitFromMm(STITCH_THREAD_MM.pearl5);
+  // Шаг ряда — одна толщина нити: укладываем вплотную без зазора (TemariKai
+  // ≈thread width; craft 22.09), затем протыкаем на естественном пересечении
+  // с разметкой. Прежний 1½× был инженерным зазором под порты и отклонён —
+  // проверки, требовавшие его, не авторитетнее укладки.
+  const thread = unitFromMm(STITCH_THREAD_MM[recipe.thread]);
+  const pitch = thread;
   const stretch = unitFromMm(recipe.stretchMm);
   const inner = unitFromMm(recipe.innerMm);
   const outer = (Math.PI / 2) * (1 - recipe.outerFromEquator);
+  // GT14 says "just below pin", not a distance. One thread width is our
+  // explicit engineering clearance; `outer` remains the measured pin mark.
+  const firstOuter = outer + pitch;
   const equator = Math.PI / 2;
   const obi = Math.min(equator - unitFromMm(8), Math.PI * 0.49);
   // This pole's kiku may walk to the equator. Crossing it is the other flower.
   const ceiling = equator - pitch * 0.35;
-  const vDepth = Math.max(pitch, outer - inner);
-  const toObi = 1 + Math.floor(Math.max(0, obi - outer) / Math.max(stretch, 1e-9));
-  const toRim = 1 + Math.floor(Math.max(0, ceiling - outer) / Math.max(stretch, 1e-9));
+  const vDepth = Math.max(pitch, firstOuter - inner);
+  const toObi = 1 + Math.floor(Math.max(0, obi - firstOuter) / Math.max(stretch, 1e-9));
+  const toRim = 1 + Math.floor(Math.max(0, ceiling - firstOuter) / Math.max(stretch, 1e-9));
   const fit = Math.max(1, toObi);
   const capacity = Math.max(fit, toRim);
   const rounds =
@@ -523,9 +538,7 @@ export function kikuThetas(
 ) {
   const ceiling = spec.ceiling ?? Math.PI / 2 - spec.pitch * 0.35;
   const tInner = spec.inner + ring * spec.pitch;
-  // First bottom stitch sits just poleward of the GT14 pin; later kai add
-  // Ozaki stretch from that stitch. Thread does not wrap the shaft.
-  const tOuter = Math.min(ceiling, spec.outer - spec.pitch * 0.7 + ring * spec.stretch);
+  const tOuter = Math.min(ceiling, spec.outer + spec.pitch + ring * spec.stretch);
   return { tInner, tOuter };
 }
 
@@ -616,9 +629,45 @@ function parallelOffset(samples: Vec3[], pole: Vec3, delta: number): Vec3[] {
 }
 
 /**
+ * Where a packed flank meets this guideline (meridian). Craft: lay snug, then
+ * pierce at that crossing — not at a pre-set equal outer pitch.
+ */
+function pierceOnMeridian(samples: Vec3[], pole: Vec3, phi: number): Vec3 | null {
+  if (samples.length < 2) return null;
+  const target = ((phi % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const long = (p: Vec3) => polarAround(pole, p).phi;
+  const wrap = (a: number, b: number) => {
+    let d = b - a;
+    if (d > Math.PI) d -= Math.PI * 2;
+    if (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  };
+  for (let i = 1; i < samples.length; i++) {
+    const a = samples[i - 1]!, b = samples[i]!;
+    const la = long(a), lb = long(b);
+    const da = wrap(la, target), db = wrap(lb, target);
+    if (da === 0) return a;
+    if (db === 0) return b;
+    if (da * db > 0) continue;
+    const t = Math.abs(da) / (Math.abs(da) + Math.abs(db));
+    return slerp3(a, b, t);
+  }
+  // No crossing: nearest sample in longitude (short packed tip).
+  let best = samples[0]!, bestD = Math.abs(wrap(long(best), target));
+  for (const p of samples) {
+    const d = Math.abs(wrap(long(p), target));
+    if (d < bestD) {
+      best = p;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+/**
  * GT14 outer pins: on each meridian, ⅓ up from the equator.
- * The first bottom stitch sits just below this pin. Later rounds stretch
- * past it toward the equator — the pin is a mark, not a stop.
+ * The first bottom stitch is just below this pin. Later rounds stretch past
+ * it toward the equator — the pin is a mark, not a stop.
  */
 export function kikuMarkPins(
   division: Division,
@@ -780,24 +829,41 @@ export function kikuFlank(
   phiOuter: number,
 ): { a: Vec3; b: Vec3; via: Vec3[] } {
   const { tInner, tOuter } = kikuThetas(spec, ring);
-  const a = around(pole, tInner, phiInner);
-  const b = around(pole, tOuter, phiOuter);
-  if (ring <= 0) return { a, b, via: [] };
+  const a0 = around(pole, tInner, phiInner);
+  // Round 0: first outer is just below the pin (engineering clearance = pitch).
+  // Later rounds: pierce where the snug-packed flank meets this guideline.
+  const bPin = around(pole, tOuter, phiOuter);
+  if (ring <= 0) return { a: a0, b: bPin, via: [] };
   const prev = kikuFlank(pole, spec, ring - 1, phiInner, phiOuter);
   const samples = pathSamples(prev.a, prev.b, prev.via, 36);
   const off = parallelOffset(samples, pole, spec.pitch);
   const n = off.length;
-  if (n < 6) return { a, b, via: off };
-  // Ozaki ~2 mm at the point — not 12% of the petal (that left air
-  // between later kai) and not a one-sample knuckle.
-  const join = Math.max(
-    3,
-    Math.round((unitFromMm(2.6) / Math.max(tOuter - tInner, spec.pitch)) * n),
-  );
-  const i0 = Math.min(Math.floor(n / 4), join);
-  const i1 = Math.max(i0 + 2, n - 1 - i0);
+  if (n < 6) return { a: a0, b: bPin, via: off };
+  const pierced = pierceOnMeridian(off, pole, phiOuter);
+  // Pierce where the snug lay meets the guideline, but never less than the
+  // stretch below the previous point: TemariKai (stretch points, GT14) puts
+  // the #5 bottom stitch about 2 mm below the previous one so the point stays
+  // smooth; the old 0.85-thread floor stacked the rows onto each other.
+  // Ceiling: this pole's rim.
+  const prevOuter = polarAround(pole, prev.b).theta;
+  const naturalTheta = pierced ? polarAround(pole, pierced).theta : tOuter;
+  const ceiling = spec.ceiling ?? Math.PI / 2 - spec.pitch * 0.35;
+  const bTheta = Math.min(ceiling, Math.max(prevOuter + spec.stretch, naturalTheta));
+  const b = around(pole, bTheta, phiOuter);
+  // Inner tip is not the outer law. GT14: "place needle about 1 thread width
+  // wider and below previous stitch" — the top stitch steps one thread down
+  // the guideline (tInner), snapped to this meridian so neighbouring petals
+  // meet. The packed body ends lower (~0.96 mm at 1× pitch); the thread is
+  // carried over the earlier rounds up to the stitch (uwagake), so the head
+  // from the body to the mark is the craft, not a stub. Piercing at the lay ∩
+  // meridian instead (17dc431) put every later port on an earlier thread.
+  const span = Math.max(bTheta - tInner, spec.pitch);
+  const outerJoin = Math.max(3, Math.round((unitFromMm(2.6) / span) * n));
+  const i1 = Math.max(4, n - 1 - Math.min(Math.floor(n / 4), outerJoin));
+  const i0 = Math.min(2, i1 - 2);
   const p0 = off[i0]!;
   const p1 = off[i1]!;
+  const a = a0;
   const head = hermiteJoin(a, p0, dirOnSphere(a, p0), tangentAt(off, i0), 8);
   const tail = hermiteJoin(p1, b, tangentAt(off, i1), dirOnSphere(p1, b), 8);
   const pts: Vec3[] = [
@@ -854,6 +920,7 @@ function kikuPetal(
       set,
       pole: poleIndex,
       kai: ring,
+      tip: "outer",
     },
     {
       kind: "arc",
@@ -868,8 +935,78 @@ function kikuPetal(
       set,
       pole: poleIndex,
       kai: ring,
+      tip: "inner",
     },
   ];
+}
+
+/**
+ * Uwagake wedge (F7). The later top stitch takes the needle under every earlier
+ * round at this tip and pulls their legs in: at its level each leg lies inside
+ * the bite, a thread radius clear. Between the earlier stitch and this one the
+ * limit grows with the bite, so the legs lie in a narrow woven wedge on the
+ * line; below this stitch they ease back into their packed bands. Only stitches
+ * actually taken pull, so the wedge is as long as the rounds sewn so far.
+ */
+function gatherUnderBite(
+  ops: KagariOp[],
+  catches: number[],
+  pole: Vec3,
+  mark: Vec3,
+  half: number,
+  thread: number,
+) {
+  const radius = thread / 2;
+  const margin = thread * 0.1;
+  const blend = thread * 2;
+  const top = polarAround(pole, mark);
+  const wrap = (d: number) => (d > Math.PI ? d - 2 * Math.PI : d < -Math.PI ? d + 2 * Math.PI : d);
+  for (const k of catches) {
+    const earlier = ops[k];
+    if (!earlier) continue;
+    const next = ops.find((op, j) => j > k && op.pole === earlier.pole && op.set === earlier.set);
+    const from = polarAround(pole, earlier.mark.at).theta;
+    const fromHalf = angleBetween(earlier.bite.enter, earlier.bite.exit) / 2;
+    const span = Math.max(top.theta - from, 1e-9);
+    const limitAt = (theta: number) =>
+      fromHalf - radius + (half - radius - margin - (fromHalf - radius)) * ((theta - from) / span);
+    for (const op of [earlier, next]) {
+      if (!op) continue;
+      // A first-round flank is one arc with no via; lay its points out first.
+      const via = op.lay.via?.length ? op.lay.via
+        : Array.from({ length: 23 }, (_, i) => slerp3(op.lay.from, op.lay.to, (i + 1) / 24));
+      const dense = densifyNear(via, (p) => polarAround(pole, p).theta < top.theta + blend, thread / 3);
+      op.lay.via = dense.map((p) => {
+        const { theta, phi } = polarAround(pole, p);
+        if (theta < from || theta > top.theta + blend) return p;
+        const s = Math.sin(theta);
+        const d = wrap(phi - top.phi);
+        const lateral = Math.abs(d) * s;
+        const cap = theta <= top.theta
+          ? limitAt(theta)
+          : limitAt(top.theta) + (lateral - limitAt(top.theta)) * smoothStep((theta - top.theta) / blend);
+        if (lateral <= cap || cap <= 0 && lateral <= 0) return p;
+        return around(pole, theta, top.phi + Math.sign(d) * Math.max(0, cap) / s);
+      });
+    }
+  }
+}
+
+function smoothStep(t: number) {
+  const u = Math.min(1, Math.max(0, t));
+  return u * u * (3 - 2 * u);
+}
+
+/** Extra samples where `near` holds, so a bend there is not one long chord. */
+function densifyNear(pts: Vec3[], near: (p: Vec3) => boolean, step: number): Vec3[] {
+  const out: Vec3[] = pts.length ? [pts[0]!] : [];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]!;
+    const b = pts[i]!;
+    const n = near(a) || near(b) ? Math.max(1, Math.ceil(angleBetween(a, b) / step)) : 1;
+    for (let k = 1; k <= n; k++) out.push(k === n ? b : slerp3(a, b, k / n));
+  }
+  return out;
 }
 
 function pushKikuLeg(
@@ -882,11 +1019,9 @@ function pushKikuLeg(
   from: Vec3,
   to: { line: number; t: "inner" | "outer"; at: Vec3 },
   over: number[],
-  cornerMm: number,
+  biteMm: number,
   via?: Vec3[],
 ): Vec3 {
-  const biteMm =
-    to.t === "inner" ? cornerMm * (1 + over.length) : cornerMm;
   const bite = biteAcross(pole, to.at, biteMm, to.t === "inner" ? over.length : 0);
   ops.push({
     i: ops.length,
@@ -931,6 +1066,7 @@ export function compileKiku(
   const step = (2 * Math.PI) / n;
   for (const { index: poleIndex, pole } of kagariPolesToSew(division, which)) {
     const innerOver: number[][] = Array.from({ length: n }, () => []);
+    const parked: [Vec3 | null, Vec3 | null] = [null, null];
     for (const ring of rings) {
       const { tInner, tOuter } = kikuThetas(spec, ring);
       if (tInner >= tOuter - spec.pitch * 0.4) continue;
@@ -938,7 +1074,12 @@ export function compileKiku(
         if (onlySet !== "all" && pass !== onlySet) continue;
         const set = (pass === 0 ? 0 : 1) as 0 | 1;
         const thread = kikuColor(ring, color);
+        // `lay.from` remains the nominal top mark used to construct the next
+        // parallel flank. `resume.at` below preserves the real working end at
+        // the previous bite's exit. A complete renderer must replace this
+        // nominal start with the outgoing leg from that port.
         let cursor: Vec3 | null = null;
+        let first = true;
         for (let sector = 0; sector < n; sector++) {
           if (sector % skip !== pass) continue;
           const phi0 = step * sector;
@@ -961,7 +1102,17 @@ export function compileKiku(
             cornerMm,
             left.via,
           );
+          if (first && parked[set]) {
+            ops[ops.length - 1]!.resume = { at: parked[set] };
+          }
+          first = false;
           const over = stackOver(innerOver[line2] ?? [], crossing);
+          // GT14: needle "about 1 thread width wider and below previous
+          // stitch" — one thread wider in total, half a thread each side. The
+          // finished GT14 wedges widen ~1 mm per mm down the line (half-angle
+          // ~26°); a thread each side made a 45° wedge whose pierces landed on
+          // the neighbouring points from the 4th round (craft sweep 23.09). The
+          // first is an ordinary small kagari, 1–2 mm (TemariKai): two threads.
           cursor = pushKikuLeg(
             ops,
             pole,
@@ -972,11 +1123,17 @@ export function compileKiku(
             cursor,
             { line: line2, t: "inner", at: right.a },
             over,
-            cornerMm,
+            cornerMm * (2 + over.length),
             [...right.via].reverse(),
           );
+          if (over.length) {
+            gatherUnderBite(ops, over, pole, right.a,
+              unitFromMm(cornerMm * (2 + over.length)) / 2, unitFromMm(STITCH_THREAD_MM[recipe.thread]));
+          }
           innerOver[line2]?.push(ops.length - 1);
         }
+        const last = ops[ops.length - 1];
+        parked[set] = last ? outgoingBitePort(last) : cursor;
       }
     }
   }
@@ -984,11 +1141,14 @@ export function compileKiku(
 }
 
 export function stitchesFromOps(ops: KagariOp[]): Stitch[] {
+  const traces = traceKagariOperations(ops, KIKU_8_POINT.id);
   const stitches: Stitch[] = ops.map((op, i) => {
     const prev = i > 0 ? ops[i - 1] : undefined;
     const sitTo = op.mark.t === "inner" && op.over.length > 0 ? 1 : 0;
-    const sitFrom =
-      prev && prev.pole === op.pole && prev.set === op.set && prev.mark.t === "inner" && prev.over.length > 0
+    const sitFrom = op.resume
+      ? 1
+      : prev && prev.pole === op.pole && prev.set === op.set
+        && prev.mark.t === "inner" && prev.over.length > 0
         ? 1
         : 0;
     return {
@@ -1004,6 +1164,8 @@ export function stitchesFromOps(ops: KagariOp[]): Stitch[] {
       set: op.set,
       pole: op.pole,
       kai: op.kai,
+      tip: op.mark.t,
+      operation: traces[i],
     };
   });
   return annotateSetCrossings(stitches);
@@ -1016,6 +1178,13 @@ function dist2(a: Vec3, b: Vec3) {
   const dy = a[1] - b[1];
   const dz = a[2] - b[2];
   return dx * dx + dy * dy + dz * dz;
+}
+
+/** The working end after a bite: the port on the incoming flank's near side. */
+function outgoingBitePort(op: KagariOp): Vec3 {
+  return dist2(op.lay.from, op.bite.enter) < dist2(op.lay.from, op.bite.exit)
+    ? op.bite.enter
+    : op.bite.exit;
 }
 
 function sequentialChains(arcs: Extract<Stitch, { kind: "arc" }>[]) {
@@ -1088,15 +1257,94 @@ function stitchSamples(s: Extract<Stitch, { kind: "arc" }>, n = 20): Vec3[] {
 /**
  * Opposite-set threads sit on each other at the real kousa.
  * Same kai: B on A. Later kai: the new thread on every earlier opposite
- * set it actually meets. Parallel same-set flanks stay on the mari.
+ * set it actually meets. Parallel same-set flanks stay on the mari —
+ * same-set cross-kai tip pack is handled by row pitch / bite spacing,
+ * not by this annotator (lifting those ends folded tubes).
  */
+const arcSamples = new WeakMap<Extract<Stitch, { kind: "arc" }>, Vec3[]>();
+/** Sharpened crossings, kept per pair: neither stitch changes between rebuilds. */
+const arcPairs = new WeakMap<
+  Extract<Stitch, { kind: "arc" }>,
+  WeakMap<Extract<Stitch, { kind: "arc" }>, { tA: number; tB: number; dist: number }>
+>();
+const arcCaps = new WeakMap<Extract<Stitch, { kind: "arc" }>, { c: Vec3; ang: number }>();
+
+/** Longest step between a stitch's samples: how far a crossing can hide. */
+function stepOf(s: Extract<Stitch, { kind: "arc" }>) {
+  const pts = stitchSamples(s);
+  let step = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]!;
+    const b = pts[i]!;
+    step = Math.max(step, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+  }
+  return step;
+}
+
+function pointOn(s: Extract<Stitch, { kind: "arc" }>) {
+  const anchors = [s.a, ...(s.via ?? []), s.b];
+  return (t: number) => sampleAnchors(anchors, t);
+}
+
+function crossingOf(
+  a: Extract<Stitch, { kind: "arc" }>,
+  b: Extract<Stitch, { kind: "arc" }>,
+  coarse: { tA: number; tB: number; dist: number },
+) {
+  let byA = arcPairs.get(a);
+  if (!byA) {
+    byA = new WeakMap();
+    arcPairs.set(a, byA);
+  }
+  const hit = byA.get(b);
+  if (hit) return hit;
+  const n = stitchSamples(a).length;
+  const m = stitchSamples(b).length;
+  const made = refineApproach(pointOn(a), pointOn(b), coarse.tA, coarse.tB,
+    1 / Math.max(1, n - 1), 1 / Math.max(1, m - 1));
+  byA.set(b, made);
+  return made;
+}
+
 export function annotateSetCrossings(stitches: Stitch[]): Stitch[] {
   const arcs = stitches.filter((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc");
   const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
   const reach = pearl * 1.35;
+  // Every arc is sampled once, and the samples outlive the call: a stitch is
+  // immutable, the workshop runs this after each stitch, and the flower it
+  // runs over is the same objects plus one.
+  const samplesOf = (s: Extract<Stitch, { kind: "arc" }>) => {
+    const hit = arcSamples.get(s);
+    if (hit) return hit;
+    const made = stitchSamples(s);
+    arcSamples.set(s, made);
+    return made;
+  };
+  /**
+   * A stitch covers a small cap of the ball. Two caps further apart than their
+   * radii plus the reach cannot meet, and the pair loop is quadratic: on a full
+   * flower this rejects almost every pair with one dot product.
+   */
+  const capOf = (s: Extract<Stitch, { kind: "arc" }>) => {
+    const hit = arcCaps.get(s);
+    if (hit) return hit;
+    const pts = samplesOf(s);
+    let x = 0, y = 0, z = 0;
+    for (const p of pts) { x += p[0]; y += p[1]; z += p[2]; }
+    const len = Math.hypot(x, y, z) || 1;
+    const c: Vec3 = [x / len, y / len, z / len];
+    let ang = 0;
+    for (const p of pts) {
+      const dot = Math.max(-1, Math.min(1, c[0] * p[0] + c[1] * p[1] + c[2] * p[2]));
+      ang = Math.max(ang, Math.acos(dot));
+    }
+    const made = { c, ang };
+    arcCaps.set(s, made);
+    return made;
+  };
   return stitches.map((s) => {
     if (s.kind !== "arc" || s.pole == null || s.kai == null || s.set == null) return s;
-    const self = stitchSamples(s);
+    const self = samplesOf(s);
     const ats: { t: number; n: number }[] = [];
     for (const other of arcs) {
       if (other === s) continue;
@@ -1104,7 +1352,17 @@ export function annotateSetCrossings(stitches: Stitch[]): Stitch[] {
       if (other.set === s.set) continue;
       const earlier = other.kai < s.kai || (other.kai === s.kai && other.set < s.set);
       if (!earlier) continue;
-      const c = closestApproachT(self, stitchSamples(other));
+      // Chord <= angle, so the reach used as an angle only ever keeps more pairs.
+      const capA = capOf(s);
+      const capB = capOf(other);
+      const between = Math.acos(Math.max(-1, Math.min(1,
+        capA.c[0] * capB.c[0] + capA.c[1] * capB.c[1] + capA.c[2] * capB.c[2])));
+      if (between > capA.ang + capB.ang + reach) continue;
+      // Samples only bracket the crossing: between them the curves can come a
+      // whole segment closer, so the bracket is kept wide and then walked in.
+      const coarse = closestApproachT(self, samplesOf(other));
+      if (coarse.dist > reach + stepOf(s) + stepOf(other)) continue;
+      const c = crossingOf(s, other, coarse);
       if (c.dist > reach) continue;
       const sameKai = other.kai === s.kai;
       // Cross-kai tips already have sitA / sitB. Same-kai kousa is near
@@ -1219,6 +1477,9 @@ export function kagariPhaseHint(
   poleIndex = 0,
   kagariSet: 0 | 1 = 0,
   canGrow = true,
+  /** Rows lying at this pole and how many the thread leaves room for. */
+  rows = 0,
+  rowsFit = 0,
 ): string {
   const support = motifSupport(division, motif);
   if (!support.supported) return support.reason;
@@ -1228,9 +1489,11 @@ export function kagariPhaseHint(
       return "Нажмите «Вторая группа» — следующие четыре лепестка.";
     }
     if (motif === "kiku") {
+      // Say how far the flower has grown: a beginner cannot count rows on a ball.
+      const count = rows > 0 && rowsFit > 0 ? `Ряд ${rows} из ${rowsFit}. ` : "";
       return canGrow
-        ? "Нажмите «Следующий ряд» — продолжить обе группы."
-        : "Кагари: ряд лежит. Другой полюс — переверните шар.";
+        ? `${count}Нажмите «Следующий ряд» — продолжить обе группы.`
+        : `${count}Кагари: ряд лежит. Другой полюс — переверните шар.`;
     }
     return "Кагари: ряд лежит. Другой полюс — переверните шар.";
   }

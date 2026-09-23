@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "s8-a1-b1-control",
+  "sourceDigest": "9f9bd0a8235672a315ab08f5f78a5ecc7e23b2150a12a41ab32b9e57cea6cbfd",
+  "snapshotDigest": "f1378def682760e8eb7be3efbeb328ed06188ae48b557e6d92cb9bcba5ca265d",
+  "status": "accepted",
+  "calibrated": false,
+  "circumferenceMm": 230.00000000000003,
+  "threadDiameterMm": 0.4,
+  "lengthsMm": {
+    "A": {
+      "total": 321.54774772169503,
+      "surface": 287.13629754218596,
+      "piercing": 31.575359361436014,
+      "buried": 2.836090818073575
+    },
+    "B": {
+      "total": 322.09369542920894,
+      "surface": 287.68224524969935,
+      "piercing": 31.575359361435986,
+      "buried": 2.836090818073576
+    }
+  }
+}

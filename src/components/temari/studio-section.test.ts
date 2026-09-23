@@ -32,7 +32,9 @@ describe('studio thread section', () => {
     } finally { geometry.dispose(); }
   });
 
-  it('keeps the stated circular radius through the pole and along the flank', () => {
+  it('lies on the mari as a flattened pearl, not a round pipe', () => {
+    // The current illustrative section is half-height, not measured compression.
+    const flat = 0.5;
     for (const kind of ['pearl5', 'pearl8'] as ThreadKind[]) {
       const radius = stitchRadius(kind), geometry = createMotifGeometry([arc()], 0, kind)!;
       try {
@@ -41,14 +43,24 @@ describe('studio thread section', () => {
         for (let i = 0; i < p.count; i++) {
           const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
           // The central portion is a known great-circle centreline of radius
-          // 1+r in the XY plane. Exclude the explicitly buried end passages.
+          // 1+r*flat in the XY plane. Exclude the explicitly buried end passages.
           if (Math.abs(Math.atan2(x, y)) > .9) continue;
-          const sectionRadius = Math.hypot(Math.hypot(x, y) - (1 + radius), z);
-          assert.ok(Math.abs(sectionRadius - radius) < 2e-7, `${kind}: section ${sectionRadius}`);
+          const radial = Math.hypot(x, y) - (1 + radius * flat);
+          const q = Math.hypot(radial / (radius * flat), z / radius);
+          assert.ok(Math.abs(q - 1) < 5e-5, `${kind}: section ${q}`);
           assert.ok(Math.hypot(x, y, z) >= 1 - 2e-7, 'surface yarn does not enter the mari');
           checked++;
         }
         assert.ok(checked > 1000, 'checks both the polar cap and the wider flank');
+        let touchingRings = 0;
+        for (let i = 0; i < p.count; i += 21) {
+          const top = new Vector3().fromBufferAttribute(p, i);
+          if (Math.abs(Math.atan2(top.x, top.y)) > .9) continue;
+          const bottom = new Vector3().fromBufferAttribute(p, i + 10);
+          assert.ok(Math.abs(bottom.length() - 1) < 3e-7, 'each free ring touches the mari, not R+r/2');
+          touchingRings++;
+        }
+        assert.ok(touchingRings > 50);
       } finally { geometry.dispose(); }
     }
   });

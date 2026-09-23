@@ -1,16 +1,38 @@
 import * as THREE from "three";
+import { pileHeights, type Pile } from "./pile-heights.ts";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
-import type { Stitch } from "./patterns";
-import { annotateSetCrossings, groupWorkingThreads } from "./patterns";
-import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread";
-import { STITCH_THREAD_MM, unitFromMm } from "./measure";
-import { WRAP_LAYERS } from "./craft";
-import { stackBump, scoopAway, scoopRadius, markTurnPast as markTurnPastVec, sphereBezier as sphereBezierVec, innerBiteJoin as innerBiteJoinVec, appendParkBite } from "./kagari";
+import type { Stitch } from "./patterns.ts";
+import { annotateSetCrossings, groupWorkingThreads } from "./patterns.ts";
+import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread.ts";
+import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
+import { WRAP_LAYERS } from "./craft.ts";
+import {
+  stackBump, scoopAway, scoopRadius, KAGARI_SCOOP_MM, clampNotPastPole, appendParkBite,
+} from "./kagari.ts";
 
 const ARC_SEGS = 32;
-/** Almost one pearl so the over cord clears; a hair less so it nestles, not a tent. */
-const STACK_LIFT = 0.92;
+/**
+ * Rise over one thread underneath, in diameters of a round pearl.
+ * Real kagari compresses: the working thread nestles into the one below,
+ * it does not sit as a second garden hose. A full diameter was the pile
+ * at the inner star. Assumptions still name the round-section ideal of
+ * one diameter; this factor is the studio nestle until a sourced compress
+ * model exists (#93).
+ */
+const STACK_LIFT = 0.42;
+/** Cross-section height / width. Pearl cotton lies on the mari, not a pipe. */
+const STITCH_FLAT = 0.5;
+const KAGARI_LEG_SEGS = 48;
+/** Engineering windows for a reverse pickup, not measured needle dimensions. */
+const REVERSE_JOIN_MM = 6;
+const REVERSE_HUG_MM = 4;
+/**
+ * Straight pierce depth under the unit sphere (mm). Matches lower-kagari's
+ * engineering bite; TemariKai's ~2 mm is the surface scoop, not this drop.
+ * Studio bury still uses scoopRadius so the pearl sits under the cover.
+ */
+const NEEDLE_DEPTH_MM = 1;
 
 const _a = new THREE.Vector3();
 const _t = new THREE.Vector3();
@@ -21,6 +43,8 @@ const _ua = new THREE.Vector3();
 const _ub = new THREE.Vector3();
 const _pa = new THREE.Vector3();
 const _pb = new THREE.Vector3();
+const _h0 = new THREE.Vector3();
+const _h1 = new THREE.Vector3();
 
 function kindMm(kind: ThreadKind) {
   if (kind === "pearl8") return STITCH_THREAD_MM.pearl8;
@@ -39,7 +63,7 @@ function slerpUnit(
   _ub.copy(b).normalize();
   const dot = THREE.MathUtils.clamp(_ua.dot(_ub), -1, 1);
   const theta = Math.acos(dot);
-  if (theta < 1e-4) return out.copy(_ua);
+  if (theta < 1e-4) return out.copy(_ua).lerp(_ub, t).normalize();
   if (theta > Math.PI - 1e-4) {
     const axis =
       Math.abs(_ua.y) < 0.9 ? _t.set(0, 1, 0) : _t.set(1, 0, 0);
@@ -80,6 +104,24 @@ export function slerpOnSphere(
 ) {
   return slerp(a, b, t, out);
 }
+
+/** Spherical de Casteljau interpolation, with independent end tangents. */
+function pickupDirection(
+  a: THREE.Vector3,
+  c1: THREE.Vector3,
+  c2: THREE.Vector3,
+  b: THREE.Vector3,
+  t: number,
+  out: THREE.Vector3,
+) {
+  const middle = slerpUnit(c1, c2, t, new THREE.Vector3());
+  slerpUnit(a, c1, t, _h0);
+  slerpUnit(c2, b, t, _h1);
+  slerpUnit(_h0, middle, t, _h0);
+  slerpUnit(middle, _h1, t, _h1);
+  return slerpUnit(_h0, _h1, t, out);
+}
+
 
 function vec(p: [number, number, number], lift = 0, kind: ThreadKind = DEFAULT_KIND.stitch) {
   const mm = kindMm(kind);
@@ -167,7 +209,7 @@ function arcRibbon(a: THREE.Vector3, b: THREE.Vector3, width: number) {
  * chidori round *returns* to the start mark — that is a park, not a weld.
  * The park still takes the inner uwagake bite so the start ray is not a cusp.
  */
-function arcPath(
+export function arcPath(
   stitch: Extract<Stitch, { kind: "arc" }>,
   kind: ThreadKind,
 ): THREE.Vector3[] {
@@ -190,8 +232,10 @@ function arcPath(
   const lift = (t: number, dir: THREE.Vector3) => {
     // Preserve the path's declared lift at every orientation. This legacy
     // stack estimate is not a contact solver; latitude cannot correct it.
+    // One STACK_LIFT pearl-step at sitAts only — tall tip-kousa hills
+    // (1.65·d) made the staircase elbows on row 4.
     const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts)) * diameter * STACK_LIFT;
-    return dir.clone().multiplyScalar(1 + half + extra);
+    return dir.clone().multiplyScalar(1 + half * STITCH_FLAT + extra);
   };
   if (via.length === 0) {
     const a = anchors[0]!;
@@ -230,55 +274,263 @@ function nearVec(a: THREE.Vector3, b: THREE.Vector3) {
   return a.distanceToSquared(b) < 1.6e-4;
 }
 
-/**
- * Tip of the V, past the mark, on the mari. The open side of the V is
- * `from`+`to`; the turn sits on the opposite side so the pearl goes *around*
- * the jiwari instead of reversing through the vertex.
- */
-function markTurnPast(
+/** Same pin, not the next kai one pearl further along the meridian. */
+function samePin(a: THREE.Vector3, b: THREE.Vector3) {
+  _ua.copy(a).normalize();
+  _ub.copy(b).normalize();
+  return _ua.distanceToSquared(_ub) < 4e-5;
+}
+
+export function sewKagariBite(
   from: THREE.Vector3,
   mark: THREE.Vector3,
   to: THREE.Vector3,
-  dist: number,
-): THREE.Vector3 {
-  const p = markTurnPastVec(
-    [from.x, from.y, from.z],
-    [mark.x, mark.y, mark.z],
-    [to.x, to.y, to.z],
-    dist,
-  );
-  return new THREE.Vector3(p[0], p[1], p[2]);
+  kind: ThreadKind,
+  enter?: [number, number, number],
+  exit?: [number, number, number],
+  onStack: boolean | number = false,
+): THREE.Vector3[] {
+  const { inPts, outPts } = sewKagariLegs(from, mark, to, kind, enter, exit, onStack);
+  return [...inPts, ...outPts];
 }
 
-/** Quadratic Bézier on the sphere. Does not cusp at the control point. */
-function sphereBezier(
-  a: THREE.Vector3,
-  b: THREE.Vector3,
-  c: THREE.Vector3,
-  n: number,
-): THREE.Vector3[] {
-  return sphereBezierVec(
-    [a.x, a.y, a.z],
-    [b.x, b.y, b.z],
-    [c.x, c.y, c.z],
-    n,
-  ).map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+function smooth01(t: number) {
+  const u = Math.min(1, Math.max(0, t));
+  return u * u * (3 - 2 * u);
 }
 
 /**
- * Replace the cusp at `mark` with a pearl U around it.
- * Outer V: the U sits past the pin (tip side). Inner uwagake: the U sits
- * on the open side and must not enter the polar cap — a poleward loop is
- * macaroni on the silhouette.
+ * Far and near sides of the jiwari at the tip. Needle in on the far
+ * side, out on the near — across the guideline, not toward the pin.
  */
-function joinAroundMark(
+function reversePorts(
+  tip: THREE.Vector3,
+  from: THREE.Vector3,
+  enter?: [number, number, number],
+  exit?: [number, number, number],
+  preservePorts = false,
+  halfWidth = unitFromMm(STITCH_THREAD_MM.pearl5),
+): { inn: THREE.Vector3; out: THREE.Vector3 } {
+  const t = tip.clone().normalize();
+  // Recipe stacked bites request 2·pearl across the mark; on the sphere the
+  // chord reads ~1.995·pearl (FP / normalize). Requiring ≥2·pearl dropped
+  // preservePorts and synthesized ±pearl ports on the tip — leave then shared
+  // that ray with arrive (r1/outer↔r2/inner). Accept near-full span.
+  if (preservePorts && enter && exit
+    && new THREE.Vector3(...enter).distanceTo(new THREE.Vector3(...exit)) >= halfWidth * 1.9) {
+    const a = new THREE.Vector3(...enter).normalize();
+    const b = new THREE.Vector3(...exit).normalize();
+    const f = from.clone().normalize();
+    return f.distanceToSquared(a) < f.distanceToSquared(b) ? { inn: b, out: a } : { inn: a, out: b };
+  }
+  const across = new THREE.Vector3();
+  if (enter && exit) {
+    across.set(exit[0] - enter[0], exit[1] - enter[1], exit[2] - enter[2]);
+    across.addScaledVector(t, -across.dot(t));
+  }
+  if (across.lengthSq() < 1e-12) {
+    const pole = new THREE.Vector3(0, t.y >= 0 ? 1 : -1, 0);
+    across.crossVectors(t, pole);
+  }
+  if (across.lengthSq() < 1e-12) across.set(1, 0, 0);
+  across.normalize();
+  const a = t.clone().addScaledVector(across, -halfWidth).normalize();
+  const b = t.clone().addScaledVector(across, halfWidth).normalize();
+  const f = from.clone().normalize();
+  if (f.distanceToSquared(a) < f.distanceToSquared(b)) return { inn: b, out: a };
+  return { inn: a, out: b };
+}
+
+/**
+ * Visible needle only. Craft: the thread follows a straight needle through
+ * the wrap — stay on the mari until a short pierce band at the far port,
+ * elliptical drop to the bury floor there, undrawn buried return under the
+ * mark, rise out of the near port, then leave over the arriving flank.
+ * Stacked catches steer to the ports (not the shared tip) and ramp one pearl
+ * of height toward the port before diving. Depth is engineering
+ * (`NEEDLE_DEPTH_MM` / `scoopRadius` floor), not TemariKai's ~2 mm surface scoop.
+ *
+ * Inner uwagake keeps wider recipe ports; the buried bar between ports is not
+ * drawn as a visible cord.
+ */
+export function sewKagariLegs(
+  from: THREE.Vector3,
+  mark: THREE.Vector3,
+  to: THREE.Vector3,
+  kind: ThreadKind,
+  enter?: [number, number, number],
+  exit?: [number, number, number],
+  /** False/0 = first row; true/1 = one under; n = overOperations.length under the tip. */
+  onStack: boolean | number = false,
+  tangents?: { from: THREE.Vector3; to: THREE.Vector3 },
+  /** Pile render: no count-based shelf or hump; heights come from the pile. */
+  flat = false,
+): { inPts: THREE.Vector3[]; outPts: THREE.Vector3[] } {
+  const half = unitFromMm(kindMm(kind)) * 0.5;
+  const pearl = half * 2;
+  const fromR = from.length();
+  const toR = to.length();
+  const tip = mark.clone().normalize();
+  const inPts: THREE.Vector3[] = [];
+  const outPts: THREE.Vector3[] = [];
+  // Depth follows recipe overs under this tip (cap matches stackBump). Boolean
+  // true keeps the old one-under path for unit tests.
+  const stackDepth = Math.min(3, typeof onStack === "number" ? Math.max(0, onStack) : onStack ? 1 : 0);
+  const stacked = stackDepth > 0;
+  // Every later upper stitch has recipe ports widened around its actual stack.
+  // Falling back to synthetic ±pearl ports silently discards that chronology.
+  const { inn, out } = reversePorts(tip, from, enter, exit, stacked, pearl);
+  // Whole pearl under the cover (same floor as start/stop scoops).
+  const buriedR = Math.min(
+    scoopRadius(1, Math.min(fromR, toR), half),
+    1 - unitFromMm(NEEDLE_DEPTH_MM),
+  );
+  const lift0 = flat ? 0 : pearl * 1.4;
+  const hug = unitFromMm(REVERSE_HUG_MM);
+  // Marks of stacked inner tips are ~1 pearl apart; their ports can be ~0.5 mm
+  // apart — closer than the tube diameter. A later catch must meet its ports
+  // above every earlier tip it lists in overOperations, or leave/arrive pierce
+  // corridors share a ray (r1/outer↔r2/inner on three rows at depth=1).
+  // Ramp: 0 at the clip (no radius jump), full clear at the port before diving.
+  //
+  // TemariKai uwagake (verified 22.09 on toolkit pages; craft confirmed 22.09):
+  // lay the working thread snug (~1 thread width, no gap), carry it *over*
+  // previous rounds, then pierce under the tip bundle at the natural
+  // guideline crossing. Eye-of-needle stroke opens the wedge; stretch points
+  // ~2 mm for #5. Moderate tension (kagari). Craft does *not* reserve an empty
+  // corridor for a future exit — the needle pierces the wrap where needed.
+  // Same catch: leave rides over arrive (tip lift). Later catch: arrive must
+  // clear that leave crest — pearl·depth alone sits under lift0≈1.4·pearl and
+  // collides after snug pack (r0/inner↔r1/inner). Clear crest + pearl/under.
+  // Dive still shares a ray with the previous tip's arrive near the ports —
+  // surface witness remains; needs under-pile path / shove, not tip-gate.
+  // Clear crest + pearl/under. Cap the leave addend so stackClear is not
+  // lift0-on-lift0 with tip hills (row-4 staircases). Leave path still uses
+  // full lift0 below for same-stitch over.
+  const leaveCrest = Math.min(lift0, pearl);
+  const stackClear = stacked && !flat ? pearl * stackDepth + leaveCrest : 0;
+  const dropFloor = Math.max(fromR - buriedR, toR - buriedR);
+  // Keep the dive shorter than tip→port so the V crossing stays on the mari,
+  // but not so short the tube folds (full-depth band overlapped stacked rows).
+  const portOffset = Math.max(inn.distanceTo(tip), out.distanceTo(tip), pearl);
+  // Pile render: the arm lies over the earlier rounds all the way to its port
+  // and goes into the hole there — steep, within a thread. A band scaled on the
+  // port offset buried the whole arm from the crossing on, one side short.
+  const pierceBand = flat && stacked ? Math.min(dropFloor, pearl) : Math.min(dropFloor, portOffset * 0.85);
+  const pierceRadius = (distance: number, surface: number, atPort: number, band = pierceBand) => {
+    if (distance >= band) return surface;
+    const drop = surface - atPort;
+    const u = Math.max(0, Math.min(1, 1 - distance / band));
+    return surface - drop * (1 - Math.sqrt(Math.max(0, 1 - u * u)));
+  };
+  const fromDir = from.clone().normalize();
+  const toDir = to.clone().normalize();
+  const control = (at: THREE.Vector3, tangent: THREE.Vector3, angle: number) => {
+    const direction = tangent.clone().projectOnPlane(at).normalize();
+    return at.clone().multiplyScalar(Math.cos(angle)).addScaledVector(direction, Math.sin(angle));
+  };
+  const fromAngle = fromDir.angleTo(tip) / 3;
+  const toAngle = toDir.angleTo(tip) / 3;
+  const inC1 = tangents ? control(fromDir, tangents.from, fromAngle)
+    // Stacked catches: steer toward the far port, not the shared tip — the
+    // previous row already owns that V. First-row outer reverse still aims
+    // at the tip so the flanks meet as a V on the mari.
+    : slerpUnit(fromDir, stacked ? inn : tip, 1 / 3, new THREE.Vector3());
+  const inC2 = slerpUnit(fromDir, inn, 2 / 3, new THREE.Vector3());
+  const outC1 = slerpUnit(out, toDir, 1 / 3, new THREE.Vector3());
+  const outC2 = tangents ? control(toDir, tangents.to, -toAngle)
+    : slerpUnit(stacked ? out : tip, toDir, 2 / 3, new THREE.Vector3());
+  const slope = (tangent: THREE.Vector3, radial: THREE.Vector3, angle: number) =>
+    tangent.dot(radial) / Math.max(tangent.clone().projectOnPlane(radial).length(), 1e-12) * angle * 3;
+  const fromSlope = tangents ? slope(tangents.from, fromDir, fromAngle) : 0;
+  const toSlope = tangents ? slope(tangents.to, toDir, toAngle) : 0;
+  const angle = (a: THREE.Vector3, b: THREE.Vector3) =>
+    a.clone().normalize().angleTo(b.clone().normalize());
+  const lengthBound = Math.max(angle(from, tip) + angle(tip, inn), angle(out, tip) + angle(tip, to));
+  const dropSpan = Math.max(fromR, toR) + stackClear - buriedR;
+  const n = Math.max(
+    KAGARI_LEG_SEGS,
+    Math.ceil(3 * lengthBound / (pearl / 6)),
+    // Elevated stacked surface → bury needs fine samples or the emerge jumps a pearl.
+    Math.ceil(dropSpan / (pearl * 0.4)),
+    stacked ? Math.ceil(pierceBand / (pearl * 0.35)) : 0,
+  );
+  const addLeg = (pts: THREE.Vector3[], p: THREE.Vector3) => {
+    // Cap per-sample radius change so an elevated stacked emerge cannot jump
+    // a whole pearl in one step (tube fold / port test).
+    if (pts.length > 0) {
+      const prev = pts[pts.length - 1]!;
+      const dr = p.length() - prev.length();
+      const limit = pearl * 0.85;
+      if (Math.abs(dr) > limit) {
+        const steps = Math.ceil(Math.abs(dr) / limit);
+        const aDir = prev.clone().normalize();
+        const bDir = p.clone().normalize();
+        for (let s = 1; s < steps; s++) {
+          const u = s / steps;
+          const dir = aDir.clone().lerp(bDir, u).normalize();
+          const rad = prev.length() + dr * u;
+          pts.push(dir.multiplyScalar(rad));
+        }
+      }
+    }
+    pts.push(p);
+  };
+  for (let i = 1; i <= n; i++) {
+    const t = i / n;
+    pickupDirection(fromDir, inC1, inC2, inn, t, _a);
+    // Stacked: longer ramp so arrive clears leave without a steep shelf.
+    const stackT = stacked ? Math.min(1, t / 0.55) : t;
+    const stack = stackClear * smooth01(stackT);
+    const surface = fromR + stack + fromSlope * t * (1 - t) ** 2;
+    addLeg(inPts, _a.clone().multiplyScalar(pierceRadius(_a.distanceTo(inn), surface, buriedR)));
+  }
+  for (let i = 0; i < n; i++) {
+    const t = i / n;
+    pickupDirection(out, outC1, outC2, toDir, t, _a);
+    const u = _a.distanceTo(tip) / hug;
+    const over = Math.exp(-(u * u));
+    // Leave does not keep stackClear: rising to an elevated shelf near the tip
+    // puts the emerge in the next kai's arrive corridor. Tip-gate bury clears
+    // the previous tip; arrive stackClear sits over this leave.
+    // Leave rides over arrive of the *same* tip (full lift0 — pickup sections
+    // need this clearance). Opposite-set layering stays at STACK_LIFT only.
+    const lift = lift0 * over * smooth01(_a.distanceTo(toDir) / unitFromMm(1.5));
+    const surface = toR + toSlope * t * t * (t - 1) + lift;
+    // The leave comes up out of its own port and lies over the arrive — the
+    // chidori X. The 22.09 tip-gate kept stacked leaves buried until past the
+    // tip, so one side of every later stitch surfaced short, under the other.
+    addLeg(outPts, _a.clone().multiplyScalar(
+      pierceRadius(_a.distanceTo(out), surface, buriedR),
+    ));
+  }
+  return { inPts, outPts };
+}
+
+/** @deprecated tests; same needle as sewKagariBite. */
+export function outerBackbite(
+  from: THREE.Vector3,
+  mark: THREE.Vector3,
+  to: THREE.Vector3,
+  kind: ThreadKind,
+) {
+  return sewKagariBite(from, mark, to, kind);
+}
+
+function atKeep(mark: THREE.Vector3, p: THREE.Vector3, keep: number) {
+  const d = p.distanceTo(mark);
+  if (d <= keep || d < 1e-9) return p.clone();
+  slerp(mark, p, keep / d, _a);
+  return _a.clone();
+}
+
+function clipAroundMark(
   pts: THREE.Vector3[],
   piece: THREE.Vector3[],
   mark: THREE.Vector3,
-  pearl: number,
-) {
-  const inner = Math.abs(mark.y) / (mark.length() || 1) > 0.75;
-  const keep = pearl * (inner ? 0.5 : 0.7);
+  keepMm = KAGARI_SCOOP_MM,
+): { from: THREE.Vector3; to: THREE.Vector3; k: number } | null {
+  const keep = unitFromMm(keepMm);
   const keep2 = keep * keep;
   while (pts.length > 2 && pts[pts.length - 1]!.distanceToSquared(mark) < keep2) {
     pts.pop();
@@ -287,49 +539,105 @@ function joinAroundMark(
   while (i < piece.length - 2 && piece[i]!.distanceToSquared(mark) < keep2) i++;
   const fromRaw = pts[pts.length - 1];
   const toRaw = piece[i];
-  if (!fromRaw || !toRaw) {
-    for (let k = i; k < piece.length; k++) pts.push(piece[k]!);
-    return;
-  }
-  if (fromRaw.distanceToSquared(toRaw) < pearl * pearl * 0.05) {
-    for (let k = i; k < piece.length; k++) {
-      if (k === 0 && nearVec(fromRaw, piece[k]!)) continue;
-      pts.push(piece[k]!);
-    }
-    return;
-  }
-  const atKeep = (p: THREE.Vector3) => {
-    const d = p.distanceTo(mark);
-    if (d <= keep || d < 1e-9) return p.clone();
-    slerp(mark, p, keep / d, _a);
-    return _a.clone();
-  };
+  if (!fromRaw || !toRaw) return null;
+  const from = atKeep(mark, fromRaw, keep);
+  const to = atKeep(mark, toRaw, keep);
   pts.pop();
-  const from = atKeep(fromRaw);
-  const to = atKeep(toRaw);
-  pts.push(from);
-  if (inner) {
-    for (const p of innerBiteJoinVec(
-      [from.x, from.y, from.z],
-      [mark.x, mark.y, mark.z],
-      [to.x, to.y, to.z],
-      pearl,
-      3,
-    )) {
-      pts.push(new THREE.Vector3(p[0], p[1], p[2]));
-    }
-  } else {
-    const past = markTurnPast(from, mark, to, pearl * 0.32);
-    for (const p of sphereBezier(from, past, to, 20)) pts.push(p);
+  const toDist = to.distanceToSquared(mark);
+  let k = i;
+  while (k < piece.length && piece[k]!.distanceToSquared(mark) <= toDist + 1e-8) k++;
+  return { from, to, k };
+}
+
+/**
+ * Soft radial sit on an already-built tip path. Tip join replaces arcPath and
+ * would erase opposite-set sitAts; re-apply one gentle STACK_LIFT step — not a
+ * leave-crest-tall hill (that made row-4 staircase elbows).
+ *
+ * `side`: arrive = end of the leg into this tip (sitAts near t=1); leave = start
+ * of the outgoing leg (sitAts near t=0). Raising the wrong end built humps at
+ * outer tips where kousa is not.
+ */
+function raiseSitAtsNearTip(
+  pts: THREE.Vector3[],
+  tip: THREE.Vector3,
+  sitAts: readonly { t: number; n: number }[] | undefined,
+  kind: ThreadKind,
+  side: "arrive" | "leave",
+): void {
+  if (!sitAts?.length || pts.length < 2) return;
+  const relevant = sitAts.filter((a) => (side === "arrive" ? a.t > 0.72 : a.t < 0.28));
+  if (!relevant.length) return;
+  const n = Math.min(2, Math.max(1, ...relevant.map((a) => a.n)));
+  const pearl = unitFromMm(kindMm(kind));
+  const amount = pearl * STACK_LIFT * n;
+  const falloff = unitFromMm(REVERSE_HUG_MM);
+  const tipU = tip.clone().normalize();
+  for (const p of pts) {
+    const r = p.length();
+    if (r < 0.995) continue;
+    const ang = p.clone().normalize().angleTo(tipU);
+    if (ang >= falloff) continue;
+    const w = 1 - ang / falloff;
+    const smooth = w * w * (3 - 2 * w);
+    const extra = amount * smooth;
+    p.multiplyScalar((r + extra) / r);
   }
-  for (let k = i + 1; k < piece.length; k++) pts.push(piece[k]!);
+}
+
+/**
+ * Cut the working thread at an outer mark: arriving dives across the
+ * jiwari, leaving comes out over it. Drawing the buried bite as one
+ * cord was the hole-and-loop at the tip. Both kinds of mark have buried ports.
+ */
+function splitJoinAroundMark(
+  pts: THREE.Vector3[],
+  piece: THREE.Vector3[],
+  mark: THREE.Vector3,
+  kind: ThreadKind,
+  bite?: { enter: [number, number, number]; exit: [number, number, number] },
+  onStack: boolean | number = false,
+  arriveSitAts?: readonly { t: number; n: number }[],
+  leaveSitAts?: readonly { t: number; n: number }[],
+  flat = false,
+): { head: THREE.Vector3[]; tail: THREE.Vector3[]; outPts: THREE.Vector3[] } {
+  const stackDepth = Math.min(3, typeof onStack === "number" ? Math.max(0, onStack) : onStack ? 1 : 0);
+  // Clip outside the entire catch. A fixed fraction of one thread put
+  // the join inside later, wider ports and made the cord double back.
+  const portExtent = stackDepth > 0 && bite ? Math.max(
+    mark.clone().normalize().distanceTo(new THREE.Vector3(...bite.enter).normalize()),
+    mark.clone().normalize().distanceTo(new THREE.Vector3(...bite.exit).normalize()),
+  ) : 0;
+  const keepMm = Math.max(REVERSE_JOIN_MM, portExtent / unitFromMm(1) + kindMm(kind));
+  const clip = clipAroundMark(pts, piece, mark, keepMm);
+  if (!clip) {
+    return { head: pts, tail: piece, outPts: [] };
+  }
+  const { inPts, outPts } = sewKagariLegs(
+    clip.from, mark, clip.to, kind, bite?.enter, bite?.exit, stackDepth,
+    {
+      from: clip.from.clone().sub(pts.at(-1)!),
+      to: piece[clip.k]!.clone().sub(clip.to),
+    },
+    flat,
+  );
+  // Arrive sits on earlier opposite set near this tip; leave may start a leg
+  // whose kousa is near t=0 (next stitch's sitAts).
+  raiseSitAtsNearTip(inPts, mark, arriveSitAts, kind, "arrive");
+  raiseSitAtsNearTip(outPts, mark, leaveSitAts ?? arriveSitAts, kind, "leave");
+  return {
+    head: [...pts, clip.from, ...inPts],
+    tail: [...outPts, clip.to, ...piece.slice(clip.k)],
+    outPts,
+  };
 }
 
 /**
  * TemariKai: start comes up from the wrap; end goes back in.
- * Walks away from the laid stitch, dropping under the cover (r=1).
- * A parked round emerges at the start and sits on the mari at the end —
- * a closed drawing is not the thread joining itself.
+ * Tucks back under the working stitch, dropping under the cover (r=1).
+ * Walking past an outer pin toward the equator is a second knot; walking
+ * into the cap is a stub. A parked round emerges at the start and sits
+ * on the mari at the end — a closed drawing is not the thread joining itself.
  */
 function scoopOnPath(
   at: THREE.Vector3,
@@ -339,13 +647,13 @@ function scoopOnPath(
   const half = unitFromMm(kindMm(kind)) * 0.5;
   const surfaceR = at.length();
   const inner = Math.abs(at.y) / (at.length() || 1) > 0.75;
-  if (inner) return [];
-  const guide = from;
+  // Reflect `from` over `at`: scoopAway then walks back under the stitch.
+  const guide = _t.copy(at).multiplyScalar(2).sub(from);
   const units = scoopAway(
     [at.x, at.y, at.z],
     [guide.x, guide.y, guide.z],
     8,
-    undefined,
+    inner ? 1.2 : undefined,
   );
   const n = units.length;
   if (n === 0) return [];
@@ -355,19 +663,90 @@ function scoopOnPath(
   });
 }
 
-function buryWorkingEnds(pts: THREE.Vector3[], kind: ThreadKind): THREE.Vector3[] {
-  if (pts.length < 2) return pts;
-  const head = scoopOnPath(pts[0]!, pts[1]!, kind);
-  const tail = scoopOnPath(pts[pts.length - 1]!, pts[pts.length - 2]!, kind);
-  if (head.length === 0 && tail.length === 0) return pts;
-  return [...head.reverse(), ...pts, ...tail];
+/** Start/stop of a working thread. Tests. */
+export function workingThreadScoop(
+  at: THREE.Vector3,
+  from: THREE.Vector3,
+  kind: ThreadKind,
+) {
+  return scoopOnPath(at, from, kind);
 }
 
-function buryWorkingStart(pts: THREE.Vector3[], kind: ThreadKind): THREE.Vector3[] {
+function buryWorkingEnds(pts: THREE.Vector3[], kind: ThreadKind): THREE.Vector3[] {
+  return buryEnds(pts, kind, true, true);
+}
+
+function buryEnds(
+  pts: THREE.Vector3[],
+  kind: ThreadKind,
+  start: boolean,
+  stop: boolean,
+): THREE.Vector3[] {
   if (pts.length < 2) return pts;
-  const head = scoopOnPath(pts[0]!, pts[1]!, kind);
-  if (head.length === 0) return pts;
-  return [...head.reverse(), ...pts];
+  let out = pts;
+  if (start) {
+    const head = scoopOnPath(out[0]!, out[1]!, kind);
+    if (head.length) out = [...head.reverse(), ...out];
+  }
+  if (stop && out.length >= 2) {
+    const tail = scoopOnPath(out[out.length - 1]!, out[out.length - 2]!, kind);
+    if (tail.length) out = [...out, ...tail];
+  }
+  return out;
+}
+
+/**
+ * A round that already lies does not change while the next one is sewn, and
+ * rebuilding every tube for every stitch cost one long frame per stitch,
+ * growing with the flower (0.07 s at eight stitches, 0.47 s at a hundred and
+ * fifty). Tubes are therefore kept by the path they were built from: the same
+ * points, radius and twist give back the same geometry.
+ */
+const TUBE_CACHE_MAX = 600;
+const tubeCache = new Map<string, THREE.BufferGeometry>();
+
+function tubeKey(
+  pts: THREE.Vector3[],
+  radius: number,
+  taperEnds: boolean,
+  closed: boolean,
+  uPerUnit: number,
+  heightScale: number,
+) {
+  const parts: string[] = [
+    radius.toFixed(5), taperEnds ? "t" : "-", closed ? "c" : "-",
+    uPerUnit.toFixed(4), heightScale.toFixed(2),
+  ];
+  for (const p of pts) parts.push(`${p.x.toFixed(4)},${p.y.toFixed(4)},${p.z.toFixed(4)}`);
+  return parts.join("|");
+}
+
+function cachedTube(
+  pts: THREE.Vector3[],
+  radius: number,
+  taperEnds = false,
+  closed = false,
+  uPerUnit = 0,
+  heightScale = STITCH_FLAT,
+) {
+  const key = tubeKey(pts, radius, taperEnds, closed, uPerUnit, heightScale);
+  const hit = tubeCache.get(key);
+  if (hit) {
+    // Touch: the oldest entry is the first to go when the cache is full.
+    tubeCache.delete(key);
+    tubeCache.set(key, hit);
+    return hit;
+  }
+  const geo = tubeOnSphere(pts, radius, taperEnds, closed, uPerUnit, heightScale, true);
+  geo.userData.cached = true;
+  tubeCache.set(key, geo);
+  while (tubeCache.size > TUBE_CACHE_MAX) {
+    const oldest = tubeCache.keys().next().value;
+    if (oldest === undefined) break;
+    tubeCache.get(oldest)?.dispose();
+    tubeCache.delete(oldest);
+  }
+  return geo;
 }
 
 function stackedArcCord(
@@ -378,68 +757,191 @@ function stackedArcCord(
   if (pts.length < 2) return new THREE.BufferGeometry();
   // Open working length: emerge from the wrap, bury at the last stitch.
   // Full pearl — the cover hides the ends, so no taper and no coin.
-  return tubeOnSphere(buryWorkingEnds(pts, kind), stitchRadius(kind), false, false);
+  return cachedTube(buryWorkingEnds(pts, kind), stitchRadius(kind), false, false,
+    twistPerUnit(kind));
 }
 
 function stackedArcChain(
   chain: Extract<Stitch, { kind: "arc" }>[],
   kind: ThreadKind,
 ) {
-  if (chain.length === 1) return stackedArcCord(chain[0]!, kind);
-  const pearl = unitFromMm(kindMm(kind));
+  const ok = stackedArcChainParts(chain, kind);
+  if (ok.length === 0) return new THREE.BufferGeometry();
+  if (ok.length === 1) return ok[0]!;
+  return mergeGeometries(ok, false) ?? ok[0]!;
+}
+
+/** The kept tubes a working thread is made of, one per kai it lies in. */
+export function stackedArcChainParts(
+  chain: Extract<Stitch, { kind: "arc" }>[],
+  kind: ThreadKind,
+  /** Pile render: hand each shaped centerline out instead of building a tube. */
+  emit?: (pts: THREE.Vector3[], at: Extract<Stitch, { kind: "arc" }>) => void,
+): THREE.BufferGeometry[] {
+  const flat = !!emit;
+  if (chain.length === 1) {
+    if (emit) {
+      const pts = arcPath(chain[0]!, kind);
+      if (pts.length >= 2) emit(buryWorkingEnds(pts, kind), chain[0]!);
+      return [];
+    }
+    const one = stackedArcCord(chain[0]!, kind);
+    return (one.getAttribute("position")?.count ?? 0) > 0 ? [one] : [];
+  }
   const parts: THREE.BufferGeometry[] = [];
-  const flush = (pts: THREE.Vector3[], parks: boolean) => {
+  const pearl = unitFromMm(kindMm(kind));
+  type Arc = Extract<Stitch, { kind: "arc" }>;
+  // `at` is the stitch the piece is drawn along: the pile stacks it at that
+  // stitch's time and paints it that stitch's colour.
+  const tube = (pts: THREE.Vector3[], buryStart: boolean, buryStop: boolean, at: Arc) => {
     if (pts.length < 2) return;
     let shaped = pts;
-    if (parks) {
+    // Parked round: start and stop on the same pin — take the inner U so the
+    // meridian is not a cusp (#96 / appendParkBite).
+    if (pts.length >= 8 && samePin(pts[0]!, pts[pts.length - 1]!)) {
       const bite = appendParkBite(
         pts.map((p) => [p.x, p.y, p.z] as [number, number, number]),
         pearl,
       );
       shaped = bite.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
     }
-    const path = parks ? buryWorkingStart(shaped, kind) : buryWorkingEnds(shaped, kind);
-    parts.push(tubeOnSphere(path, stitchRadius(kind), false, false));
+    if (emit) {
+      emit(buryEnds(shaped, kind, buryStart, buryStop), at);
+      return;
+    }
+    const geo = cachedTube(
+      buryEnds(shaped, kind, buryStart, buryStop),
+      stitchRadius(kind),
+      false,
+      false,
+      twistPerUnit(kind),
+    );
+    geo.userData.centerline = shaped.map((p) => p.clone());
+    parts.push(geo);
   };
   let pts: THREE.Vector3[] = [];
+  // Last stitch joined into `pts`, and the stitch the held first piece of a kai belongs to.
+  let prev: Arc = chain[0]!;
+  let pendingAt: Arc = chain[0]!;
   let kai0 = chain[0]?.kai;
-  let headA = chain[0]?.a;
-  const joinPiece = (piece: THREE.Vector3[]) => {
+  let prevBite: { enter: [number, number, number]; exit: [number, number, number] } | undefined;
+  let prevTip: "inner" | "outer" | undefined;
+  let prevStackDepth = 0;
+  let prevSitAts: readonly { t: number; n: number }[] | undefined;
+  let emerge = true;
+  let pending: THREE.Vector3[] | null = null;
+  let kaiFirst: Extract<Stitch, { kind: "arc" }> | undefined;
+  const stackDepthOf = (s: Extract<Stitch, { kind: "arc" }>) => {
+    if (s.tip !== "inner") return 0;
+    const overs = s.operation?.overOperations?.length ?? 0;
+    if (overs > 0) return Math.min(3, overs);
+    // Do NOT promote opposite-set tip kousa to stackClear — that built the
+    // rectangular bridges. sitAts are re-applied gently after the tip join.
+    return (s.kai ?? 0) > 0 ? 1 : 0;
+  };
+  const joinAt = (
+    piece: THREE.Vector3[],
+    stackDepth: number,
+    arriveSitAts?: readonly { t: number; n: number }[],
+    leaveSitAts?: readonly { t: number; n: number }[],
+  ) => {
+    const mark = pts[pts.length - 1]!;
+    return splitJoinAroundMark(
+      pts, piece, mark, kind, prevBite, stackDepth, arriveSitAts, leaveSitAts, flat,
+    );
+  };
+  const closeKai = () => {
+    if (pending && kaiFirst && pts.length > 1 && prevTip === "inner") {
+      const firstPiece = arcPath(kaiFirst, kind);
+      const mark = pts[pts.length - 1]!;
+      const next0 = firstPiece[0];
+      if (next0 && firstPiece.length > 1 && samePin(mark, next0)) {
+        const { head, tail } = joinAt(
+          pending.slice(), prevStackDepth, prevSitAts, kaiFirst.sitAts,
+        );
+        tube(head, false, false, prev);
+        tube(tail, false, false, pendingAt);
+        pending = null;
+        pts = [];
+        return;
+      }
+    }
+    if (pending) {
+      tube(pending, emerge, false, pendingAt);
+      pending = null;
+      if (pts.length >= 2) tube(pts, false, true, prev);
+    } else if (pts.length >= 2) {
+      tube(pts, emerge, true, prev);
+    }
+    pts = [];
+  };
+  const joinPiece = (
+    piece: THREE.Vector3[],
+    sitAts?: readonly { t: number; n: number }[],
+  ) => {
     if (pts.length === 0) {
       pts.push(...piece);
       return;
     }
     const mark = pts[pts.length - 1]!;
     const next0 = piece[0]!;
-    if (nearVec(mark, next0) && pts.length > 1 && piece.length > 1) {
-      pts.pop();
-      joinAroundMark(pts, piece, mark, pearl);
-    } else {
-      const start = nearVec(mark, next0) ? 1 : 0;
-      for (let k = start; k < piece.length; k++) pts.push(piece[k]!);
+    if (samePin(mark, next0) && pts.length > 1 && piece.length > 1) {
+      if (prevTip === "inner") {
+        const { head, tail } = splitJoinAroundMark(
+          pts, piece, mark, kind, prevBite, prevStackDepth, prevSitAts, sitAts, flat,
+        );
+        if (pending === null) [pending, pendingAt] = [head, prev];
+        else tube(head, false, false, prev);
+        pts = tail;
+        emerge = false;
+        return;
+      }
+      const { head, tail } = joinAt(piece, 0, sitAts, sitAts);
+      if (pending === null) [pending, pendingAt] = [head, prev];
+      else tube(head, false, false, prev);
+      pts = tail;
+      emerge = false;
+      return;
     }
+    const start = nearVec(mark, next0) ? 1 : 0;
+    for (let k = start; k < piece.length; k++) pts.push(piece[k]!);
   };
   for (let i = 0; i < chain.length; i++) {
     const s = chain[i]!;
-    if (s.kai !== kai0 && pts.length) {
-      const prev = chain[i - 1]!;
-      flush(pts, !!(headA && sameMark(headA, prev.b)));
-      pts = [];
-      kai0 = s.kai;
-      headA = s.a;
-    }
     const piece = arcPath(s, kind);
+    if (s.kai !== kai0 && pts.length) {
+      const next0 = piece[0];
+      const resume = !!(next0 && piece.length > 1 && pts.length > 1
+        && samePin(pts[pts.length - 1]!, next0));
+      if (resume) {
+        if (pending) {
+          tube(pending, emerge, false, pendingAt);
+          pending = null;
+        }
+        emerge = false;
+        kaiFirst = s;
+      } else {
+        closeKai();
+        emerge = true;
+        prevBite = undefined;
+        prevTip = undefined;
+        prevStackDepth = 0;
+        prevSitAts = undefined;
+        kaiFirst = undefined;
+      }
+      kai0 = s.kai;
+    }
     if (piece.length < 2) continue;
-    joinPiece(piece);
+    if (!kaiFirst) kaiFirst = s;
+    joinPiece(piece, s.sitAts);
+    prev = s;
+    prevBite = s.bite;
+    prevTip = s.tip;
+    prevStackDepth = stackDepthOf(s);
+    prevSitAts = s.sitAts;
   }
-  if (pts.length >= 2) {
-    const last = chain[chain.length - 1]!;
-    flush(pts, !!(headA && sameMark(headA, last.b)));
-  }
-  const ok = parts.filter((g) => (g.getAttribute("position")?.count ?? 0) > 0);
-  if (ok.length === 0) return new THREE.BufferGeometry();
-  if (ok.length === 1) return ok[0]!;
-  return mergeGeometries(ok, false) ?? ok[0]!;
+  closeKai();
+  return parts.filter((g) => (g.getAttribute("position")?.count ?? 0) > 0);
 }
 
 function stackedArcRibbon(
@@ -490,6 +992,90 @@ function stackedArcRibbon(
     }
   }
   return ribbonFromPoints(pts, width, false);
+}
+
+/**
+ * Pearl cotton is 2-ply with a visible helix; one full turn takes this many of
+ * the cord's own diameters. Two estimates, neither of them a manufacturer's
+ * figure — nobody publishes the twist of coton perlé:
+ *
+ * - measured off macro photographs of DMC perle #5 (Needle 'n Thread): the
+ *   slope of the plies at the centre of the silhouette is 43°, which is a pitch
+ *   of 3.4 diameters, and counting the bands along the cord gives 3.7–3.9;
+ * - calculated from sourced yarn data (5/2 = Ne 5 singles, twist-multiplier
+ *   rules, 7–15 turns per inch for comparable mercerised plied cottons):
+ *   230–350 turns per metre, a pitch of 4–6 diameters, angle 28–38°.
+ *
+ * 3.6 is the photographic reading, which is the one about appearance. The first
+ * value here was 1.8 — an angle of 60°, a hard rope — and the owner said so.
+ */
+export const PERLE_TWIST_PITCH = 3.6;
+
+function twistPerUnit(kind: ThreadKind) {
+  const pitch = unitFromMm(kindMm(kind)) * PERLE_TWIST_PITCH;
+  return pitch > 0 ? 1 / pitch : 0;
+}
+
+/**
+ * One tile = one twist along the cord × once around it, so the bands meet
+ * themselves at every edge: band(v - u) with two plies is seamless in both.
+ */
+function makePerleTexture(relief: boolean) {
+  const w = 128;
+  const h = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return tex;
+  const image = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const u = x / w;
+      const v = y / h;
+      // Two plies: the phase runs twice around while the helix advances once.
+      //
+      // Handedness, which is easy to get backwards: the ring angle turns from
+      // the outward axis towards tangent x outward, a right-handed screw along
+      // the thread, so on the geometry's own v this would be a Z twist — but a
+      // texture is sampled with flipY on (three.js default, checked), so the
+      // drawn v is 1 - v and the helix comes out left-handed. That is S, which
+      // is what pearl cotton is: «mercerized, 100% cotton, S-twisted, 2-ply
+      // thread» (needlery.org, Pearl Cotton & Floss). Flipping this sign draws
+      // a Z twist — the wrong thread.
+      const phase = 2 * (v - u);
+      const across = Math.abs(((phase % 1) + 1.5) % 1 - 0.5) * 2; // 0 at the crown, 1 in the groove
+      const round = Math.cos(across * Math.PI * 0.5); // a ply is round, not flat
+      const level = relief ? round : 0.82 + 0.18 * round;
+      const value = Math.max(0, Math.min(255, Math.round(level * 255)));
+      const i = (y * w + x) * 4;
+      image.data[i] = value;
+      image.data[i + 1] = value;
+      image.data[i + 2] = value;
+      image.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+let perle: THREE.CanvasTexture | null = null;
+let perleBump: THREE.CanvasTexture | null = null;
+
+/** Colour map of a pearl cord: the plies keep the thread's own colour. */
+export function getPerleTexture() {
+  if (!perle) perle = makePerleTexture(false);
+  return perle;
+}
+
+/** Height of the same plies, for the relief of the twist. */
+export function getPerleBump() {
+  if (!perleBump) perleBump = makePerleTexture(true);
+  return perleBump;
 }
 
 export function getYarnTexture() {
@@ -563,6 +1149,135 @@ function geodesicRibbon(points: THREE.Vector3[], width: number) {
   return ribbonFromPoints(pts, width, false);
 }
 
+/**
+ * The motif as the pieces it is made of. Merging them costs a copy of the whole
+ * flower, and the workshop rebuilds after every stitch: at a hundred and sixty
+ * stitches that copy alone was 0.2 s, one long frame per stitch. Drawing the
+ * pieces as they are keeps the kept tubes untouched.
+ */
+export type PilePart = { color: number; at: Extract<Stitch, { kind: "arc" }>; pts: THREE.Vector3[]; lift: number[] };
+const pileCache = new WeakMap<Stitch[], Map<ThreadKind, PilePart[]>>();
+/** The last pile per thread: the next stitch lays only what changed. */
+const lastPile = new Map<ThreadKind, Pile>();
+
+/**
+ * Pile render (spec/pile-render.md): every working thread's centerline in
+ * sewing order, without the count-based lifts, then one pass that rests each
+ * later sample on the threads already laid under it. Samples below the mari
+ * surface are diving into a port and neither lift nor carry.
+ */
+export function pileParts(stitches: Stitch[], kind: ThreadKind): PilePart[] {
+  let byKind = pileCache.get(stitches);
+  if (!byKind) {
+    byKind = new Map();
+    pileCache.set(stitches, byKind);
+  }
+  const hit = byKind.get(kind);
+  if (hit) return hit;
+  const arcs: Extract<Stitch, { kind: "arc" }>[] = stitches
+    .filter((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc")
+    .map((s) => ({ ...s, sitA: 0, sitB: 0, sitMid: 0, sitMidT: undefined, sitAts: undefined }));
+  const order = new Map<Extract<Stitch, { kind: "arc" }>, number>(arcs.map((s, i) => [s, i]));
+  const emitted: { color: number; stitch: Extract<Stitch, { kind: "arc" }>; at: number; seq: number; pts: THREE.Vector3[] }[] = [];
+  // A new colour is a new thread (spec/thread-identity.md): chain each colour
+  // on its own, as the old path does by drawing one colour at a time.
+  const byColor = new Map<number, Extract<Stitch, { kind: "arc" }>[]>();
+  for (const s of arcs) {
+    const list = byColor.get(s.color);
+    if (list) list.push(s);
+    else byColor.set(s.color, [s]);
+  }
+  for (const list of byColor.values()) {
+    for (const chain of groupWorkingThreads(list)) {
+      stackedArcChainParts(chain, kind, (pts, at) =>
+        emitted.push({ color: at.color, stitch: at, at: order.get(at) ?? 0, seq: emitted.length, pts }));
+    }
+  }
+  emitted.sort((a, b) => a.at - b.at || a.seq - b.seq);
+  const half = unitFromMm(kindMm(kind)) * 0.5;
+  const base = 1 + half * STITCH_FLAT;
+  const height = half * 2 * STITCH_FLAT;
+  // A crossing thread is narrower than an arc sample step: resample to a third
+  // of the width so every crossing lands on a sample.
+  for (const e of emitted) {
+    const dense: THREE.Vector3[] = [e.pts[0]!];
+    for (let i = 1; i < e.pts.length; i++) {
+      const a = e.pts[i - 1]!;
+      const b = e.pts[i]!;
+      const n = Math.max(1, Math.ceil(a.distanceTo(b) / (half * 2 / 3)));
+      for (let k = 1; k <= n; k++) {
+        const u = k / n;
+        const dir = a.clone().normalize().lerp(b.clone().normalize(), u).normalize();
+        dense.push(dir.multiplyScalar(a.length() + (b.length() - a.length()) * u));
+      }
+    }
+    e.pts = dense;
+  }
+  const lines = emitted.map((e) => ({
+    points: e.pts.map((p) => {
+      const u = p.clone().normalize();
+      return [u.x, u.y, u.z] as [number, number, number];
+    }),
+    // Inside the wrap only once the whole section is under the mari surface;
+    // a sample just starting down its port is still on the pile.
+    dive: e.pts.map((p) => p.length() < base - height),
+    // Signed: a sample the path already lays a little above the base lends
+    // support from where it is, not from the base.
+    offset: e.pts.map((p) => p.length() - base),
+  }));
+  const lifts = pileHeights(lines, { width: half * 2, height, portRadius: 0 }, lastPile.get(kind));
+  lastPile.set(kind, { lines, lifts });
+  const out = emitted.map((e, i) => ({
+    color: e.color,
+    at: e.stitch,
+    lift: lifts[i]!,
+    pts: e.pts.map((p, j) => (lines[i]!.dive[j]
+      ? p.clone()
+      : p.clone().normalize().multiplyScalar(p.length() + lifts[i]![j]!))),
+  }));
+  byKind.set(kind, out);
+  return out;
+}
+
+export function createMotifGeometryParts(
+  stitches: Stitch[],
+  colorIndex: number,
+  kind = DEFAULT_KIND.stitch,
+  opts: { pile?: boolean } = {},
+): THREE.BufferGeometry[] {
+  const width = ribbonWidth(kind);
+  const cord = kind !== "metallic";
+  const parts: THREE.BufferGeometry[] = [];
+  // The pile lays its own heights; the count-based crossings are only for the old path.
+  const annotated = cord && opts.pile ? stitches : annotateSetCrossings(stitches);
+  const arcs: Extract<Stitch, { kind: "arc" }>[] = [];
+  for (const stitch of annotated) {
+    if (stitch.color !== colorIndex) continue;
+    if (stitch.kind === "arc") {
+      arcs.push(stitch);
+    } else {
+      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, stitch.lift ?? 0, kind)), width * 1.08, true));
+    }
+  }
+  if (cord && opts.pile) {
+    for (const part of pileParts(stitches, kind)) {
+      if (part.color !== colorIndex) continue;
+      const geo = cachedTube(part.pts, stitchRadius(kind), false, false, twistPerUnit(kind));
+      geo.userData.centerline = part.pts.map((p) => p.clone());
+      parts.push(geo);
+    }
+  } else if (cord) {
+    for (const chain of groupWorkingThreads(arcs)) {
+      parts.push(...stackedArcChainParts(chain, kind));
+    }
+  } else {
+    for (const stitch of arcs) {
+      parts.push(stackedArcRibbon(stitch, width, kind));
+    }
+  }
+  return parts;
+}
+
 export function createMotifGeometry(
   stitches: Stitch[],
   colorIndex: number,
@@ -592,7 +1307,8 @@ export function createMotifGeometry(
   }
   if (parts.length === 0) return null;
   const merged = mergeGeometries(parts, false);
-  for (const geo of parts) geo.dispose();
+  // A kept tube outlives the merge that copied it; only fresh parts go.
+  for (const geo of parts) if (!geo.userData.cached) geo.dispose();
   if (!merged) return null;
   return merged;
 }
@@ -644,6 +1360,55 @@ export function createWrapLineGeometry(strands: THREE.Vector3[][]) {
   return geo;
 }
 
+function smoothStitchPath(
+  pts: THREE.Vector3[],
+  radius: number,
+  closed: boolean,
+) {
+  const path: THREE.Vector3[] = [];
+  const segs = closed ? pts.length : pts.length - 1;
+  const directions = new THREE.CatmullRomCurve3(pts.map(p => p.clone().normalize()), closed, "centripetal");
+  const radii = pts.map(p => p.length());
+  const radiusSlope = (i: number) => {
+    const before = radii[closed ? (i - 1 + pts.length) % pts.length : Math.max(0, i - 1)]!;
+    const after = radii[closed ? (i + 1) % pts.length : Math.min(pts.length - 1, i + 1)]!;
+    const left = radii[i]! - before, right = after - radii[i]!;
+    return left * right > 0 ? 2 * left * right / (left + right) : 0;
+  };
+  for (let i = 0; i < segs; i++) {
+    const next = (i + 1) % pts.length;
+    const a = radii[i]!, b = radii[next]!;
+    const ma = radiusSlope(i), mb = radiusSlope(next);
+    const steps = 4;
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      const t2 = t * t, t3 = t2 * t;
+      const radiusAt = (2 * t3 - 3 * t2 + 1) * a + (t3 - 2 * t2 + t) * ma
+        + (-2 * t3 + 3 * t2) * b + (t3 - t2) * mb;
+      directions.getPoint((i + t) / segs, _a).normalize().multiplyScalar(radiusAt);
+      path.push(_a.clone());
+    }
+  }
+  if (!closed) path.push(pts[pts.length - 1]!.clone());
+  // Use comparable arc-length steps for tube frames, independently of how
+  // densely a recipe samples its flanks versus its small needle passages.
+  const dense = closed ? [...path, path[0]!] : path;
+  const distances = [0];
+  for (let i = 1; i < dense.length; i++) distances.push(distances[i - 1]! + dense[i]!.distanceTo(dense[i - 1]!));
+  const length = distances.at(-1)!;
+  const count = Math.max(2, Math.ceil(length / (radius * .2)));
+  const uniform: THREE.Vector3[] = [];
+  let segment = 1;
+  for (let i = 0; i <= count - (closed ? 1 : 0); i++) {
+    const distance = length * i / count;
+    while (segment < dense.length - 1 && distances[segment]! < distance) segment++;
+    const span = distances[segment]! - distances[segment - 1]!;
+    const t = span > 1e-12 ? (distance - distances[segment - 1]!) / span : 0;
+    uniform.push(slerp(dense[segment - 1]!, dense[segment]!, t, new THREE.Vector3()));
+  }
+  return uniform;
+}
+
 /**
  * Pearl on the mari. Sphere-radial frames, not Frenet.
  *
@@ -656,21 +1421,28 @@ function tubeOnSphere(
   radius: number,
   taperEnds = false,
   closed = false,
+  /**
+   * Texture repeats per unit of length. 0 keeps the old 0..1 across the piece;
+   * a positive value makes one repeat a fixed length, so a long stitch and a
+   * short one carry the same twist.
+   */
+  uPerUnit = 0,
+  /** 1 = round cord (wrap). <1 flattens onto the mari (kagari). */
+  heightScale = 1,
+  /** Needle passages need smooth joins; preserve wrap sampling and its budget. */
+  smoothJoins = false,
 ) {
   if (pts.length < 2) return new THREE.BufferGeometry();
-  const path: THREE.Vector3[] = [];
-  const segs = closed ? pts.length : pts.length - 1;
-  for (let i = 0; i < segs; i++) {
-    const a = pts[i]!;
-    const b = pts[(i + 1) % pts.length]!;
-    const steps = 4;
-    for (let s = 0; s < steps; s++) {
-      const t = s / steps;
-      slerp(a, b, t, _a);
-      path.push(_a.clone());
+  const path: THREE.Vector3[] = smoothJoins ? smoothStitchPath(pts, radius, closed) : [];
+  if (!smoothJoins) {
+    const segs = closed ? pts.length : pts.length - 1;
+    for (let i = 0; i < segs; i++) {
+      for (let s = 0; s < 4; s++) {
+        path.push(slerp(pts[i]!, pts[(i + 1) % pts.length]!, s / 4, _a).clone());
+      }
     }
+    if (!closed) path.push(pts[pts.length - 1]!.clone());
   }
-  if (!closed) path.push(pts[pts.length - 1]!.clone());
   const nPath = path.length;
   if (nPath < 2) return new THREE.BufferGeometry();
   const along = [0];
@@ -699,7 +1471,15 @@ function tubeOnSphere(
     const p = path[i]!;
     const prev = path[closed ? (i - 1 + nPath) % nPath : Math.max(0, i - 1)]!;
     const next = path[closed ? (i + 1) % nPath : Math.min(nPath - 1, i + 1)]!;
-    _t.subVectors(next, prev);
+    const before = p.clone().sub(prev), after = next.clone().sub(p);
+    const left = before.length(), right = after.length();
+    // A dense pickup meets a sparse flank. The unweighted secant biases the
+    // frame toward the distant sample and can fold a finite-width tube there.
+    if (smoothJoins && left > 1e-12 && right > 1e-12) {
+      _t.copy(before).multiplyScalar(right / left).addScaledVector(after, left / right);
+    } else {
+      _t.subVectors(next, prev);
+    }
     if (_t.lengthSq() < 1e-12) {
       _t.crossVectors(p, Math.abs(p.y) < 0.9 ? _mid.set(0, 1, 0) : _mid.set(1, 0, 0));
     }
@@ -713,19 +1493,23 @@ function tubeOnSphere(
     _side.normalize();
     _mid.crossVectors(_t, _side).normalize();
     const r = radius * scaleAt(along[i] ?? 0);
-    // One circular physical section along the supplied path. The renderer
-    // must not flatten it or push its centreline into the mari near a pole.
+    const h = Math.max(0.2, heightScale);
     for (let j = 0; j <= radialSegs; j++) {
       const ang = (j / radialSegs) * Math.PI * 2;
       const c = Math.cos(ang);
       const s = Math.sin(ang);
-      const nx = (_side.x * c + _mid.x * s) * r;
-      const ny = (_side.y * c + _mid.y * s) * r;
-      const nz = (_side.z * c + _mid.z * s) * r;
+      // `_side` is off the mari; `_mid` is across the stitch. Flatten height.
+      const nx = (_side.x * c * h + _mid.x * s) * r;
+      const ny = (_side.y * c * h + _mid.y * s) * r;
+      const nz = (_side.z * c * h + _mid.z * s) * r;
       pos.push(p.x + nx, p.y + ny, p.z + nz);
-      const nl = Math.hypot(nx, ny, nz) || 1;
-      nrm.push(nx / nl, ny / nl, nz / nl);
-      uv.push(i / Math.max(1, nPath - 1), j / radialSegs);
+      const gx = _side.x * c / h + _mid.x * s;
+      const gy = _side.y * c / h + _mid.y * s;
+      const gz = _side.z * c / h + _mid.z * s;
+      const nl = Math.hypot(gx, gy, gz) || 1;
+      nrm.push(gx / nl, gy / nl, gz / nl);
+      uv.push(uPerUnit > 0 ? (along[i] ?? 0) * uPerUnit : i / Math.max(1, nPath - 1),
+        j / radialSegs);
     }
   }
   const wallSegs = closed ? nPath : nPath - 1;
@@ -740,28 +1524,8 @@ function tubeOnSphere(
       idx.push(a, a + 1, b, b, a + 1, b + 1);
     }
   }
-  if (!taperEnds && !closed) {
-    const first = path[0]!;
-    const last = path[nPath - 1]!;
-    // Working enter/exit sit under the wrap cover. A disk there reads as a
-    // coin on a shallow scoop; skip caps once the ends have dived in.
-    if (first.length() >= 1.0 && last.length() >= 1.0) {
-      const c0 = nPath * ring;
-      const c1 = c0 + 1;
-      const t0 = tangents[0]!;
-      const t1 = tangents[tangents.length - 1]!;
-      pos.push(first.x, first.y, first.z);
-      nrm.push(-t0.x, -t0.y, -t0.z);
-      uv.push(0, 0.5);
-      pos.push(last.x, last.y, last.z);
-      nrm.push(t1.x, t1.y, t1.z);
-      uv.push(1, 0.5);
-      for (let j = 0; j < radialSegs; j++) {
-        idx.push(c0, j + 1, j);
-        idx.push(c1, (nPath - 1) * ring + j, (nPath - 1) * ring + j + 1);
-      }
-    }
-  }
+  // No end caps. A disk on a kagari join faces the pin and sits on it
+  // as a coin; working ends have already dived under the wrap.
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
