@@ -413,7 +413,10 @@ export function sewKagariLegs(
   // Keep the dive shorter than tip→port so the V crossing stays on the mari,
   // but not so short the tube folds (full-depth band overlapped stacked rows).
   const portOffset = Math.max(inn.distanceTo(tip), out.distanceTo(tip), pearl);
-  const pierceBand = Math.min(dropFloor, portOffset * 0.85);
+  // Pile render: the arm lies over the earlier rounds all the way to its port
+  // and goes into the hole there — steep, within a thread. A band scaled on the
+  // port offset buried the whole arm from the crossing on, one side short.
+  const pierceBand = flat && stacked ? Math.min(dropFloor, pearl) : Math.min(dropFloor, portOffset * 0.85);
   const pierceRadius = (distance: number, surface: number, atPort: number, band = pierceBand) => {
     if (distance >= band) return surface;
     const drop = surface - atPort;
@@ -1147,7 +1150,7 @@ function geodesicRibbon(points: THREE.Vector3[], width: number) {
  * stitches that copy alone was 0.2 s, one long frame per stitch. Drawing the
  * pieces as they are keeps the kept tubes untouched.
  */
-type PilePart = { color: number; pts: THREE.Vector3[] };
+export type PilePart = { color: number; at: Extract<Stitch, { kind: "arc" }>; pts: THREE.Vector3[]; lift: number[] };
 const pileCache = new WeakMap<Stitch[], Map<ThreadKind, PilePart[]>>();
 
 /**
@@ -1156,7 +1159,7 @@ const pileCache = new WeakMap<Stitch[], Map<ThreadKind, PilePart[]>>();
  * later sample on the threads already laid under it. Samples below the mari
  * surface are diving into a port and neither lift nor carry.
  */
-function pileParts(stitches: Stitch[], kind: ThreadKind): PilePart[] {
+export function pileParts(stitches: Stitch[], kind: ThreadKind): PilePart[] {
   let byKind = pileCache.get(stitches);
   if (!byKind) {
     byKind = new Map();
@@ -1168,14 +1171,15 @@ function pileParts(stitches: Stitch[], kind: ThreadKind): PilePart[] {
     .filter((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc")
     .map((s) => ({ ...s, sitA: 0, sitB: 0, sitMid: 0, sitMidT: undefined, sitAts: undefined }));
   const order = new Map<Extract<Stitch, { kind: "arc" }>, number>(arcs.map((s, i) => [s, i]));
-  const emitted: { color: number; at: number; seq: number; pts: THREE.Vector3[] }[] = [];
+  const emitted: { color: number; stitch: Extract<Stitch, { kind: "arc" }>; at: number; seq: number; pts: THREE.Vector3[] }[] = [];
   for (const chain of groupWorkingThreads(arcs)) {
     stackedArcChainParts(chain, kind, (pts, at) =>
-      emitted.push({ color: at.color, at: order.get(at) ?? 0, seq: emitted.length, pts }));
+      emitted.push({ color: at.color, stitch: at, at: order.get(at) ?? 0, seq: emitted.length, pts }));
   }
   emitted.sort((a, b) => a.at - b.at || a.seq - b.seq);
   const half = unitFromMm(kindMm(kind)) * 0.5;
   const base = 1 + half * STITCH_FLAT;
+  const height = half * 2 * STITCH_FLAT;
   // A crossing thread is narrower than an arc sample step: resample to a third
   // of the width so every crossing lands on a sample.
   for (const e of emitted) {
@@ -1197,11 +1201,16 @@ function pileParts(stitches: Stitch[], kind: ThreadKind): PilePart[] {
       const u = p.clone().normalize();
       return [u.x, u.y, u.z] as [number, number, number];
     }),
-    dive: e.pts.map((p) => p.length() < base - 1e-6),
+    // Inside the wrap only once the whole section is under the mari surface;
+    // a sample just starting down its port is still on the pile.
+    dive: e.pts.map((p) => p.length() < base - height),
+    offset: e.pts.map((p) => Math.min(0, p.length() - base)),
   }));
-  const lifts = pileHeights(lines, { width: half * 2, height: half * 2 * STITCH_FLAT, portRadius: 0 });
+  const lifts = pileHeights(lines, { width: half * 2, height, portRadius: 0 });
   const out = emitted.map((e, i) => ({
     color: e.color,
+    at: e.stitch,
+    lift: lifts[i]!,
     pts: e.pts.map((p, j) => (lines[i]!.dive[j]
       ? p.clone()
       : p.clone().normalize().multiplyScalar(p.length() + lifts[i]![j]!))),

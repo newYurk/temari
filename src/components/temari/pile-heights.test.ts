@@ -59,6 +59,16 @@ describe("pile heights: later lies on earlier (spec/pile-render.md)", () => {
     assert.equal(mid(b!), 0);
   });
 
+  it("counts a sample partly down its port at the height it really is", () => {
+    const sunk = (n: number, o: number) => Array.from({ length: n }, () => o);
+    const earlier: PileLine = { points: run("x", 0), offset: sunk(81, -H / 2) };
+    const [, over] = pileHeights([earlier, { points: run("z", 0) }], opts);
+    assert.ok(Math.abs(mid(over!) - H / 2) < 1e-6, `rests on the sunk one ${mid(over!)}`);
+    const later: PileLine = { points: run("z", 0), offset: sunk(81, -H / 2) };
+    const [, up] = pileHeights([{ points: run("x", 0) }, later], opts);
+    assert.ok(Math.abs(mid(up!) - 1.5 * H) < 1e-6, `climbs from where it is ${mid(up!)}`);
+  });
+
   it("comes back over its own earlier stretch: the chidori X within one thread", () => {
     const loop = [...run("x", 0), ...run("z", 0)];
     const [l] = pileHeights([{ points: loop }], opts);

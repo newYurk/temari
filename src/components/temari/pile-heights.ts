@@ -13,8 +13,15 @@ export type PileLine = {
   points: Vec3[];
   /** Port centres of this line; within `portRadius` it dives, not lifts. */
   ports?: Vec3[];
-  /** Samples already diving into the wrap: neither lifted nor a support. */
+  /** Samples already diving into the wrap: never lifted. */
   dive?: boolean[];
+  /**
+   * Radial offset of each sample from the pile base (negative while diving).
+   * With it a diving sample still carries a later thread as high as it
+   * actually is — near the port it is just under the surface. Without it a
+   * diving sample is no support at all.
+   */
+  offset?: number[];
 };
 
 export type PileOptions = {
@@ -65,20 +72,23 @@ export function pileHeights(lines: PileLine[], opts: PileOptions): number[][] {
 
   lines.forEach((line, li) => {
     line.points.forEach((p, pi) => {
-      let lift = 0;
+      let top = -Infinity;
       if (!diving(line, p, pi)) {
         for (const s of near(p)) {
           // Its own last stretch is not a support; coming back over an
           // earlier stretch of itself (the chidori X) is.
           if (s.line === li && alongs[li]![pi]! - s.along < 2 * width) continue;
           if (swapped.has(`${s.line}:${li}`)) continue;
-          const q = lines[s.line]!.points[s.index]!;
-          if (diving(lines[s.line]!, q, s.index)) continue;
+          const under = lines[s.line]!;
+          const q = under.points[s.index]!;
+          const sunk = under.offset?.[s.index];
+          if (sunk == null && diving(under, q, s.index)) continue;
           const f = profile(dist(p, q), width);
-          if (f > 0) lift = Math.max(lift, lifts[s.line]![s.index]! + height * f);
+          if (f > 0) top = Math.max(top, (sunk ?? 0) + lifts[s.line]![s.index]! + height * f);
         }
       }
-      lifts[li]![pi] = lift;
+      // A sample already partly down its port rests on the pile from where it is.
+      lifts[li]![pi] = Math.max(0, top - (line.offset?.[pi] ?? 0));
       const k = key(p);
       const list = grid.get(k) ?? [];
       list.push({ line: li, index: pi, along: alongs[li]![pi]! });
