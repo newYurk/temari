@@ -249,10 +249,11 @@ that visual regression — not “still need more tip-gate.” Code restored to
 `b035092` stackClear path; do not treat the false clear as progress.
 
 **A/B tip kousa layering (22.09):** craft GT14 is A then B; later set must sit
-*over* earlier at kousa. Tip join erased B's `sitMid`. Using tip-kousa→
-`stackClear` made rectangular bridges — wrong. Now: keep tip leave crest for
-same-stitch over; re-apply a wide soft hill (~8 mm, height≈leave crest) after
-the tip join / on near-tip sitAts so B drapes over A without a shelf.
+*over* earlier at kousa. Tip join erased B's `sitMid`. `stackClear` for tip-kousa
+made rectangular bridges. Fix: wide soft tip hill on `arcPath` sitAts
+(`midW≈0.12`, height≈leave crest) + re-apply after tip join (~10 mm falloff).
+Same-kai B clears A through 4 packed rows; cross-kai later-over-earlier is
+separate. Circled “exit under white” was that tip kousa, not outer packed pierce.
 
 Не закрывать #94. Шаг ряда кику — **1× толщина нити** (snug, craft 22.09);
 прежний 1½× — инженерный зазор под порты, отклонён. Нижний прокол на луче —
