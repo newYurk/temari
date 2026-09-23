@@ -938,6 +938,75 @@ function kikuPetal(
   ];
 }
 
+/**
+ * Uwagake wedge (F7). The later top stitch takes the needle under every earlier
+ * round at this tip and pulls their legs in: at its level each leg lies inside
+ * the bite, a thread radius clear. Between the earlier stitch and this one the
+ * limit grows with the bite, so the legs lie in a narrow woven wedge on the
+ * line; below this stitch they ease back into their packed bands. Only stitches
+ * actually taken pull, so the wedge is as long as the rounds sewn so far.
+ */
+function gatherUnderBite(
+  ops: KagariOp[],
+  catches: number[],
+  pole: Vec3,
+  mark: Vec3,
+  half: number,
+  thread: number,
+) {
+  const radius = thread / 2;
+  const margin = thread * 0.1;
+  const blend = thread * 2;
+  const top = polarAround(pole, mark);
+  const wrap = (d: number) => (d > Math.PI ? d - 2 * Math.PI : d < -Math.PI ? d + 2 * Math.PI : d);
+  for (const k of catches) {
+    const earlier = ops[k];
+    if (!earlier) continue;
+    const next = ops.find((op, j) => j > k && op.pole === earlier.pole && op.set === earlier.set);
+    const from = polarAround(pole, earlier.mark.at).theta;
+    const fromHalf = angleBetween(earlier.bite.enter, earlier.bite.exit) / 2;
+    const span = Math.max(top.theta - from, 1e-9);
+    const limitAt = (theta: number) =>
+      fromHalf - radius + (half - radius - margin - (fromHalf - radius)) * ((theta - from) / span);
+    for (const op of [earlier, next]) {
+      if (!op) continue;
+      // A first-round flank is one arc with no via; lay its points out first.
+      const via = op.lay.via?.length ? op.lay.via
+        : Array.from({ length: 23 }, (_, i) => slerp3(op.lay.from, op.lay.to, (i + 1) / 24));
+      const dense = densifyNear(via, (p) => polarAround(pole, p).theta < top.theta + blend, thread / 3);
+      op.lay.via = dense.map((p) => {
+        const { theta, phi } = polarAround(pole, p);
+        if (theta < from || theta > top.theta + blend) return p;
+        const s = Math.sin(theta);
+        const d = wrap(phi - top.phi);
+        const lateral = Math.abs(d) * s;
+        const cap = theta <= top.theta
+          ? limitAt(theta)
+          : limitAt(top.theta) + (lateral - limitAt(top.theta)) * smoothStep((theta - top.theta) / blend);
+        if (lateral <= cap || cap <= 0 && lateral <= 0) return p;
+        return around(pole, theta, top.phi + Math.sign(d) * Math.max(0, cap) / s);
+      });
+    }
+  }
+}
+
+function smoothStep(t: number) {
+  const u = Math.min(1, Math.max(0, t));
+  return u * u * (3 - 2 * u);
+}
+
+/** Extra samples where `near` holds, so a bend there is not one long chord. */
+function densifyNear(pts: Vec3[], near: (p: Vec3) => boolean, step: number): Vec3[] {
+  const out: Vec3[] = pts.length ? [pts[0]!] : [];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]!;
+    const b = pts[i]!;
+    const n = near(a) || near(b) ? Math.max(1, Math.ceil(angleBetween(a, b) / step)) : 1;
+    for (let k = 1; k <= n; k++) out.push(k === n ? b : slerp3(a, b, k / n));
+  }
+  return out;
+}
+
 function pushKikuLeg(
   ops: KagariOp[],
   pole: Vec3,
@@ -1053,6 +1122,10 @@ export function compileKiku(
             cornerMm * (1 + over.length),
             [...right.via].reverse(),
           );
+          if (over.length) {
+            gatherUnderBite(ops, over, pole, right.a,
+              unitFromMm(cornerMm * (1 + over.length)) / 2, unitFromMm(STITCH_THREAD_MM[recipe.thread]));
+          }
           innerOver[line2]?.push(ops.length - 1);
         }
         const last = ops[ops.length - 1];

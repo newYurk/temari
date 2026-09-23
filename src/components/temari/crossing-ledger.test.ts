@@ -95,13 +95,10 @@ describe("crossing ledger: who lies on whom, from sewing order", () => {
   });
 
   // GT14 / Toolkit uwagake: the top stitch goes around all earlier threads.
-  // Masters' photos (TemariKai, Russian and Chinese classes, 23.09): the bite
-  // grows ~one thread per round because the earlier legs are gathered onto
-  // the line in a braid. The recipe still fans its legs at ~45°, so the
-  // oldest rounds lie outside a craft-width bite (16 of 24 on four rounds).
-  it("takes every later upper stitch around all the catches it declares", {
-    todo: "recipe legs fan out at the upper tip; masters gather them into a braid (HANDOFF 23.09)",
-  }, () => {
+  // The bite stays ~one thread wider per round because each later stitch pulls
+  // the earlier legs into a woven wedge on the line (masters' photos, 23.09);
+  // with the legs fanned at ~45° this failed 16 of 24 on four rounds.
+  it("takes every later upper stitch around all the catches it declares", () => {
     for (const set of [0, "all"] as const) {
       const four = buildCrossingLedger(compileKiku("simple", "out", "even", 0, 0, 4, set));
       assert.ok(four.catches.some((k) => k.declared.length > 0));
@@ -111,9 +108,7 @@ describe("crossing ledger: who lies on whom, from sewing order", () => {
     }
   });
 
-  it("carries the working thread over the earlier rounds before the top stitch (uwagake)", {
-    todo: "same braid: fanned legs never meet the later run at the tip (HANDOFF 23.09)",
-  }, () => {
+  it("carries the working thread over the earlier rounds before the top stitch (uwagake)", () => {
     const three = buildCrossingLedger(compileKiku("simple", "out", "even", 0, 0, 3, 0));
     const runsOf = (id: string) => new Set(three.spans
       .filter((s) => s.operationId === id || s.leaves === id).map((s) => s.operationId));

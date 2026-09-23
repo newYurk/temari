@@ -348,8 +348,11 @@ describe("kagari recipe atom", () => {
     // lowered the point counts (56 → 48 at three rounds): crossings that the
     // sample grid placed apart turn out to be the same meeting.
     // Snug one-pearl row pitch (craft pack, owner 22.09). Crossing counts
-    // measured at this density after natural outer pierce.
-    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 48], [10, 160, 152, 440]]) {
+    // measured at this density after natural outer pierce. 23.09: the uwagake
+    // wedge pulls earlier legs onto the line at the upper tips, so the deep
+    // flower meets fewer A/B crossings there (440 → 365); the same count comes
+    // out with the cap rejection switched off.
+    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 48], [10, 160, 152, 365]]) {
       const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, layers!, "all"))
         .filter((s) => s.kind === "arc");
       assert.equal(stitches.length, arcs, `arcs at ${layers} rounds`);
