@@ -1,7 +1,16 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { stackBump, innerBiteJoin, outerBiteJoin, appendParkBite } from "./kagari.ts";
+import type { Vector3 } from "three";
+import { stackBump, innerBiteJoin, outerBiteJoin, appendParkBite, closestApproachT } from "./kagari.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
+import {
+  compileKiku,
+  stitchesFromOps,
+  annotateSetCrossings,
+  groupWorkingThreads,
+  type Stitch,
+} from "./patterns.ts";
+import { stackedArcChainParts } from "./stitches.ts";
 
 describe("thread stack is local, not a lifted petal", () => {
   it("stackBump peaks at the named sites and is ~0 on a bare mid-leg", () => {
@@ -25,6 +34,56 @@ describe("thread stack is local, not a lifted petal", () => {
     assert.ok(d > 0.015 && d < 0.025);
     const midLift = stackBump(0.5, 3, 3, 0) * d;
     assert.ok(midLift < d * 0.2, "raising both ends does not levitate the leg");
+  });
+});
+
+describe("GT14 A then B: later set sits over earlier at tip kousa", () => {
+  it("after tip join, B0 centerline clears A0 at every near meeting", () => {
+    const aOps = compileKiku("simple", "out", "even", 0, 0, 1, 0);
+    const bOps = compileKiku("simple", "out", "even", 0, 4, 1, 1);
+    const stripped = [...stitchesFromOps(aOps), ...stitchesFromOps(bOps)].map((s) =>
+      s.kind === "arc" ? { ...s, sitMid: 0, sitMidT: undefined, sitAts: undefined } : s,
+    );
+    const all = annotateSetCrossings(stripped as Stitch[]);
+    const aArcs = all.filter((s): s is Extract<Stitch, { kind: "arc" }> =>
+      s.kind === "arc" && s.set === 0);
+    const bArcs = all.filter((s): s is Extract<Stitch, { kind: "arc" }> =>
+      s.kind === "arc" && s.set === 1);
+    assert.ok(bArcs.every((s) => (s.sitMid ?? 0) >= 1), "B annotated over A");
+
+    const lines = (arcs: Extract<Stitch, { kind: "arc" }>[]) => {
+      const out: [number, number, number][][] = [];
+      for (const chain of groupWorkingThreads(arcs)) {
+        for (const geo of stackedArcChainParts(chain, "pearl5")) {
+          const cl = geo.userData.centerline as Vector3[] | undefined;
+          if (!cl?.length) continue;
+          out.push(cl.map((p) => [p.x, p.y, p.z]));
+        }
+      }
+      return out;
+    };
+    const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
+    const aLines = lines(aArcs);
+    const bLines = lines(bArcs);
+    assert.ok(aLines.length >= 4 && bLines.length >= 4);
+
+    let meetings = 0;
+    for (const a of aLines) {
+      for (const b of bLines) {
+        const c = closestApproachT(a, b);
+        if (c.dist > pearl * 2.5) continue;
+        meetings++;
+        const iA = Math.min(a.length - 1, Math.round(c.tA * (a.length - 1)));
+        const iB = Math.min(b.length - 1, Math.round(c.tB * (b.length - 1)));
+        const rA = Math.hypot(...a[iA]!);
+        const rB = Math.hypot(...b[iB]!);
+        assert.ok(
+          rB + 1e-4 >= rA,
+          `B must sit over A at tip kousa (rB=${rB} rA=${rA} dist=${c.dist})`,
+        );
+      }
+    }
+    assert.ok(meetings >= 4, `expected A/B meetings near tip, got ${meetings}`);
   });
 });
 

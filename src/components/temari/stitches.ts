@@ -231,7 +231,16 @@ export function arcPath(
   const lift = (t: number, dir: THREE.Vector3) => {
     // Preserve the path's declared lift at every orientation. This legacy
     // stack estimate is not a contact solver; latitude cannot correct it.
-    const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts)) * diameter * STACK_LIFT;
+    const bump = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts));
+    // Near-tip A/B kousa must clear the earlier tip's leave crest (lift0≈1.4·pearl
+    // in sewKagariLegs), not only STACK_LIFT·diameter≈0.84·pearl — otherwise the
+    // later set visually dives under the earlier tip bar.
+    const tipKousa = bump > 0 && (sitAts ?? []).some(
+      (a) => Math.abs(t - a.t) < 0.08 && (a.t < 0.28 || a.t > 0.72),
+    );
+    // Clear leave crest (lift0 = 1.4·pearl) plus half the lower tube.
+    const step = tipKousa ? diameter * (1.4 + 0.5) : diameter * STACK_LIFT;
+    const extra = uniform + bump * step;
     return dir.clone().multiplyScalar(1 + half * STITCH_FLAT + extra);
   };
   if (via.length === 0) {
@@ -723,7 +732,7 @@ function stackedArcChain(
 }
 
 /** The kept tubes a working thread is made of, one per kai it lies in. */
-function stackedArcChainParts(
+export function stackedArcChainParts(
   chain: Extract<Stitch, { kind: "arc" }>[],
   kind: ThreadKind,
 ): THREE.BufferGeometry[] {
@@ -745,13 +754,15 @@ function stackedArcChainParts(
       );
       shaped = bite.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
     }
-    parts.push(cachedTube(
+    const geo = cachedTube(
       buryEnds(shaped, kind, buryStart, buryStop),
       stitchRadius(kind),
       false,
       false,
       twistPerUnit(kind),
-    ));
+    );
+    geo.userData.centerline = shaped.map((p) => p.clone());
+    parts.push(geo);
   };
   let pts: THREE.Vector3[] = [];
   let kai0 = chain[0]?.kai;
@@ -765,6 +776,13 @@ function stackedArcChainParts(
     if (s.tip !== "inner") return 0;
     const overs = s.operation?.overOperations?.length ?? 0;
     if (overs > 0) return Math.min(3, overs);
+    // Same-kai opposite set (GT14 A then B): kousa sits inside the tip join
+    // clip (~6 mm). sitMid on arcPath is erased there and sewKagariLegs only
+    // knew same-meridian overOperations — so B0 lost its over-A lift while A's
+    // leave tip still rose by lift0, and gold went under white. Treat a tip
+    // kousa as one under so arrive gets stackClear = pearl + lift0.
+    const tipKousa = (s.sitAts ?? []).some((a) => a.t > 0.72 || a.t < 0.28);
+    if (tipKousa) return 1;
     return (s.kai ?? 0) > 0 ? 1 : 0;
   };
   const joinAt = (piece: THREE.Vector3[], stackDepth: number) => {
