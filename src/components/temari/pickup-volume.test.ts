@@ -15,12 +15,12 @@ function ring(g: BufferGeometry, index: number) {
 }
 
 describe("finite-volume Kiku pickups", () => {
-  it("has no inverted visible tube faces through two packed rows, including the closing pickup", () => {
-    // Eye-comb under the tip pile clears 2-row A locate (TemariKai: stroke the
-    // wedge open). Three-plus-row residual folds from deeper comb are tracked
-    // with #94; do not reopen an engineered 1½× gap (owner: pack then pierce).
+  it("has no inverted visible tube faces through five packed rows, including the closing pickup", () => {
+    // Snug one-pearl pitch densifies the flower; ten-round residual folds are
+    // tracked with arrive-over / under-whole-pile work (#94), not a reason to
+    // reopen an engineered 1½× gap (owner 22.09: pack then pierce).
     for (const pole of [0, 1]) {
-      for (const rounds of [1, 2]) {
+      for (const rounds of [1, 3, 5]) {
         const arcs = stitchesFromOps(compileKiku("simple", "out", "even", pole, 0, rounds, 0));
         const parts = createMotifGeometryParts(arcs, 0);
         let visible = 0;

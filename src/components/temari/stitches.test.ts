@@ -245,34 +245,6 @@ describe("kagari bite goes in one side of the jiwari and out the other", () => {
     }
   });
 
-  it("stacked long approach rides over then buries under the tip pile", async () => {
-    const THREE = await import("three");
-    const { sewKagariLegs } = await import("./stitches.ts");
-    const { biteAcross } = await import("./kagari.ts");
-    const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
-    const r = 1 + pearl * 0.5;
-    const markTh = 0.15 + 3 * pearl;
-    const mark = new THREE.Vector3(0, Math.cos(markTh), Math.sin(markTh)).normalize().multiplyScalar(r);
-    // Far approach so under-pile bury engages (not the stub next to the mark).
-    const from = new THREE.Vector3(0.35, Math.cos(markTh + 0.22), Math.sin(markTh + 0.22))
-      .normalize().multiplyScalar(r);
-    const to = new THREE.Vector3(-0.35, Math.cos(markTh + 0.22), Math.sin(markTh + 0.22))
-      .normalize().multiplyScalar(r);
-    const bite = biteAcross([0, 1, 0], [mark.x, mark.y, mark.z], 0.71 * 3, 2);
-    const { inPts } = sewKagariLegs(from, mark, to, "pearl5", bite.enter, bite.exit, 2);
-    const tip = mark.clone().normalize();
-    const lift0 = pearl * 1.4;
-    let maxOver = 0;
-    let nearTipR = Infinity;
-    for (const p of inPts) {
-      const dTip = p.clone().normalize().distanceTo(tip);
-      maxOver = Math.max(maxOver, p.length());
-      if (dTip < pearl * 0.85) nearTipR = Math.min(nearTipR, p.length());
-    }
-    assert.ok(maxOver > r + lift0 * 0.8, "arrive rides over the previous leave crest");
-    assert.ok(nearTipR + pearl / 2 < 1, "near the tip the path is under the wrap/pile");
-  });
-
   it("working start/stop tucks back under the stitch, not past the outer pin", async () => {
     const THREE = await import("three");
     const { workingThreadScoop } = await import("./stitches.ts");

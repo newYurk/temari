@@ -228,17 +228,25 @@ locate и arrive-over-leave по-прежнему открыты.
 
 
 **Arrive-over after snug pack (22.09, codex/temari-next):** pack-then-pierce
-regressed the 2-row A locate: witness was `r0/inner-2` ↔ `r1/inner-2`
-(same-side arrive corridors), `dirDot≈1`. Tip-gate / short pierce / hard
-radius floors folded tubes or left the witness.
+regressed the 2-row A locate: witness is now `r0/inner-2` ↔ `r1/inner-2`
+(same-side arrive corridors), not the old `r1/outer↔r2/inner`. Axis gap at
+contact ~0.54 mm < 0.71 mm diameter, `dirDot≈1`, both near R≈1.00. Cause:
+`stackClear=pearl·depth` sat *under* leave tip lift (`lift0≈1.4·pearl`); and
+even with `stackClear=pearl·depth+lift0` the elevated shelf clears mid-approach
+(~1.7 mm radial) but the dive to the port re-enters the previous tip's arrive
+ray above the mari. Short pierce / hard radius floors fold tubes; longer leave
+tip-gate does not help (collision is arrive↔arrive). Same-side ports only
+~1.08·pearl apart at 1× pitch. Next: under-pile path that is buried through the
+shared ray, or lateral shove / new tip solver — not another tip-gate constant.
+`sewKagariLegs` now uses `stackClear=pearl·depth+lift0` and early ramp for all
+stacked depths (tests green; locate still exit 1 on 2–3 rows A).
 
-**Implemented (craft, TemariKai eye-of-needle):** deferred path tubing, then
-eye-comb presses earlier kai loft into the wrap near each later stacked tip
-(`stackedArcChainParts`) so the next stitch opens room under the pile.
-`sewKagariLegs` keeps `stackClear=pearl·depth+lift0` and early ramp; long
-approaches also bury under the tip core. Bounded `locate-studio-overlap`
-`--assert-clear` on 2–4 rows A → exit 2 (no witness). Pickup-volume folds
-checked through 2 packed rows; 3+ residual folds still open under #94.
+**Failed attempt, reverted (eye-comb `d15ed0b`):** deferred tubing + radial
+press of earlier kai loft near later tips + radius-jump caps. Locate on 2–4 A
+went exit 2 (no witness) by burying collisions under R=1 while shredding
+visible tubes (clipped fragments / staircased radii in studio). Root cause of
+that visual regression — not “still need more tip-gate.” Code restored to
+`b035092` stackClear path; do not treat the false clear as progress.
 
 Не закрывать #94. Шаг ряда кику — **1× толщина нити** (snug, craft 22.09);
 прежний 1½× — инженерный зазор под порты, отклонён. Нижний прокол на луче —
