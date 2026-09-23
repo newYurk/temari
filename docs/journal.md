@@ -214,7 +214,7 @@ TemariKai отдельно развёл состояния концов: вре�
 - Задачи: [модель #61](https://github.com/newYurk/temari/issues/61), [Simple #36](https://github.com/newYurk/temari/issues/36), [C8 #89](https://github.com/newYurk/temari/issues/89), [C10 #90](https://github.com/newYurk/temari/issues/90), [путь #82](https://github.com/newYurk/temari/issues/82), [контакты #86](https://github.com/newYurk/temari/issues/86), [документация #49](https://github.com/newYurk/temari/issues/49), [публикация #79](https://github.com/newYurk/temari/issues/79).
 - Дополнительный контекст прежнего исполнителя полезен прежде всего в виде ссылок на мастер-классы, принятых пользователем образцов и известных неудачных подходов. Полная переписка для старта не требуется.
 
-### Организация Git — полная версия (из STATE.md)
+### Организация Git — полная версия до 23.09 (из STATE.md; «не сливать» отменено передачей 23.09)
 
 - Общая ветка `codex/temari-next` создана от `origin/main` = `e541872`. Все принятые изменения этапа накапливаются в ней небольшими коммитами и регулярно отправляются на GitHub.
 - Рискованный эксперимент — ветка `codex/temari-next-<тема>` от общей, после проверки объединяется обратно. Цепочек зависимых веток не делать.

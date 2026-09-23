@@ -1,0 +1,1051 @@
+diff --git a/scripts/check-soft-pile.mts b/scripts/check-soft-pile.mts
+new file mode 100644
+index 0000000..aa13212
+--- /dev/null
++++ b/scripts/check-soft-pile.mts
+@@ -0,0 +1,72 @@
++/**
++ * Clearance of the soft-section pile under its own rule (#93, pile-heights.ts):
++ * the section is the hull of its two plies, carried by beads a ply across
++ * along its rolled core; two beads of different pieces, both above the mari,
++ * may not sit closer than their (compacted) heights allow at their plan
++ * distance. `count-studio-overlaps.mts --pile` checks the axes against the
++ * rigid level section instead, so there a rolled or compacted thread counts
++ * as an overlap by construction.
++ *
++ *   node --import tsx scripts/check-soft-pile.mts --rounds=4 --set=all
++ *   ... --strands=1 --compaction=0   the rigid bead (then this equals «Оси»)
++ */
++import { compileKiku, stitchesFromOps } from '../src/components/temari/patterns.ts';
++import { PILE_SECTION, pileParts } from '../src/components/temari/stitches.ts';
++import { MARI_C_CM } from '../src/components/temari/measure.ts';
++
++const arg = (name: string, fallback: string) =>
++  process.argv.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
++const rounds = Number(arg('rounds', '2'));
++const set = arg('set', '0') === 'all' ? 'all' as const : 0;
++if (arg('strands', '') !== '') PILE_SECTION.strands = Number(arg('strands', '2'));
++if (arg('compaction', '') !== '') PILE_SECTION.compaction = Number(arg('compaction', '0'));
++const R_MM = (MARI_C_CM * 10) / (2 * Math.PI);
++const W = 0.71 / R_MM;
++const H = W * 0.5;
++const plies = Math.max(1, Math.round(PILE_SECTION.strands));
++const reach = W / plies;
++
++const arcs = stitchesFromOps(compileKiku('simple', 'out', 'even', 0, 0, rounds, set));
++const pieces = pileParts(arcs, 'pearl5');
++type Bead = { piece: number; x: number; y: number; z: number; r: number; h: number };
++const beads: Bead[] = [];
++pieces.forEach((piece, i) => {
++  const K = piece.plies.strands;
++  piece.pts.forEach((p, j) => {
++    const r = p.length();
++    if (r <= 1) return;
++    for (let k = 0; k < K; k++) {
++      const s = j * K + k;
++      beads.push({
++        piece: i,
++        x: piece.plies.pos[s * 3]!, y: piece.plies.pos[s * 3 + 1]!, z: piece.plies.pos[s * 3 + 2]!,
++        // Absolute radius of the bead: the drawn axis plus its roll offset.
++        r: r + piece.plies.lift[s]! - piece.lift[j]!,
++        h: piece.plies.height[s]!,
++      });
++    }
++  });
++});
++const cell = (b: Bead) => [b.x, b.y, b.z].map(v => Math.floor(v / reach));
++const grid = new Map<string, number[]>();
++beads.forEach((b, i) => {
++  const k = cell(b).join(',');
++  (grid.get(k) ?? grid.set(k, []).get(k)!).push(i);
++});
++let pairs = 0, worst = 0;
++beads.forEach((b, i) => {
++  const [x, y, z] = cell(b);
++  for (let a = -1; a <= 1; a++) for (let c = -1; c <= 1; c++) for (let d = -1; d <= 1; d++) {
++    for (const j of grid.get(`${x + a},${y + c},${z + d}`) ?? []) {
++      const q = beads[j]!;
++      if (q.piece <= b.piece) continue;
++      const lat = Math.hypot(b.x - q.x, b.y - q.y, b.z - q.z);
++      if (lat >= reach) continue;
++      const need = (b.h + q.h) / 2 * Math.sqrt(1 - (lat / reach) ** 2);
++      const short = need - Math.abs(b.r - q.r);
++      if (short > 0.05 * H) { pairs++; worst = Math.max(worst, short); }
++    }
++  }
++});
++console.log(`Мягкое сечение: нитей ${plies}, сжатие ${PILE_SECTION.compaction.toFixed(3)}; кругов ${rounds}, группы ${set}: ${pieces.length} кусков, ${beads.length} бусин.`);
++console.log(`Оси (мягкое сечение): пар бусин ближе сечения ${pairs}${pairs ? `, худшая на ${(worst * R_MM).toFixed(3)} мм` : ''}.`);
+diff --git a/src/components/temari/pile-heights.test.ts b/src/components/temari/pile-heights.test.ts
+index 39ca9be..c1e7b4a 100644
+--- a/src/components/temari/pile-heights.test.ts
++++ b/src/components/temari/pile-heights.test.ts
+@@ -1,6 +1,6 @@
+ import { describe, it } from "node:test";
+ import assert from "node:assert/strict";
+-import { pileHeights, type PileLine } from "./pile-heights";
++import { pileHeights, pileLay, type PileLine } from "./pile-heights";
+ 
+ type Vec3 = [number, number, number];
+ 
+@@ -94,3 +94,84 @@ describe("pile heights: later lies on earlier (spec/pile-render.md)", () => {
+     assert.equal(mid(l!.slice(0, 81)), 0);
+   });
+ });
++
++describe("pile heights: soft section (#93)", () => {
++  const soft = { ...opts, strands: 2 };
++  /** A run offset by `k` widths across, as a line. */
++  const shingle = (k: number): PileLine => ({ points: run("x", k * W) });
++
++  it("keeps the rigid bead by default", () => {
++    const lines = [shingle(0), shingle(0.6), { points: run("z", 0) }];
++    assert.deepEqual(pileHeights(lines, opts), pileHeights(lines, { ...opts, strands: 1, compaction: 0 }));
++  });
++
++  it("lifts a full crossing by the section height: the ply hull has no groove", () => {
++    const [, b] = pileHeights([{ points: run("x", 0) }, { points: run("z", 0) }], soft);
++    assert.ok(Math.abs(mid(b!) - H) < 0.02 * H, `later at crossing ${mid(b!)}`);
++  });
++
++  it("tips over a neighbour's edge instead of perching on it level", () => {
++    const rigid = mid(pileHeights([shingle(0), shingle(0.6)], opts)[1]!);
++    const pile = pileLay([shingle(0), shingle(0.6)], soft);
++    const lift = mid(pile.lifts[1]!), roll = mid(pile.roll![1]!);
++    assert.ok(Math.abs(rigid - 0.8 * H) < 0.01 * H, `rigid ${rigid}`);
++    // Level, the hull of two plies is fuller at its edge than the ellipse and
++    // would sit higher (0.98 H); rolled it ends below the rigid bead.
++    assert.ok(lift < 0.95 * rigid, `soft ${lift} vs rigid ${rigid}`);
++    // The side towards the neighbour (−(t × up) here) is the one held up.
++    assert.ok(roll < (-10 * Math.PI) / 180, `roll ${roll}`);
++  });
++
++  it("keeps a shingle of ten threads low where rigid beads climb it as a stair", () => {
++    const lines = Array.from({ length: 10 }, (_, k) => shingle(0.6 * k));
++    const rigid = pileHeights(lines, opts).map(mid);
++    const soft10 = pileHeights(lines, soft).map(mid);
++    assert.ok(rigid[9]! > 6 * H, `rigid stair ${rigid[9]}`);
++    assert.ok(Math.max(...soft10) < 1.2 * H, `soft ${soft10.map((v) => (v / H).toFixed(2)).join(" ")}`);
++  });
++
++  it("compacts a thread borne by thread, not one on the mari", () => {
++    const pile = pileLay([{ points: run("x", 0) }, { points: run("z", 0) }], { ...opts, compaction: 0.2 });
++    // The later loses 20 % of its height where it lies on the earlier; the
++    // earlier is not redrawn, so the pair is 10 % lower.
++    assert.ok(Math.abs(mid(pile.lifts[1]!) - 0.9 * H) < 1e-6, `${mid(pile.lifts[1]!)}`);
++    assert.ok(Math.abs(mid(pile.flat![1]!) - 0.8) < 1e-9);
++    assert.equal(pile.flat![1]![0], 1);
++    assert.equal(pile.lifts[1]![0], 0);
++  });
++
++  it("never lets a bead cut into an earlier bead", () => {
++    const lines = [shingle(0), shingle(0.6), shingle(1.2), { points: run("z", 0) }, { points: run("z", W * 0.7) }];
++    const pile = pileLay(lines, { ...soft, compaction: 0.17 });
++    const reach = W / 2;
++    const { pos, lift, height } = pile.section!;
++    let worst = -Infinity;
++    for (let a = 0; a < lines.length; a++) for (let b = a + 1; b < lines.length; b++) {
++      for (let i = 0; i < pos[a]!.length / 3; i++) for (let j = 0; j < pos[b]!.length / 3; j++) {
++        const d = Math.hypot(pos[a]![i * 3]! - pos[b]![j * 3]!, pos[a]![i * 3 + 1]! - pos[b]![j * 3 + 1]!,
++          pos[a]![i * 3 + 2]! - pos[b]![j * 3 + 2]!);
++        if (d >= reach) continue;
++        const need = ((height[a]![i]! + height[b]![j]!) / 2) * Math.sqrt(1 - (d / reach) ** 2);
++        worst = Math.max(worst, need - (lift[b]![j]! - lift[a]![i]!));
++      }
++    }
++    assert.equal(pile.beads, 5);
++    // Beads are kept on the unit sphere, the search measures them off it: a
++    // difference of the order (width / radius)², a thousandth of the height.
++    assert.ok(worst < 1e-3 * H, `worst cut ${worst / H} of the height`);
++  });
++
++  it("lays only what changed after an earlier soft pile, with the same heights, rolls and flattening", () => {
++    const o = { ...soft, compaction: 0.17 };
++    const diag = run("x", 0).map(([x, y]) => norm([x, y, x]));
++    const before = [shingle(0), shingle(0.6), { points: diag }];
++    const pile = pileLay(before, o);
++    for (const next of [[...before, { points: run("z", 0) }], [before[0]!, before[1]!, shingle(1.2)]]) {
++      const again = pileLay(next, o, pile), fresh = pileLay(next, o);
++      assert.ok(again.kept! >= 2, `kept ${again.kept}`);
++      assert.deepEqual(again.lifts, fresh.lifts);
++      assert.deepEqual(again.roll, fresh.roll);
++      assert.deepEqual(again.flat, fresh.flat);
++    }
++  });
++});
+diff --git a/src/components/temari/pile-heights.ts b/src/components/temari/pile-heights.ts
+index 93fff8e..3acc0c9 100644
+--- a/src/components/temari/pile-heights.ts
++++ b/src/components/temari/pile-heights.ts
+@@ -7,6 +7,16 @@ type Vec3 = [number, number, number];
+  * on the threads laid before it. "Under" happens only where the craft says so:
+  * near a line's own port the needle takes it under the pile (no lift), and an
+  * underpassing pair swaps seniority.
++ *
++ * Soft section (#93). With `strands` > 1
++ * the section is that many strands side by side, touching — pearl cotton is
++ * two plies. The strands cannot part, but the section can roll about the
++ * thread: pressed down by its tension, it takes the roll at which its centre
++ * sits lowest while every strand clears what is under it. A thread whose one
++ * side lies on a neighbour's edge tips over that edge instead of perching on
++ * it level. With `compaction` a section borne by thread (not by the mari) is
++ * that share lower: a loaded contact packs the fibres towards the packing
++ * limit. Defaults (one strand, no compaction) are the rigid level bead.
+  */
+ export type PileLine = {
+   /** Unit directions along the thread, in the order it is laid. */
+@@ -33,21 +43,58 @@ export type PileOptions = {
+   portRadius: number;
+   /** [earlier, later] line pairs where the later goes under (underpassing). */
+   swaps?: [number, number][];
++  /**
++   * Strands across the section, touching, that roll together. 1: a rigid
++   * level bead. 2: the two plies of pearl cotton, each `width / 2` across and
++   * `height` tall — the laid section of STITCH_FLAT = 0.5 is exactly two
++   * round plies side by side.
++   */
++  strands?: number;
++  /**
++   * Share of its height a section loses when thread, not the mari, bears it
++   * (0: incompressible). Only the later thread is compacted: earlier lines
++   * never change, so the model keeps half of a pair's compaction.
++   */
++  compaction?: number;
++  /** Largest roll tried (radians); default 75°. */
++  maxRoll?: number;
++};
++
++/** Per-strand state of a laid pile; K strands per sample, sample-major. */
++export type PileSection = {
++  /** Plan position of each strand on the unit sphere, 3 numbers per strand. */
++  pos: Float64Array[];
++  /** Lift of each strand's axis above the pile base. */
++  lift: Float64Array[];
++  /** Section height of each strand (compacted where thread bears it). */
++  height: Float64Array[];
++};
++
++/** A finished pile: the lines it was laid from and their lifts. */
++export type Pile = {
++  lines: PileLine[];
++  /** Lift of each sample: the centre of its section (the drawn axis). */
++  lifts: number[][];
++  /** Roll of the section about the thread (radians, + lifts the side t × up). */
++  roll?: number[][];
++  /** Section height of each sample as a share of the nominal height. */
++  flat?: number[][];
++  section?: PileSection;
++  strands?: number;
++  /** Beads per sample in `section` (a ply hull is carried by 2·plies + 1). */
++  beads?: number;
++  /** Lines taken over unchanged from the earlier pile. */
++  kept?: number;
++  maxRoll?: number;
++  compaction?: number;
++  width?: number;
++  height?: number;
+ };
+ 
+ function dist(a: Vec3, b: Vec3) {
+   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+ }
+ 
+-/** Share of the cross-section height at lateral distance d: an ellipse. */
+-function profile(d: number, width: number) {
+-  const x = d / width;
+-  return x >= 1 ? 0 : Math.sqrt(1 - x * x);
+-}
+-
+-/** A finished pile: the lines it was laid from and their lifts. */
+-export type Pile = { lines: PileLine[]; lifts: number[][] };
+-
+ function sameLine(a: PileLine, b: PileLine) {
+   if (a === b) return true;
+   if (a.points.length !== b.points.length || a.ports || b.ports) return false;
+@@ -59,22 +106,72 @@ function sameLine(a: PileLine, b: PileLine) {
+   return true;
+ }
+ 
++/** Unit side direction t × u of each sample (zero where undefined). */
++function sides(points: Vec3[]): Float64Array {
++  const n = points.length;
++  const out = new Float64Array(n * 3);
++  for (let i = 0; i < n; i++) {
++    const u = points[i]!;
++    const a = points[Math.max(0, i - 1)]!, b = points[Math.min(n - 1, i + 1)]!;
++    const tx = b[0] - a[0], ty = b[1] - a[1], tz = b[2] - a[2];
++    const sx = ty * u[2] - tz * u[1], sy = tz * u[0] - tx * u[2], sz = tx * u[1] - ty * u[0];
++    const l = Math.hypot(sx, sy, sz);
++    if (l > 1e-15) { out[i * 3] = sx / l; out[i * 3 + 1] = sy / l; out[i * 3 + 2] = sz / l; }
++  }
++  return out;
++}
++
+ /**
+  * `after`: the pile of an earlier call. A line never changes for the ones
+  * laid after it, so the lines it shares with this call from the start keep
+  * their lifts and only the rest is laid — one new stitch, not the flower.
+  */
+ export function pileHeights(lines: PileLine[], opts: PileOptions, after?: Pile): number[][] {
++  return pileLay(lines, opts, after).lifts;
++}
++
++/** The pile with its strands, section roll and flattening per sample. */
++export function pileLay(lines: PileLine[], opts: PileOptions, after?: Pile): Pile {
+   const { width, height, portRadius } = opts;
++  const plies = Math.max(1, Math.round(opts.strands ?? 1));
++  const eps = Math.min(0.9, Math.max(0, opts.compaction ?? 0));
++  // The section is the hull of its plies: a core from the first ply centre to
++  // the last, thickened by a ply. A twisted yarn has no straight groove
++  // between its plies for a crossing thread to sit in, so the hull, not the
++  // plies, is what touches. The core is carried by beads a ply across, close
++  // enough that their scallops stay under a hundredth of the height.
++  const core = width / 2 - width / (2 * plies);
++  const K = plies === 1 ? 1 : 2 * plies + 1;
++  // Two beads touch at this plan distance (sum of their half-widths).
++  const reach = width / plies;
++  const reach2 = reach * reach;
++  const compacted = height * (1 - eps);
++  // A compacted section may sit this far below the base: its bottom still
++  // clears the mari.
++  const deepest = -(height - compacted) / 2;
++  const xs = Array.from({ length: K }, (_, j) => (K === 1 ? 0 : -core + (2 * core * j) / (K - 1)));
++  const maxRoll = K === 1 ? 0 : Math.min(Math.PI / 2, Math.max(0, opts.maxRoll ?? (75 * Math.PI) / 180));
++  const STEP = Math.PI / 12;
++
+   let kept = 0;
+-  if (after && !opts.swaps?.length) {
++  const reuse = !!after && !opts.swaps?.length
++    && (after.strands ?? 1) === plies && (after.compaction ?? 0) === eps
++    && (after.width ?? width) === width && (after.height ?? height) === height
++    && (after.maxRoll ?? maxRoll) === maxRoll
++    && (!!after.section || (K === 1 && eps === 0));
++  if (after && reuse) {
+     while (kept < lines.length && kept < after.lines.length && sameLine(lines[kept]!, after.lines[kept]!)) kept++;
+   }
+   // A flower is tens of thousands of samples and every new stitch recomputes
+   // the pile: numeric cell keys and flat cell lists, no strings or arrays per
+-  // lookup. Cells are one width across; a support is within one cell.
+-  const cell = width;
+-  const K = 2 ** 17;
++  // lookup. The grid holds sample centres; a bead of a support that one of
++  // ours can touch at any roll lies within `gather` of our centre, and its
++  // centre within `gather + core` — one cell (one width) for pearl.
++  const gather = core + reach;
++  const gather2 = gather * gather;
++  const cell = gather + core;
++  const cell2 = cell * cell;
++  const KEY = 2 ** 17;
+   const OFF = 2 ** 16;
+   const cellOf = (v: number) => Math.floor(v / cell) + OFF;
+   const grid = new Map<number, number[]>();
+@@ -82,7 +179,6 @@ export function pileHeights(lines: PileLine[], opts: PileOptions, after?: Pile):
+   const diving = (line: PileLine, p: Vec3, i: number) =>
+     !!line.dive?.[i] || (line.ports ?? []).some((q) => dist(p, q) < portRadius);
+ 
+-  const lifts: number[][] = lines.map((l) => l.points.map(() => 0));
+   const alongs: number[][] = lines.map((l) => {
+     const out = [0];
+     for (let i = 1; i < l.points.length; i++) out.push(out[i - 1]! + dist(l.points[i - 1]!, l.points[i]!));
+@@ -95,17 +191,103 @@ export function pileHeights(lines: PileLine[], opts: PileOptions, after?: Pile):
+     return sunk == null ? (inside[li]![i] ? NaN : 0) : sunk;
+   }));
+ 
++  const pos: Float64Array[] = [];
++  const sLift: Float64Array[] = [];
++  const sHeight: Float64Array[] = [];
++  const rolls: Float64Array[] = [];
++  lines.forEach((line, li) => {
++    const n = line.points.length;
++    if (li < kept && after!.section) {
++      pos.push(after!.section.pos[li]!);
++      sLift.push(after!.section.lift[li]!);
++      sHeight.push(after!.section.height[li]!);
++      rolls.push(Float64Array.from(after!.roll?.[li] ?? new Array(n).fill(0)));
++      return;
++    }
++    const p = new Float64Array(n * K * 3);
++    line.points.forEach((u, i) => {
++      for (let j = 0; j < K; j++) {
++        const o = (i * K + j) * 3;
++        p[o] = u[0]; p[o + 1] = u[1]; p[o + 2] = u[2];
++      }
++    });
++    pos.push(p);
++    // A rigid pile of an earlier call: one strand, the sample itself.
++    sLift.push(li < kept ? Float64Array.from(after!.lifts[li]!) : new Float64Array(n * K));
++    sHeight.push(new Float64Array(n * K).fill(height));
++    rolls.push(new Float64Array(n));
++  });
++
++  // Support beads gathered around one sample: top (floor + lift), height, and
++  // their offset from our centre — its square and its part along our side.
++  let lt = new Float64Array(256), lh = new Float64Array(256);
++  let la = new Float64Array(256), ld = new Float64Array(256);
++  let nLoc = 0;
++  const pushLocal = (t: number, h: number, a: number, d2: number) => {
++    if (nLoc === lt.length) {
++      const grow = (v: Float64Array) => { const b = new Float64Array(v.length * 2); b.set(v); return b; };
++      lt = grow(lt); lh = grow(lh); la = grow(la); ld = grow(ld);
++    }
++    lt[nLoc] = t; lh[nLoc] = h; la[nLoc] = a; ld[nLoc] = d2;
++    nLoc++;
++  };
++  // The centre height a section needs at one roll, and whether thread bears it.
++  // The middle bead first (it needs the same at every roll), then the ends,
++  // which bind a rolled section: an early give-up comes sooner.
++  const mid = (K - 1) / 2;
++  const order = [mid, ...Array.from({ length: mid }, (_, k) => [k, K - 1 - k]).flat()];
++  let bornByThread = false;
++  let middleNeeds = -Infinity;
++  // Across position of the bead that set the centre at the last roll tried.
++  let binding = 0;
++  const centreAt = (psi: number, own: number, bound = Infinity) => {
++    const cp = Math.cos(psi), sp = Math.sin(psi);
++    let zA = -Infinity, zB = -Infinity, bThread = false, atA = 0, atB = 0;
++    for (const j of order) {
++      const x = xs[j]! * cp, up = xs[j]! * sp;
++      let tH = -Infinity, tC = -Infinity;
++      for (let e = 0; e < nLoc; e++) {
++        // |u − q + x·side|² with u − q known.
++        const d2 = ld[e]! + x * (2 * la[e]! + x);
++        if (d2 >= reach2) continue;
++        const pr = Math.sqrt(1 - d2 / reach2);
++        const a = lt[e]! + (lh[e]! + height) / 2 * pr;
++        if (a > tH) tH = a;
++        if (eps > 0) {
++          const c = lt[e]! + (lh[e]! + compacted) / 2 * pr;
++          if (c > tC) tC = c;
++        }
++      }
++      // A sample already partly down its port rests on the pile from where it is.
++      const a = Math.max(tH - own, 0) - up;
++      if (a > zA) { zA = a; atA = xs[j]!; }
++      if (eps > 0) {
++        const b1 = tC - own - up, b2 = deepest - up;
++        if (b1 >= b2) { if (b1 > zB) { zB = b1; bThread = true; atB = xs[j]!; } }
++        else if (b2 > zB) { zB = b2; bThread = false; atB = xs[j]!; }
++      }
++      if (j === mid) middleNeeds = eps > 0 ? zB : zA;
++      // The centre only rises bead by bead: past the best so far, give up.
++      if ((eps > 0 ? zB : zA) >= bound) { bornByThread = false; return Infinity; }
++    }
++    bornByThread = eps > 0 && bThread && zB < zA;
++    binding = bornByThread ? atB : atA;
++    return bornByThread ? zB : zA;
++  };
++
+   lines.forEach((line, li) => {
+     const along = alongs[li]!;
+-    if (li < kept) lifts[li] = after!.lifts[li]!.slice();
+-    line.points.forEach((p, pi) => {
+-      let top = -Infinity;
+-      if (li < kept) {
+-        // Laid before: only goes into the grid.
+-      } else if (!inside[li]![pi]) {
+-        const x = cellOf(p[0]), y = cellOf(p[1]), z = cellOf(p[2]);
+-        for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) {
+-          const list = grid.get(((x + i) * K + (y + j)) * K + (z + k));
++    const P = pos[li]!, L = sLift[li]!, Hs = sHeight[li]!, R = rolls[li]!;
++    const S = li >= kept ? sides(line.points) : null;
++    const own = line.offset;
++    for (let pi = 0; pi < line.points.length; pi++) {
++      if (li >= kept && !inside[li]![pi]) {
++        const u = line.points[pi]!;
++        const cx = cellOf(u[0]), cy = cellOf(u[1]), cz = cellOf(u[2]);
++        const sx = S![pi * 3]!, sy = S![pi * 3 + 1]!, sz = S![pi * 3 + 2]!;
++        nLoc = 0;
++        for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) {
++          const list = grid.get(((cx + a) * KEY + (cy + b)) * KEY + (cz + c));
+           if (!list) continue;
+           for (let e = 0; e < list.length; e += 2) {
+             const sl = list[e]!, si = list[e + 1]!;
+@@ -115,34 +297,139 @@ export function pileHeights(lines: PileLine[], opts: PileOptions, after?: Pile):
+             if (swapped.size && swapped.has(sl * 2 ** 20 + li)) continue;
+             const base = floor[sl]![si]!;
+             if (Number.isNaN(base)) continue;
+-            const q = lines[sl]!.points[si]!;
+-            const dx = p[0] - q[0], dy = p[1] - q[1], dz = p[2] - q[2];
+-            const d2 = dx * dx + dy * dy + dz * dz;
+-            if (d2 >= width * width) continue;
+-            const t = base + lifts[sl]![si]! + height * Math.sqrt(1 - d2 / (width * width));
+-            if (t > top) top = t;
++            if (K > 1) {
++              // Its centre too far for any of its beads to be near ours.
++              const c = lines[sl]!.points[si]!;
++              const ex = u[0] - c[0], ey = u[1] - c[1], ez = u[2] - c[2];
++              if (ex * ex + ey * ey + ez * ez >= cell2) continue;
++            }
++            const Q = pos[sl]!, QL = sLift[sl]!, QH = sHeight[sl]!;
++            for (let ss = si * K; ss < si * K + K; ss++) {
++              const qx = Q[ss * 3]!, qy = Q[ss * 3 + 1]!, qz = Q[ss * 3 + 2]!;
++              const dx = u[0] - qx, dy = u[1] - qy, dz = u[2] - qz;
++              const d2 = dx * dx + dy * dy + dz * dz;
++              if (d2 >= gather2) continue;
++              // Out of reach of our core line at any roll: never a contact.
++              const along2 = dx * sx + dy * sy + dz * sz;
++              if (d2 - along2 * along2 >= reach2) continue;
++              pushLocal(base + QL[ss]!, QH[ss]!, along2, d2);
++            }
++          }
++        }
++        const o = own?.[pi] ?? 0;
++        let best = 0, psi = 0, thread = false;
++        if (nLoc > 0) {
++          best = centreAt(0, o);
++          thread = bornByThread;
++          // No roll lowers the centre below what the middle bead needs, and
++          // level on the mari is as low as a section goes.
++          const rollable = K > 1 && (sx !== 0 || sy !== 0 || sz !== 0) && best > 0
++            && best > middleNeeds + 1e-12;
++          if (rollable && binding !== 0) {
++            // Roll the bound side up, a coarse step at a time, while the
++            // centre keeps going down.
++            const dir = Math.sign(binding);
++            for (let r = STEP; r <= maxRoll + 1e-9; r += STEP) {
++              const z = centreAt(dir * r, o, best - 1e-12);
++              if (z < best - 1e-12) { best = z; psi = dir * r; thread = bornByThread; } else break;
++            }
++          }
++          if (rollable && psi !== 0) {
++            // Refine about the best coarse roll.
++            for (let step = STEP / 2; step > STEP / 9; step /= 2) {
++              const around = psi;
++              for (const r of [around - step, around + step]) {
++                if (Math.abs(r) > maxRoll) continue;
++                const z = centreAt(r, o, best - 1e-12);
++                if (z < best - 1e-12) { best = z; psi = r; thread = bornByThread; }
++              }
++            }
++          }
++        }
++        const cp = Math.cos(psi), sp = Math.sin(psi);
++        R[pi] = psi;
++        for (let j = 0; j < K; j++) {
++          const s = pi * K + j;
++          L[s] = best + xs[j]! * sp;
++          Hs[s] = thread ? compacted : height;
++          if (xs[j] !== 0) {
++            const x = xs[j]! * cp;
++            const px = u[0] + x * sx, py = u[1] + x * sy, pz = u[2] + x * sz;
++            const l = Math.hypot(px, py, pz);
++            P[s * 3] = px / l; P[s * 3 + 1] = py / l; P[s * 3 + 2] = pz / l;
+           }
+         }
++      } else if (li >= kept && K > 1 && S) {
++        // Diving: level, strands across the side direction.
++        const u = line.points[pi]!;
++        for (let j = 0; j < K; j++) {
++          const s = pi * K + j;
++          const x = xs[j]!;
++          const px = u[0] + x * S[pi * 3]!, py = u[1] + x * S[pi * 3 + 1]!, pz = u[2] + x * S[pi * 3 + 2]!;
++          const l = Math.hypot(px, py, pz);
++          P[s * 3] = px / l; P[s * 3 + 1] = py / l; P[s * 3 + 2] = pz / l;
++        }
+       }
+-      // A sample already partly down its port rests on the pile from where it is.
+-      if (li >= kept) lifts[li]![pi] = Math.max(0, top - (line.offset?.[pi] ?? 0));
+-      const key = (cellOf(p[0]) * K + cellOf(p[1])) * K + cellOf(p[2]);
++      // Into the grid by the sample's centre; its beads are found from there.
++      const c = line.points[pi]!;
++      const key = (cellOf(c[0]) * KEY + cellOf(c[1])) * KEY + cellOf(c[2]);
+       const list = grid.get(key);
+       if (list) list.push(li, pi);
+       else grid.set(key, [li, pi]);
+-    });
++    }
+   });
+ 
+   // Underpassing: the earlier line of a swapped pair rests on the later one.
+   for (const [early, late] of opts.swaps ?? []) {
+-    lines[early]?.points.forEach((p, pi) => {
+-      if (diving(lines[early]!, p, pi)) return;
+-      lines[late]!.points.forEach((q, qi) => {
+-        if (diving(lines[late]!, q, qi)) return;
+-        const f = profile(dist(p, q), width);
+-        if (f > 0) lifts[early]![pi] = Math.max(lifts[early]![pi]!, lifts[late]![qi]! + height * f);
+-      });
+-    });
++    const le = lines[early], ll = lines[late];
++    if (!le || !ll) continue;
++    const Pe = pos[early]!, Pl = pos[late]!;
++    for (let pi = 0; pi < le.points.length; pi++) {
++      if (inside[early]![pi]) continue;
++      for (let j = 0; j < K; j++) {
++        const s = pi * K + j;
++        for (let qi = 0; qi < ll.points.length; qi++) {
++          if (inside[late]![qi]) continue;
++          for (let k = 0; k < K; k++) {
++            const r = qi * K + k;
++            const dx = Pe[s * 3]! - Pl[r * 3]!, dy = Pe[s * 3 + 1]! - Pl[r * 3 + 1]!, dz = Pe[s * 3 + 2]! - Pl[r * 3 + 2]!;
++            const d2 = dx * dx + dy * dy + dz * dz;
++            if (d2 >= reach2) continue;
++            const t = sLift[late]![r]! + (sHeight[late]![r]! + sHeight[early]![s]!) / 2 * Math.sqrt(1 - d2 / reach2);
++            if (t > sLift[early]![s]!) sLift[early]![s] = t;
++          }
++        }
++      }
++    }
+   }
+-  return lifts;
++
++  // Per sample: the drawn axis is the centre of its section.
++  const lifts: number[][] = [];
++  const roll: number[][] = [];
++  const flat: number[][] = [];
++  lines.forEach((line, li) => {
++    const n = line.points.length;
++    if (li < kept && K === 1 && eps === 0) {
++      lifts.push(after!.lifts[li]!.slice());
++      roll.push(new Array(n).fill(0));
++      flat.push(new Array(n).fill(1));
++      return;
++    }
++    const L = sLift[li]!, Hs = sHeight[li]!;
++    const l: number[] = new Array(n), f: number[] = new Array(n);
++    for (let i = 0; i < n; i++) {
++      let sum = 0, hsum = 0;
++      for (let j = 0; j < K; j++) { sum += L[i * K + j]!; hsum += Hs[i * K + j]!; }
++      l[i] = sum / K;
++      f[i] = hsum / K / height;
++    }
++    lifts.push(l);
++    roll.push(Array.from(rolls[li]!));
++    flat.push(f);
++  });
++  return {
++    lines, lifts, roll, flat,
++    section: { pos, lift: sLift, height: sHeight },
++    strands: plies, beads: K, kept, maxRoll, compaction: eps, width, height,
++  };
+ }
+diff --git a/src/components/temari/pile-section.test.ts b/src/components/temari/pile-section.test.ts
+new file mode 100644
+index 0000000..4359908
+--- /dev/null
++++ b/src/components/temari/pile-section.test.ts
+@@ -0,0 +1,40 @@
++import { describe, it } from "node:test";
++import assert from "node:assert/strict";
++import { compileKiku, stitchesFromOps } from "./patterns.ts";
++import { PILE_SECTION, compactionFor, pileParts } from "./stitches.ts";
++import { MARI_C_CM } from "./measure.ts";
++
++const R_MM = (MARI_C_CM * 10) / (2 * Math.PI);
++
++/** Highest axis (mm above the mari) per round at the upper tips (< 20 mm from the pole). */
++function upperByRound(): number[] {
++  const parts = pileParts(stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, 10, "all")), "pearl5");
++  const rows: number[] = [];
++  for (const p of parts) {
++    const m = (p.at.operation?.operationId ?? "").match(/\/s\d\/r(\d+)\//);
++    if (!m) continue;
++    const r = Number(m[1]);
++    for (const q of p.pts) {
++      const polar = Math.acos(Math.min(1, q.y / q.length())) * R_MM;
++      if (polar < 20) rows[r] = Math.max(rows[r] ?? 0, (q.length() - 1) * R_MM);
++    }
++  }
++  return rows;
++}
++
++describe("pile render: soft section of pearl cotton (#93)", () => {
++  it("takes its numbers from the material: two plies, packing 200 tex / 1.52 g/cm³ up to 0.8", () => {
++    assert.equal(PILE_SECTION.strands, 2);
++    // 0.1316 mm² of fibre in a laid 0.71 × 0.355 mm section: packing 0.665.
++    assert.ok(Math.abs(PILE_SECTION.compaction - (1 - 0.665 / 0.8)) < 0.005, `${PILE_SECTION.compaction}`);
++    assert.ok(compactionFor(236, 0.8) < 0.03, "the 5/2 count leaves almost no room to pack");
++  });
++
++  it("keeps ten rounds' upper tips a low braid, not a stair (full S8 kiku, both sets)", () => {
++    const rows = upperByRound();
++    assert.equal(rows.length, 10);
++    // Rigid level beads: 0.53 → 5.26 mm, +0.53 mm a round.
++    assert.ok(Math.max(...rows) < 2.5, `upper tips ${rows.map((v) => v.toFixed(2)).join(" ")}`);
++    assert.ok(rows[9]! <= rows[4]! + 0.71, `the last five rounds climb ${(rows[9]! - rows[4]!).toFixed(2)} mm`);
++  });
++});
+diff --git a/src/components/temari/stitches.ts b/src/components/temari/stitches.ts
+index ffb166b..61569d2 100644
+--- a/src/components/temari/stitches.ts
++++ b/src/components/temari/stitches.ts
+@@ -1,5 +1,5 @@
+ import * as THREE from "three";
+-import { pileHeights, type Pile } from "./pile-heights.ts";
++import { pileLay, type Pile } from "./pile-heights.ts";
+ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+ import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
+ import type { Stitch } from "./patterns.ts";
+@@ -712,15 +712,29 @@ function tubeKey(
+   closed: boolean,
+   uPerUnit: number,
+   heightScale: number,
++  section?: TubeSection,
+ ) {
+   const parts: string[] = [
+     radius.toFixed(5), taperEnds ? "t" : "-", closed ? "c" : "-",
+     uPerUnit.toFixed(4), heightScale.toFixed(2),
+   ];
+-  for (const p of pts) parts.push(`${p.x.toFixed(4)},${p.y.toFixed(4)},${p.z.toFixed(4)}`);
++  pts.forEach((p, i) => {
++    const s = section ? `,${(section.roll[i] ?? 0).toFixed(3)},${(section.flat[i] ?? 1).toFixed(3)}` : "";
++    parts.push(`${p.x.toFixed(4)},${p.y.toFixed(4)},${p.z.toFixed(4)}${s}`);
++  });
+   return parts.join("|");
+ }
+ 
++/**
++ * Per-sample section of a pile tube: roll about the thread (radians, positive
++ * lifts the side t × up) and height as a share of the laid height.
++ */
++type TubeSection = { roll: number[]; flat: number[]; upright?: number[] };
++const tubeKeys = new WeakMap<THREE.Vector3[], {
++  key: string; roll: number[]; flat: number[]; radius: number; uPerUnit: number;
++  heightScale: number; taperEnds: boolean; closed: boolean;
++}>();
++
+ function cachedTube(
+   pts: THREE.Vector3[],
+   radius: number,
+@@ -728,8 +742,18 @@ function cachedTube(
+   closed = false,
+   uPerUnit = 0,
+   heightScale = STITCH_FLAT,
++  section?: TubeSection,
+ ) {
+-  const key = tubeKey(pts, radius, taperEnds, closed, uPerUnit, heightScale);
++  // A pile part kept from the last stitch hands back the same arrays: its key
++  // is remembered by them instead of spelled out again.
++  const known = section ? tubeKeys.get(pts) : undefined;
++  const same = !!known && known.roll === section?.roll && known.flat === section?.flat
++    && known.radius === radius && known.uPerUnit === uPerUnit && known.heightScale === heightScale
++    && known.taperEnds === taperEnds && known.closed === closed;
++  const key = same ? known!.key : tubeKey(pts, radius, taperEnds, closed, uPerUnit, heightScale, section);
++  if (section && !same) {
++    tubeKeys.set(pts, { key, roll: section.roll, flat: section.flat, radius, uPerUnit, heightScale, taperEnds, closed });
++  }
+   const hit = tubeCache.get(key);
+   if (hit) {
+     // Touch: the oldest entry is the first to go when the cache is full.
+@@ -737,7 +761,7 @@ function cachedTube(
+     tubeCache.set(key, hit);
+     return hit;
+   }
+-  const geo = tubeOnSphere(pts, radius, taperEnds, closed, uPerUnit, heightScale, true);
++  const geo = tubeOnSphere(pts, radius, taperEnds, closed, uPerUnit, heightScale, true, section);
+   geo.userData.cached = true;
+   tubeCache.set(key, geo);
+   while (tubeCache.size > TUBE_CACHE_MAX) {
+@@ -1150,11 +1174,66 @@ function geodesicRibbon(points: THREE.Vector3[], width: number) {
+  * stitches that copy alone was 0.2 s, one long frame per stitch. Drawing the
+  * pieces as they are keeps the kept tubes untouched.
+  */
+-export type PilePart = { color: number; at: Extract<Stitch, { kind: "arc" }>; pts: THREE.Vector3[]; lift: number[] };
++export type PilePart = {
++  color: number;
++  at: Extract<Stitch, { kind: "arc" }>;
++  pts: THREE.Vector3[];
++  lift: number[];
++  /** Section roll about the thread per sample (radians): its plies at different heights. */
++  roll: number[];
++  /** Section height per sample as a share of the laid height (compaction on thread). */
++  flat: number[];
++  /** 1 where the section stands in the radial plane (on the pile), 0 diving. */
++  upright: number[];
++  /** Per sample, per ply: plan position (unit), lift above base, section height (unit sphere). */
++  plies: { pos: Float64Array; lift: Float64Array; height: Float64Array; strands: number };
++};
+ const pileCache = new WeakMap<Stitch[], Map<ThreadKind, PilePart[]>>();
+ /** The last pile per thread: the next stitch lays only what changed. */
+ const lastPile = new Map<ThreadKind, Pile>();
+ 
++/**
++ * Soft section of the pile render (#93).
++ * Every number is a material figure, none is fitted to the flower:
++ *
++ * - Pearl cotton is two plies (DMC perle; the twist note above). Laid on the
++ *   mari at the TemariKai gauge (7 threads = 5 mm → 0.71 mm) with the section
++ *   of STITCH_FLAT, it is two round plies of 0.355 mm side by side. Twisted
++ *   together they cannot part, and a yarn turns about its axis easily: the
++ *   pair rolls until its centre is lowest. What touches is the hull of the
++ *   plies — the twist leaves no straight groove between them.
++ * - Linear density 200 tex (DMC #5 skein, 25 m / 5 g; the 5/2 weaving count
++ *   gives 236 tex), mercerised cotton 1.52 g/cm³: 0.132 mm² of fibre in a laid
++ *   section of 0.198 mm², packing 0.665. A contact on thread carries the
++ *   thread's tension over a small area (tens of times the pressure of lying on
++ *   the ball), which drives the fibres to the packing limit — 0.907 is the
++ *   hexagonal bound of parallel fibres, 0.75–0.85 what yarns reach; 0.8 here.
++ *   A strand on thread therefore loses 1 − 0.665 / 0.8 = 17 % of its height.
++ */
++export const PEARL5_TEX = 200;
++export const COTTON_DENSITY = 1.52;
++export const PACKING_MAX = 0.8;
++export function compactionFor(tex: number, packingMax: number, mm = STITCH_THREAD_MM.pearl5) {
++  const fibre = tex / (COTTON_DENSITY * 1000);
++  const laid = (Math.PI / 4) * mm * mm * STITCH_FLAT;
++  return Math.max(0, 1 - fibre / laid / packingMax);
++}
++/**
++ * Mutable for sensitivity scripts; the workshop uses the defaults. `?soft=0`
++ * lays the rigid level section of the pile render for comparison.
++ */
++const RIGID_SECTION = typeof location !== "undefined" && new URLSearchParams(location.search).get("soft") === "0";
++export const PILE_SECTION = {
++  strands: RIGID_SECTION ? 1 : 2,
++  compaction: RIGID_SECTION ? 0 : compactionFor(PEARL5_TEX, PACKING_MAX),
++  /**
++   * Largest roll tried. Two plies can stand on edge (90°); 75° keeps the drawn
++   * flat section from standing up as a blade. Not a free guard: at 45° the
++   * upper tips climb again (sensitivity in the #93 prototype notes).
++   */
++  maxRoll: (75 * Math.PI) / 180,
++};
++
+ /**
+  * Pile render (spec/pile-render.md): every working thread's centerline in
+  * sewing order, without the count-based lifts, then one pass that rests each
+@@ -1182,14 +1261,27 @@ export function pileParts(stitches: Stitch[], kind: ThreadKind): PilePart[] {
+   const half = unitFromMm(kindMm(kind)) * 0.5;
+   const base = 1 + half * STITCH_FLAT;
+   const height = half * 2 * STITCH_FLAT;
++  const strands = Math.max(1, Math.round(PILE_SECTION.strands));
+   // A crossing thread is narrower than an arc sample step: resample to a third
+-  // of the width so every crossing lands on a sample.
+-  for (const e of emitted) {
++  // of the width — of a ply's width for the soft section — so every crossing
++  // lands within a sixth of the contact reach of a sample.
++  const step = (half * 2 / strands) / 3;
++  // A piece drawn the same as last time keeps its dense samples and line: the
++  // pile then sees the very same line and keeps its heights.
++  const prev = lastPieces.get(kind);
++  const reusable = prev && prev.step === step;
++  const raws = emitted.map((e) => e.pts);
++  const lines: PieceLine[] = emitted.map((e, idx) => {
++    const old = reusable ? prev.raw[idx] : undefined;
++    if (old && samePoints(old, e.pts)) {
++      e.pts = prev!.dense[idx]!;
++      return prev!.lines[idx]!;
++    }
+     const dense: THREE.Vector3[] = [e.pts[0]!];
+     for (let i = 1; i < e.pts.length; i++) {
+       const a = e.pts[i - 1]!;
+       const b = e.pts[i]!;
+-      const n = Math.max(1, Math.ceil(a.distanceTo(b) / (half * 2 / 3)));
++      const n = Math.max(1, Math.ceil(a.distanceTo(b) / step));
+       for (let k = 1; k <= n; k++) {
+         const u = k / n;
+         const dir = a.clone().normalize().lerp(b.clone().normalize(), u).normalize();
+@@ -1197,33 +1289,67 @@ export function pileParts(stitches: Stitch[], kind: ThreadKind): PilePart[] {
+       }
+     }
+     e.pts = dense;
+-  }
+-  const lines = emitted.map((e) => ({
+-    points: e.pts.map((p) => {
+-      const u = p.clone().normalize();
+-      return [u.x, u.y, u.z] as [number, number, number];
+-    }),
+-    // Inside the wrap only once the whole section is under the mari surface;
+-    // a sample just starting down its port is still on the pile.
+-    dive: e.pts.map((p) => p.length() < base - height),
+-    // Signed: a sample the path already lays a little above the base lends
+-    // support from where it is, not from the base.
+-    offset: e.pts.map((p) => p.length() - base),
+-  }));
+-  const lifts = pileHeights(lines, { width: half * 2, height, portRadius: 0 }, lastPile.get(kind));
+-  lastPile.set(kind, { lines, lifts });
+-  const out = emitted.map((e, i) => ({
+-    color: e.color,
+-    at: e.stitch,
+-    lift: lifts[i]!,
+-    pts: e.pts.map((p, j) => (lines[i]!.dive[j]
+-      ? p.clone()
+-      : p.clone().normalize().multiplyScalar(p.length() + lifts[i]![j]!))),
+-  }));
++    return {
++      points: dense.map((p) => {
++        const u = p.clone().normalize();
++        return [u.x, u.y, u.z] as [number, number, number];
++      }),
++      // Inside the wrap only once the whole section is under the mari surface;
++      // a sample just starting down its port is still on the pile.
++      dive: dense.map((p) => p.length() < base - height),
++      // Signed: a sample the path already lays a little above the base lends
++      // support from where it is, not from the base.
++      offset: dense.map((p) => p.length() - base),
++    };
++  });
++  const pile = pileLay(lines, {
++    width: half * 2, height, portRadius: 0, strands, compaction: PILE_SECTION.compaction,
++    maxRoll: PILE_SECTION.maxRoll,
++  }, lastPile.get(kind));
++  lastPile.set(kind, pile);
++  const { lifts } = pile;
++  const kept = pile.kept ?? 0;
++  const out: PilePart[] = emitted.map((e, i) => {
++    const old = i < kept ? prev?.out[i] : undefined;
++    if (old) return { ...old, color: e.color, at: e.stitch };
++    const line = lines[i]!;
++    return {
++      color: e.color,
++      at: e.stitch,
++      lift: lifts[i]!,
++      // A diving sample is drawn as it goes in: round, level.
++      roll: pile.roll![i]!.map((r, j) => (line.dive[j] ? 0 : r)),
++      flat: pile.flat![i]!.map((f, j) => (line.dive[j] ? 1 : f)),
++      upright: line.dive.map((d) => (d ? 0 : 1)),
++      plies: {
++        pos: pile.section!.pos[i]!, lift: pile.section!.lift[i]!, height: pile.section!.height[i]!,
++        strands: pile.beads ?? 1,
++      },
++      pts: e.pts.map((p, j) => (line.dive[j]
++        ? p.clone()
++        : p.clone().normalize().multiplyScalar(p.length() + lifts[i]![j]!))),
++    };
++  });
++  lastPieces.set(kind, { step, raw: raws, dense: emitted.map((e) => e.pts), lines, out });
+   byKind.set(kind, out);
+   return out;
+ }
+ 
++type PieceLine = { points: [number, number, number][]; dive: boolean[]; offset: number[] };
++/** The pieces of the last pile per thread, before and after resampling. */
++const lastPieces = new Map<ThreadKind, {
++  step: number; raw: THREE.Vector3[][]; dense: THREE.Vector3[][]; lines: PieceLine[]; out: PilePart[];
++}>();
++
++function samePoints(a: THREE.Vector3[], b: THREE.Vector3[]) {
++  if (a.length !== b.length) return false;
++  for (let i = 0; i < a.length; i++) {
++    const p = a[i]!, q = b[i]!;
++    if (p.x !== q.x || p.y !== q.y || p.z !== q.z) return false;
++  }
++  return true;
++}
++
+ export function createMotifGeometryParts(
+   stitches: Stitch[],
+   colorIndex: number,
+@@ -1247,7 +1373,8 @@ export function createMotifGeometryParts(
+   if (cord && opts.pile) {
+     for (const part of pileParts(stitches, kind)) {
+       if (part.color !== colorIndex) continue;
+-      const geo = cachedTube(part.pts, stitchRadius(kind), false, false, twistPerUnit(kind));
++      const geo = cachedTube(part.pts, stitchRadius(kind), false, false, twistPerUnit(kind),
++        STITCH_FLAT, { roll: part.roll, flat: part.flat, upright: part.upright });
+       geo.userData.centerline = part.pts.map((p) => p.clone());
+       parts.push(geo);
+     }
+@@ -1349,8 +1476,11 @@ function smoothStitchPath(
+   pts: THREE.Vector3[],
+   radius: number,
+   closed: boolean,
++  /** Filled with each output point's position along the input (index + fraction). */
++  params?: number[],
+ ) {
+   const path: THREE.Vector3[] = [];
++  const at: number[] = [];
+   const segs = closed ? pts.length : pts.length - 1;
+   const directions = new THREE.CatmullRomCurve3(pts.map(p => p.clone().normalize()), closed, "centripetal");
+   const radii = pts.map(p => p.length());
+@@ -1372,12 +1502,17 @@ function smoothStitchPath(
+         + (-2 * t3 + 3 * t2) * b + (t3 - t2) * mb;
+       directions.getPoint((i + t) / segs, _a).normalize().multiplyScalar(radiusAt);
+       path.push(_a.clone());
++      at.push(i + t);
+     }
+   }
+-  if (!closed) path.push(pts[pts.length - 1]!.clone());
++  if (!closed) {
++    path.push(pts[pts.length - 1]!.clone());
++    at.push(pts.length - 1);
++  }
+   // Use comparable arc-length steps for tube frames, independently of how
+   // densely a recipe samples its flanks versus its small needle passages.
+   const dense = closed ? [...path, path[0]!] : path;
++  const denseAt = closed ? [...at, pts.length] : at;
+   const distances = [0];
+   for (let i = 1; i < dense.length; i++) distances.push(distances[i - 1]! + dense[i]!.distanceTo(dense[i - 1]!));
+   const length = distances.at(-1)!;
+@@ -1390,10 +1525,22 @@ function smoothStitchPath(
+     const span = distances[segment]! - distances[segment - 1]!;
+     const t = span > 1e-12 ? (distance - distances[segment - 1]!) / span : 0;
+     uniform.push(slerp(dense[segment - 1]!, dense[segment]!, t, new THREE.Vector3()));
++    params?.push(denseAt[segment - 1]! + (denseAt[segment]! - denseAt[segment - 1]!) * t);
+   }
+   return uniform;
+ }
+ 
++/** A per-sample value at a fractional sample position (closed wraps around). */
++function sampleAt(values: number[], at: number, fallback: number) {
++  const n = values.length;
++  if (n === 0) return fallback;
++  const i = Math.floor(at);
++  const f = at - i;
++  const a = values[((i % n) + n) % n] ?? fallback;
++  const b = values[(((i + 1) % n) + n) % n] ?? fallback;
++  return f <= 0 || i + 1 >= n && f < 1e-9 ? a : a + (b - a) * f;
++}
++
+ /**
+  * Pearl on the mari. Sphere-radial frames, not Frenet.
+  *
+@@ -1416,17 +1563,24 @@ function tubeOnSphere(
+   heightScale = 1,
+   /** Needle passages need smooth joins; preserve wrap sampling and its budget. */
+   smoothJoins = false,
++  /** Pile render: the section rolls and flattens per sample (soft section, #93). */
++  section?: TubeSection,
+ ) {
+   if (pts.length < 2) return new THREE.BufferGeometry();
+-  const path: THREE.Vector3[] = smoothJoins ? smoothStitchPath(pts, radius, closed) : [];
++  const params: number[] = [];
++  const path: THREE.Vector3[] = smoothJoins ? smoothStitchPath(pts, radius, closed, params) : [];
+   if (!smoothJoins) {
+     const segs = closed ? pts.length : pts.length - 1;
+     for (let i = 0; i < segs; i++) {
+       for (let s = 0; s < 4; s++) {
+         path.push(slerp(pts[i]!, pts[(i + 1) % pts.length]!, s / 4, _a).clone());
++        params.push(i + s / 4);
+       }
+     }
+-    if (!closed) path.push(pts[pts.length - 1]!.clone());
++    if (!closed) {
++      path.push(pts[pts.length - 1]!.clone());
++      params.push(pts.length - 1);
++    }
+   }
+   const nPath = path.length;
+   if (nPath < 2) return new THREE.BufferGeometry();
+@@ -1478,7 +1632,30 @@ function tubeOnSphere(
+     _side.normalize();
+     _mid.crossVectors(_t, _side).normalize();
+     const r = radius * scaleAt(along[i] ?? 0);
+-    const h = Math.max(0.2, heightScale);
++    let h = Math.max(0.2, heightScale);
++    if (section) {
++      // Soft section (#93). The pile keeps threads apart vertically, so the
++      // section stands in the radial plane, not across a steep climb (there a
++      // flat section is thicker vertically than the pile allowed). The pair
++      // of plies rolls about the thread as the pile laid it; compaction
++      // lowers it.
++      const at = params[i] ?? i;
++      const psi = sampleAt(section.roll, at, 0);
++      h = Math.max(0.2, heightScale * sampleAt(section.flat, at, 1));
++      // Diving into a port the thread is steep on purpose: there the section
++      // stays across the path, as before.
++      const up = section.upright ? sampleAt(section.upright, at, 1) : 1;
++      _side.multiplyScalar(1 - up).addScaledVector(_radial, up).normalize();
++      _mid.crossVectors(_t, _side);
++      if (_mid.lengthSq() < 1e-12) _mid.crossVectors(_side, Math.abs(_side.y) < 0.9 ? _a.set(0, 1, 0) : _a.set(1, 0, 0));
++      _mid.normalize();
++      if (psi !== 0) {
++        const cp = Math.cos(psi), sp = Math.sin(psi);
++        _a.copy(_side).multiplyScalar(cp).addScaledVector(_mid, -sp);
++        _mid.multiplyScalar(cp).addScaledVector(_side, sp);
++        _side.copy(_a);
++      }
++    }
+     for (let j = 0; j <= radialSegs; j++) {
+       const ang = (j / radialSegs) * Math.PI * 2;
+       const c = Math.cos(ang);
