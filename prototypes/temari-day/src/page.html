@@ -191,6 +191,26 @@ table.rows td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical
 .pick h3 { font: italic 500 26px/1.1 var(--display); }
 .pick p { max-width: 70ch; color: var(--ink-soft); font-size: 14.5px; }
 
+.game { display: grid; gap: 20px; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .game { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); align-items: start; } }
+.game-boards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.game-boards figure { margin: 0; display: grid; gap: 6px; justify-items: center; position: relative; }
+.game-boards svg { width: 100%; height: auto; max-width: 520px; }
+.game-boards figcaption { font-size: 12px; color: var(--stone); letter-spacing: 0.06em; text-transform: uppercase; }
+.seal { position: absolute; right: 4%; top: 4%; width: 74px; height: 74px; border-radius: 50%; border: 2px solid var(--accent); color: var(--accent);
+  display: grid; place-items: center; text-align: center; font: italic 600 14px/1.05 var(--display); transform: rotate(-12deg); background: color-mix(in oklab, var(--card) 80%, transparent); }
+.needles { display: grid; gap: 14px; }
+.needle-row { display: grid; gap: 8px; }
+.needle-row > span { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--stone); }
+.needle-row > span b { color: var(--ink); font-weight: 600; letter-spacing: 0; text-transform: none; font-size: 14px; margin-left: 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line-strong); background: var(--card); border-radius: 999px; padding: 6px 12px 6px 6px; font-size: 14px; }
+.chip i { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line-strong); display: inline-block; box-shadow: inset -3px -3px 5px rgb(0 0 0 / 0.18); }
+.chip:disabled { opacity: 0.35; cursor: default; }
+.log { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; }
+.log li { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-soft); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; }
+.log li i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 1px solid var(--line-strong); }
+
 footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
 footer p { font-size: 12.5px; color: var(--stone); max-width: 90ch; }
 
@@ -202,6 +222,7 @@ footer p { font-size: 12.5px; color: var(--stone); max-width: 90ch; }
     <div class="brand"><b>Тэмари дня</b><span>кику · S8 · мари 24 см</span></div>
     <nav class="tabs" role="tablist" aria-label="Разделы">
       <button id="tab-day" role="tab" aria-selected="true" aria-controls="view-day">Шар дня</button>
+      <button id="tab-game" role="tab" aria-selected="false" aria-controls="view-game">Образец</button>
       <button id="tab-ideas" role="tab" aria-selected="false" aria-controls="view-ideas">Куда расти</button>
     </nav>
   </header>
@@ -288,6 +309,30 @@ footer p { font-size: 12.5px; color: var(--stone); max-width: 90ch; }
       </section>
     </section>
 
+    <section id="view-game" role="tabpanel" aria-labelledby="tab-game" hidden>
+      <div class="rule" aria-hidden="true"></div>
+      <div class="game">
+        <div class="game-boards">
+          <figure><div id="board"></div><figcaption>Ваш шар</figcaption><div class="seal" id="seal" hidden>как у<br>мастера</div></figure>
+          <figure><div id="sample"></div><figcaption>Образец</figcaption></figure>
+        </div>
+        <aside class="tag" aria-label="Нити и иглы">
+          <div>
+            <h2 class="section-title" style="font:500 30px/1.1 var(--display)">Прошейте по образцу</h2>
+            <p class="note" id="game-sub" style="margin-top:6px">—</p>
+          </div>
+          <p style="font-size:14px;color:var(--ink-soft)">Выберите нить — игла пройдёт следующий круг своего набора. Северный полюс, вид сверху. Подсказок нет: что прошито позже, ложится сверху, и это видно.</p>
+          <div class="needles">
+            <div class="needle-row"><span>Набор A<b id="next-a">A1</b></span><div class="chips" id="chips-a"></div></div>
+            <div class="needle-row"><span>Набор B<b id="next-b">B1</b></span><div class="chips" id="chips-b"></div></div>
+          </div>
+          <div class="actions"><button class="btn" id="undo">Отпороть круг</button><button class="btn" id="restart">Начать заново</button></div>
+          <div><p class="note" style="margin-bottom:6px">Как вы шили</p><ol class="log" id="log"></ol></div>
+          <p class="status" id="game-status" role="status" aria-live="polite"></p>
+        </aside>
+      </div>
+    </section>
+
     <section id="view-ideas" role="tabpanel" aria-labelledby="tab-ideas" hidden>
       <div class="rule" aria-hidden="true"></div>
       <div class="ideas">
@@ -318,7 +363,7 @@ footer p { font-size: 12.5px; color: var(--stone); max-width: 90ch; }
               <li><b>Шар дня и полка</b><span>Одна раскладка на всех в день, неторопливое шитьё, коллекция на полке. Прототип — на соседней вкладке.</span></li>
               <li><b>Сезонные коллекции</b><span>Японский календарь в 24 сезона: гаммы «клён», «снег», «луна». Полка собирает год.</span></li>
               <li><b>Режим ученицы</b><span>«Призрак» следующего стежка (идея из мозгового штурма): мастерская подсказывает, куда идёт игла, и объясняет почему.</span></li>
-              <li><b>Ката как «восстанови узор»</b><span>Готовые головоломки превращаются в сюжет: по фотографии шара угадать разметку и раскладку.</span></li>
+              <li><b>Прошить по образцу</b><span>Прототип — на вкладке «Образец»: шар дня нужно прошить в правильном порядке. Ошибки не подсвечиваются — что прошито позже, лежит сверху, и это видно. Готовые «ката» могут стать первыми, простыми уровнями.</span></li>
               <li><b>Вехи ремесла вместо очков</b><span>«Первая разметка S8», «кику до экватора», «оба полюса» — отметки в паспорте, а не рейтинг.</span></li>
             </ul>
           </article>
@@ -693,14 +738,16 @@ let Ball = null; // 3D view, set once three.js is in
 const inkColor = () => getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#1b1814';
 const accentColor = () => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#8f3d32';
 
+const TABS = ['day', 'game', 'ideas'];
 function setTab(which) {
-  const ideas = which === 'ideas';
-  $('tab-day').setAttribute('aria-selected', String(!ideas));
-  $('tab-ideas').setAttribute('aria-selected', String(ideas));
-  $('view-day').hidden = ideas;
-  $('view-ideas').hidden = !ideas;
+  for (const t of TABS) {
+    $(`tab-${t}`).setAttribute('aria-selected', String(t === which));
+    $(`view-${t}`).hidden = t !== which;
+  }
+  if (which === 'game') renderGame();
 }
 $('tab-day').addEventListener('click', () => { setTab('day'); history.replaceState(null, '', `#${plan.key}`); });
+$('tab-game').addEventListener('click', () => { setTab('game'); history.replaceState(null, '', '#game'); });
 $('tab-ideas').addEventListener('click', () => { setTab('ideas'); history.replaceState(null, '', '#ideas'); });
 
 function renderTag() {
@@ -804,6 +851,7 @@ function openDay(key, { fromHash = false } = {}) {
   renderShelf();
   if (Ball) Ball.show(plan, steps);
   else renderFallback();
+  if (!$('view-game').hidden) renderGame();
   if (!fromHash) history.replaceState(null, '', `#${key}`);
   $('status').textContent = key === todayKey() ? 'Шар готов. «Шить с начала» — посмотреть, как он собирается по рядам.' : `Архивный день: ${human(key)}.`;
 }
@@ -816,7 +864,7 @@ $('prev-day').addEventListener('click', () => openDay(keyFromNo(plan.n - 1)));
 $('next-day').addEventListener('click', () => openDay(keyFromNo(plan.n + 1)));
 window.addEventListener('hashchange', () => {
   const h = location.hash.slice(1);
-  if (h === 'ideas') { setTab('ideas'); return; }
+  if (h === 'ideas' || h === 'game') { setTab(h); return; }
   setTab('day');
   if (validKey(h) && h !== plan?.key) openDay(h, { fromHash: true });
 });
@@ -826,6 +874,100 @@ document.addEventListener('visibilitychange', () => {
   if (plan.n === dayNo(t) - 1 && !Ball?.busy) openDay(t);
   else $('next-day').disabled = plan.key >= t;
 });
+
+// ---------------------------------------------------------------- «Образец»: the day's pattern, sewn in the player's order
+// No hints and no error marks: each round is drawn over everything sewn before it,
+// so a wrong order or a wrong thread shows by itself, as on a real ball.
+const GAME_KEY = (k) => `temari-day/game/v1/${k}`;
+const game = { key: null, seq: [] }; // seq: [{set, hex}]
+function gameLoad(key) {
+  try {
+    const v = JSON.parse(localStorage.getItem(GAME_KEY(key)) || 'null');
+    if (v && Array.isArray(v.seq)) return v.seq.filter((x) => (x.set === 0 || x.set === 1) && /^#[0-9a-f]{6}$/i.test(x.hex));
+  } catch {}
+  return [];
+}
+function gameSave() { try { localStorage.setItem(GAME_KEY(game.key), JSON.stringify({ seq: game.seq })); } catch {} }
+const roundsOf = (set) => game.seq.filter((x) => x.set === set).length;
+function sampleSeq(p) { const out = []; for (let r = 0; r < p.rows; r++) for (const set of [0, 1]) out.push({ set, hex: p.colors[set][r].hex }); return out; }
+function matchesSample() {
+  const c = sampleSeq(plan);
+  return c.length === game.seq.length && c.every((x, i) => x.set === game.seq[i].set && x.hex === game.seq[i].hex);
+}
+const threadName = (hex) => { const i = plan.cw.threads.indexOf(hex); return i >= 0 ? plan.cw.names[i] : hex; };
+/** North pole seen from outside, rounds in the player's order. */
+function boardSVG(p, seq, size = 400) {
+  const half = size / 2, maxT = Math.PI / 2, s = (half * 0.96) / maxT, thread = (0.71 / R_MM) * s;
+  let out = `<circle cx="${half}" cy="${half}" r="${(half * 0.96).toFixed(2)}" fill="${p.cw.wrap}"/>`;
+  const g = lightness(p.cw.wrap) > 0.8 ? '#a88a52' : '#c4a574';
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4;
+    out += `<line x1="${half}" y1="${half}" x2="${(half + Math.cos(a) * half * 0.96).toFixed(2)}" y2="${(half + Math.sin(a) * half * 0.96).toFixed(2)}" stroke="${g}" stroke-width="${Math.max(0.5, thread * 0.28).toFixed(2)}" opacity="0.8"/>`;
+  }
+  const count = [0, 0];
+  for (const step of seq) {
+    const row = count[step.set]++;
+    for (const part of GROUPS.get(groupKey(0, row, step.set)) ?? []) {
+      let cur = [];
+      const runs = [];
+      for (let k = 0; k < part.n; k++) {
+        const x = part.pts[3 * k], y = part.pts[3 * k + 1], z = part.pts[3 * k + 2];
+        if (Math.hypot(x, y, z) < 0.99995) { if (cur.length > 1) runs.push(cur); cur = []; continue; }
+        const [u, v] = project(x, y, z, 0);
+        cur.push(`${(half + u * s).toFixed(2)},${(half + v * s).toFixed(2)}`);
+      }
+      if (cur.length > 1) runs.push(cur);
+      for (const r of runs) {
+        const d = 'M' + r.join('L');
+        out += `<path d="${d}" fill="none" stroke="${p.cw.wrap}" stroke-opacity="0.55" stroke-width="${(thread * 1.45).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+        out += `<path d="${d}" fill="none" stroke="${step.hex}" stroke-width="${thread.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+      }
+    }
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" role="img" aria-label="Ваш шар: прошито кругов ${seq.length} из ${2 * p.rows}">${out}</svg>`;
+}
+function renderGame() {
+  if (!plan) return;
+  if (game.key !== plan.key) { game.key = plan.key; game.seq = gameLoad(plan.key); }
+  $('board').innerHTML = boardSVG(plan, game.seq);
+  $('sample').innerHTML = daisySVG(plan, 0, { size: 400 });
+  $('game-sub').textContent = `${plan.cw.name} · ${human(plan.key)} · по ${plan.rows} кругов в наборах A и B`;
+  for (const set of [0, 1]) {
+    const done = roundsOf(set);
+    const full = done >= plan.rows;
+    $(set ? 'next-b' : 'next-a').textContent = full ? 'все круги' : `${set ? 'B' : 'A'}${done + 1}`;
+    const box = $(set ? 'chips-b' : 'chips-a');
+    box.innerHTML = '';
+    plan.cw.threads.forEach((hex, i) => {
+      const b = document.createElement('button');
+      b.className = 'chip';
+      b.disabled = full;
+      b.innerHTML = `<i style="background:${hex}"></i><span></span>`;
+      b.lastChild.textContent = plan.cw.names[i];
+      b.setAttribute('aria-label', `Набор ${set ? 'B' : 'A'}, круг ${done + 1} — ${plan.cw.names[i]}`);
+      b.addEventListener('click', () => {
+        Sound.unlock();
+        Sound.step(roundsOf(set), set);
+        game.seq.push({ set, hex });
+        gameSave();
+        renderGame();
+        if (roundsOf(0) >= plan.rows && roundsOf(1) >= plan.rows && matchesSample()) Sound.done();
+      });
+      box.appendChild(b);
+    });
+  }
+  const count = [0, 0];
+  $('log').innerHTML = game.seq.map((x) => { const r = ++count[x.set]; return `<li><i style="background:${x.hex}"></i>${x.set ? 'B' : 'A'}${r} ${threadName(x.hex)}</li>`; }).join('');
+  $('undo').disabled = game.seq.length === 0;
+  $('restart').disabled = game.seq.length === 0;
+  const finished = roundsOf(0) >= plan.rows && roundsOf(1) >= plan.rows;
+  $('seal').hidden = !(finished && matchesSample());
+  $('game-status').textContent = finished
+    ? 'Все круги прошиты. Сравните с образцом.'
+    : game.seq.length ? `Прошито кругов: ${game.seq.length} из ${2 * plan.rows}.` : 'Начните с любой нити.';
+}
+$('undo').addEventListener('click', () => { game.seq.pop(); gameSave(); renderGame(); });
+$('restart').addEventListener('click', () => { game.seq = []; gameSave(); renderGame(); });
 
 // ---------------------------------------------------------------- sewing controls (work with or without 3D)
 let speed = 1;
@@ -925,7 +1067,7 @@ async function cardPNG() {
 // ---------------------------------------------------------------- start (2D first, 3D when three.js arrives)
 const h0 = location.hash.slice(1);
 openDay(validKey(h0) ? h0 : todayKey(), { fromHash: validKey(h0) });
-if (h0 === 'ideas') setTab('ideas');
+if (h0 === 'ideas' || h0 === 'game') setTab(h0);
 
 try {
   const THREE = await import('three');

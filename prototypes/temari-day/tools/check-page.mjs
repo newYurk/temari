@@ -28,7 +28,26 @@ for (const [name, vp, scheme] of [['desk-light', { width: 1440, height: 900 }, '
   const shelf = await page.evaluate(() => document.querySelectorAll('.shelf a').length);
   await page.click('#tab-ideas'); await page.waitForTimeout(300);
   const ideasScroll = await page.evaluate(() => document.documentElement.scrollWidth);
-  report.push({ name, ...info, midDone, shelfAfterReload: shelf, ideasScroll, errors });
+  // «Образец»: the sample order gives the seal; all of A before B does not, and nothing marks the error.
+  await page.click('#tab-game'); await page.waitForTimeout(200);
+  const sample = await page.evaluate(() => {
+    const rows = +document.getElementById('game-sub').textContent.match(/по (\d+) кругов/)[1];
+    return { rows };
+  });
+  const order = await page.evaluate(() => [...document.querySelectorAll('#view-day tbody tr')].map((tr) => [...tr.querySelectorAll('td .sw')].map((sw) => sw.textContent.trim())));
+  for (const [a, b] of order) {
+    await page.click(`#chips-a .chip:has-text("${a}")`);
+    await page.click(`#chips-b .chip:has-text("${b}")`);
+  }
+  const good = await page.evaluate(() => ({ seal: !document.getElementById('seal').hidden, status: document.getElementById('game-status').textContent }));
+  await page.screenshot({ path: `${here}shots/${name}-game-right.png`, fullPage: true });
+  await page.click('#restart');
+  for (const [a] of order) await page.click(`#chips-a .chip:has-text("${a}")`);
+  for (const [, b] of order) await page.click(`#chips-b .chip:has-text("${b}")`);
+  const bad = await page.evaluate(() => ({ seal: !document.getElementById('seal').hidden, status: document.getElementById('game-status').textContent }));
+  await page.screenshot({ path: `${here}shots/${name}-game-wrong.png`, fullPage: true });
+  const gameScroll = await page.evaluate(() => document.documentElement.scrollWidth);
+  report.push({ name, ...info, midDone, shelfAfterReload: shelf, ideasScroll, game: { rows: sample.rows, rightOrder: good, allABeforeB: bad, scrollWidth: gameScroll }, errors });
   await page.close();
 }
 console.log(JSON.stringify(report, null, 1));
