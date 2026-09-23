@@ -176,6 +176,27 @@ function ports(op: KagariOp): { far: Vec3; near: Vec3 } {
     : { far: enter, near: exit };
 }
 
+/** The operation before `i` on the same working thread (same pole and set). */
+function previousOnThread(ops: readonly KagariOp[], i: number): KagariOp | undefined {
+  const op = ops[i]!;
+  for (let k = i - 1; k >= 0; k--) {
+    if (ops[k]!.pole === op.pole && ops[k]!.set === op.set) return ops[k];
+  }
+  return undefined;
+}
+
+/**
+ * Visible run arriving at `ops[i]`: from the working end — the parked port on
+ * resume, else the near port of the previous catch, else the laid start —
+ * along the lay to the far port.
+ */
+export function arrivingRun(ops: readonly KagariOp[], i: number): Vec3[] {
+  const op = ops[i]!;
+  const prev = previousOnThread(ops, i);
+  const start: Vec3 = op.resume?.at ?? (prev ? ports(prev).near : op.lay.from);
+  return [start, ...(op.lay.via ?? []), ports(op).far];
+}
+
 export function buildCrossingLedger(
   ops: readonly KagariOp[],
   recipeId = KIKU_8_POINT.id,
@@ -194,10 +215,6 @@ export function buildCrossingLedger(
   const spans: LedgerSpan[] = ops.map((op, i) => {
     const trace = traces[i]!;
     const prevId = trace.previousInThread;
-    const prev = prevId ? ops[traces.findIndex((t) => t.operationId === prevId)] : undefined;
-    // The working end: a resumed thread continues from its parked port, any
-    // other from the near port of its previous catch; only the start is laid.
-    const start: Vec3 = op.resume?.at ?? (prev ? ports(prev).near : op.lay.from);
     return {
       order: op.i,
       operationId: trace.operationId,
@@ -209,7 +226,7 @@ export function buildCrossingLedger(
       leaves: prevId,
       firstOfRound: firstInRound.get(round(op)) === op.i,
       lastOfRound: lastInRound.get(round(op)) === op.i,
-      path: [start, ...(op.lay.via ?? []), ports(op).far],
+      path: arrivingRun(ops, i),
     };
   });
 

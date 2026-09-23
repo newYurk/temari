@@ -93,16 +93,38 @@ describe("crossing ledger: who lies on whom, from sewing order", () => {
     assert.deepEqual(key(turned), key(ledger));
   });
 
-  // Recipe finding 23.09 (20 of 24 on four rounds): each later upper bite widens by one thread in total
-  // while the earlier flanks spread ~1 mm per side per round, so the ports
-  // land on the previous round's flank and older rounds are never enclosed.
   // GT14 / Toolkit uwagake: the top stitch goes around all earlier threads.
+  // Masters' photos (TemariKai, Russian and Chinese classes, 23.09): the bite
+  // grows ~one thread per round because the earlier legs are gathered onto
+  // the line in a braid. The recipe still fans its legs at ~45°, so the
+  // oldest rounds lie outside a craft-width bite (16 of 24 on four rounds).
   it("takes every later upper stitch around all the catches it declares", {
-    todo: "recipe ports: the needle misses older rounds (HANDOFF, crossing ledger 23.09)",
+    todo: "recipe legs fan out at the upper tip; masters gather them into a braid (HANDOFF 23.09)",
   }, () => {
-    const four = buildCrossingLedger(compileKiku("simple", "out", "even", 0, 0, 4, 0));
-    for (const k of four.catches) {
-      assert.deepEqual(k.missed.map((m) => short(m.operationId)), [], short(k.operationId));
+    for (const set of [0, "all"] as const) {
+      const four = buildCrossingLedger(compileKiku("simple", "out", "even", 0, 0, 4, set));
+      assert.ok(four.catches.some((k) => k.declared.length > 0));
+      for (const k of four.catches) {
+        assert.deepEqual(k.missed.map((m) => short(m.operationId)), [], short(k.operationId));
+      }
+    }
+  });
+
+  it("carries the working thread over the earlier rounds before the top stitch (uwagake)", {
+    todo: "same braid: fanned legs never meet the later run at the tip (HANDOFF 23.09)",
+  }, () => {
+    const three = buildCrossingLedger(compileKiku("simple", "out", "even", 0, 0, 3, 0));
+    const runsOf = (id: string) => new Set(three.spans
+      .filter((s) => s.operationId === id || s.leaves === id).map((s) => s.operationId));
+    const byId = new Map(three.spans.map((s) => [s.operationId, s]));
+    for (const k of three.catches) {
+      // The catch that closes a round is underpassing's: its run goes under the start.
+      if (byId.get(k.operationId)!.lastOfRound) continue;
+      for (const earlier of k.declared) {
+        const under = runsOf(earlier);
+        assert.ok(three.crossings.some((c) => c.top === k.operationId && under.has(c.under)),
+          `${short(k.operationId)} does not come over ${short(earlier)}`);
+      }
     }
   });
 });

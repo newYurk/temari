@@ -848,39 +848,20 @@ export function kikuFlank(
   const ceiling = spec.ceiling ?? Math.PI / 2 - spec.pitch * 0.35;
   const bTheta = Math.min(ceiling, Math.max(prevOuter + spec.pitch * 0.85, naturalTheta));
   const b = around(pole, bTheta, phiOuter);
-  // Inner tip: same craft law as outer — pierce where the packed lay meets
-  // this meridian. Formula tInner left the catch ~1 pitch poleward of the
-  // body (via0), so the reverse bite sat off the guideline crossing.
-  const piercedIn = pierceOnMeridian(off, pole, phiInner);
-  const prevInner = polarAround(pole, prev.a).theta;
-  const naturalIn = piercedIn ? polarAround(pole, piercedIn).theta : tInner;
-  // Floor: never unpack past the previous inner. Cap below the outer pierce
-  // so the flank still has a turn. Meridian snap keeps neighbouring petals
-  // meeting (raw off[0] of two flanks is not one point).
-  const aTheta = Math.min(
-    bTheta - spec.pitch * 0.5,
-    Math.max(prevInner + spec.pitch * 0.85, naturalIn),
-  );
-  const a = around(pole, aTheta, phiInner);
-  const span = Math.max(bTheta - aTheta, spec.pitch);
+  // Inner tip is not the outer law. GT14: "place needle about 1 thread width
+  // wider and below previous stitch" — the top stitch steps one thread down
+  // the guideline (tInner), snapped to this meridian so neighbouring petals
+  // meet. The packed body ends lower (~0.96 mm at 1× pitch); the thread is
+  // carried over the earlier rounds up to the stitch (uwagake), so the head
+  // from the body to the mark is the craft, not a stub. Piercing at the lay ∩
+  // meridian instead (17dc431) put every later port on an earlier thread.
+  const span = Math.max(bTheta - tInner, spec.pitch);
   const outerJoin = Math.max(3, Math.round((unitFromMm(2.6) / span) * n));
   const i1 = Math.max(4, n - 1 - Math.min(Math.floor(n / 4), outerJoin));
-  // Body starts at the offset sample nearest the inner pierce — a fixed
-  // off[0..2] left a hermite stub from the catch out to the packed lay.
-  let i0 = 0;
-  let best = Infinity;
-  for (let i = 0; i <= i1 - 2; i++) {
-    const p = off[i]!;
-    const d =
-      (p[0] - a[0]) ** 2 + (p[1] - a[1]) ** 2 + (p[2] - a[2]) ** 2;
-    if (d < best) {
-      best = d;
-      i0 = i;
-    }
-  }
-  i0 = Math.min(i0, i1 - 2);
+  const i0 = Math.min(2, i1 - 2);
   const p0 = off[i0]!;
   const p1 = off[i1]!;
+  const a = a0;
   const head = hermiteJoin(a, p0, dirOnSphere(a, p0), tangentAt(off, i0), 8);
   const tail = hermiteJoin(p1, b, tangentAt(off, i1), dirOnSphere(p1, b), 8);
   const pts: Vec3[] = [
@@ -967,16 +948,9 @@ function pushKikuLeg(
   from: Vec3,
   to: { line: number; t: "inner" | "outer"; at: Vec3 },
   over: number[],
-  cornerMm: number,
+  biteMm: number,
   via?: Vec3[],
 ): Vec3 {
-  const biteMm =
-    to.t === "inner"
-      // GT14: each later upper stitch widens around every earlier row.
-      // The eye of the needle opens room; it is not a fixed-width substitute
-      // after row two.
-      ? cornerMm * (1 + over.length)
-      : cornerMm;
   const bite = biteAcross(pole, to.at, biteMm, to.t === "inner" ? over.length : 0);
   ops.push({
     i: ops.length,
@@ -1062,6 +1036,10 @@ export function compileKiku(
           }
           first = false;
           const over = stackOver(innerOver[line2] ?? [], crossing);
+          // GT14: each later top stitch about one thread wider. Masters'
+          // photos (TemariKai, Russian and Chinese classes) show ~(n+1)
+          // threads after n rounds, because the earlier legs are gathered
+          // into a braid on the line — not a bite wide enough for a fan.
           cursor = pushKikuLeg(
             ops,
             pole,
@@ -1072,7 +1050,7 @@ export function compileKiku(
             cursor,
             { line: line2, t: "inner", at: right.a },
             over,
-            cornerMm,
+            cornerMm * (1 + over.length),
             [...right.via].reverse(),
           );
           innerOver[line2]?.push(ops.length - 1);

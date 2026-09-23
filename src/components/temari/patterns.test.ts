@@ -245,10 +245,8 @@ describe("kiku on Simple 8", () => {
     assert.ok(bIn > aIn + 0.02, "inner moves out with the round");
     assert.ok(bOut > aOut + 0.02, "outer moves toward the equator");
     const spec = kikuSpec("simple");
-    // Inner pierce = snug-packed flank ∩ guideline (same craft law as outer),
-    // not a rigid pearl×ring ladder that left the bite poleward of the body.
-    assert.ok(bIn > aIn + 3 * spec.pitch * 0.7, "inner packs out with each round");
-    assert.ok(bIn < aIn + 3 * spec.pitch * 1.6, "inner stays near one-thread pack, not a fan");
+    // GT14: each top stitch one thread width below the previous one.
+    assert.ok(Math.abs(bIn - aIn - 3 * spec.pitch) < spec.pitch * 0.55, "inner steps about one pearl per round");
     // Outer pierce = snug-packed flank ∩ guideline, not equal Ozaki 2 mm×ring.
     assert.ok(bOut > aOut + spec.pitch * 1.5, "outer packs outward with each round");
     assert.ok(bOut < aOut + 3 * spec.stretch * 0.85, "outer is packed pierce, not a 2 mm×ring fan");
@@ -277,21 +275,18 @@ describe("kiku on Simple 8", () => {
     assert.ok(midN.theta > mid0.theta, "offset sits further from the pole");
   });
 
-  it("later inner pierce sits on the packed lay ∩ meridian, not formula tInner", () => {
+  it("puts each later top stitch one thread below the previous one on the guideline (GT14)", () => {
     const pole: [number, number, number] = [0, 1, 0];
     const spec = kikuSpec("simple");
     const step = Math.PI / 4;
-    const form = kikuThetas(spec, 2);
-    const flank = kikuFlank(pole, spec, 2, 0, step);
-    const mark = polar(pole, flank.a);
-    assert.ok(mark.theta > form.tInner + spec.pitch * 0.15, "mark left the rigid pearl ladder");
-    assert.ok(Math.abs(mark.phi) < 1e-6, "catch stays on the guideline");
-    // Even resample puts via[0] ~1 hop from a; that hop is not a poleward formula stub.
-    const near = flank.via[0]!;
-    const hop = Math.acos(Math.min(1, Math.max(-1,
-      near[0] * flank.a[0] + near[1] * flank.a[1] + near[2] * flank.a[2],
-    )));
-    assert.ok(hop < spec.pitch * 2.2, "body leaves the catch in one short hop, not a mid-pitch gap");
+    // Not the packed lay ∩ meridian: that lands ~1.35 threads lower and puts
+    // the later ports on the earlier threads (crossing ledger, 23.09).
+    for (const ring of [1, 2, 3]) {
+      const prev = polar(pole, kikuFlank(pole, spec, ring - 1, 0, step).a);
+      const mark = polar(pole, kikuFlank(pole, spec, ring, 0, step).a);
+      assert.ok(Math.abs(mark.theta - prev.theta - spec.pitch) < spec.pitch * 0.01, `ring ${ring} steps one thread`);
+      assert.ok(Math.abs(mark.phi) < 1e-6, "catch stays on the guideline");
+    }
   });
 
   it("Ozaki turn is at the point: last via sits near the outer mark", () => {
