@@ -228,12 +228,29 @@ export function arcPath(
     new THREE.Vector3(stitch.b[0], stitch.b[1], stitch.b[2]).normalize(),
   ];
   const pts: THREE.Vector3[] = [];
+  const tipSit = (sitAts ?? []).filter((a) => a.t < 0.28 || a.t > 0.72);
   const lift = (t: number, dir: THREE.Vector3) => {
     // Preserve the path's declared lift at every orientation. This legacy
     // stack estimate is not a contact solver; latitude cannot correct it.
-    // Flank sitAts: one STACK_LIFT step. Tip-crest clear for opposite-set
-    // kousa is the wide soft hill after tip join — not a tall local bump here.
-    const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts)) * diameter * STACK_LIFT;
+    let bump = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts));
+    // Tip-near opposite-set kousa: clear the earlier leave crest with a *wide*
+    // soft hill (not STACK_LIFT·0.42 and not a short stackClear shelf).
+    let step = diameter * STACK_LIFT;
+    if (tipSit.length) {
+      const midW = 0.12;
+      let tipBump = 0;
+      for (const a of tipSit) {
+        const d = Math.abs(t - a.t) / midW;
+        if (d >= 1) continue;
+        const u = 1 - d;
+        tipBump = Math.max(tipBump, a.n * u * u * (3 - 2 * u));
+      }
+      if (tipBump > 0) {
+        bump = Math.min(3, Math.max(bump, tipBump));
+        step = diameter * (1.4 + 0.25);
+      }
+    }
+    const extra = uniform + bump * step;
     return dir.clone().multiplyScalar(1 + half * STITCH_FLAT + extra);
   };
   if (via.length === 0) {
@@ -489,7 +506,7 @@ export function sewKagariLegs(
     // puts the emerge in the next kai's arrive corridor. Tip-gate bury clears
     // the previous tip; arrive stackClear sits over this leave.
     // Leave rides over arrive of the *same* tip (lift0). Opposite-set kousa
-    // clears this crest with a wide soft hill after the join — not stackClear.
+    // clears this crest on the later path — not by lowering the leave.
     const lift = lift0 * over * smooth01(_a.distanceTo(toDir) / unitFromMm(1.5));
     const surface = toR + toSlope * t * t * (t - 1) + lift;
     // Arrive: port distance. Stacked leave: require both distance from the
@@ -569,14 +586,14 @@ function raiseSitAtsNearTip(
   if (!relevant.length) return;
   const n = Math.min(2, Math.max(1, ...relevant.map((a) => a.n)));
   const pearl = unitFromMm(kindMm(kind));
-  // Clear leave crest (lift0=1.4·pearl) by a thin margin — one layer, spread
-  // over ~8 mm so it reads as drape, not a bridge.
+  // Match arcPath tip-kousa: clear leave crest + thin margin, spread ~10 mm.
   const amount = pearl * (1.4 + 0.25) * n;
-  const falloff = unitFromMm(8);
+  const falloff = unitFromMm(10);
   const tipU = tip.clone().normalize();
   for (const p of pts) {
     const r = p.length();
-    // Buried pierce stays under the wrap; only raise surface cord.
+    // Buried pierce stays under the wrap; raise near-surface cord (incl. the
+    // emerge just above the wrap where kousa often sits).
     if (r < 0.995) continue;
     const ang = p.clone().normalize().angleTo(tipU);
     if (ang >= falloff) continue;

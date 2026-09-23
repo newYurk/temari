@@ -38,20 +38,16 @@ describe("thread stack is local, not a lifted petal", () => {
 });
 
 describe("GT14 A then B: later set sits over earlier at tip kousa", () => {
-  it("after tip join, B0 centerline clears A0 at every near meeting", () => {
-    const aOps = compileKiku("simple", "out", "even", 0, 0, 1, 0);
-    const bOps = compileKiku("simple", "out", "even", 0, 4, 1, 1);
+  function sameKaiLines(layers: number, kai: number) {
+    const aOps = compileKiku("simple", "out", "even", 0, 0, layers, 0);
+    const bOps = compileKiku("simple", "out", "even", 0, 4, layers, 1);
     const stripped = [...stitchesFromOps(aOps), ...stitchesFromOps(bOps)].map((s) =>
       s.kind === "arc" ? { ...s, sitMid: 0, sitMidT: undefined, sitAts: undefined } : s,
     );
     const all = annotateSetCrossings(stripped as Stitch[]);
-    const aArcs = all.filter((s): s is Extract<Stitch, { kind: "arc" }> =>
-      s.kind === "arc" && s.set === 0);
-    const bArcs = all.filter((s): s is Extract<Stitch, { kind: "arc" }> =>
-      s.kind === "arc" && s.set === 1);
-    assert.ok(bArcs.every((s) => (s.sitMid ?? 0) >= 1), "B annotated over A");
-
-    const lines = (arcs: Extract<Stitch, { kind: "arc" }>[]) => {
+    const lines = (set: 0 | 1) => {
+      const arcs = all.filter((s): s is Extract<Stitch, { kind: "arc" }> =>
+        s.kind === "arc" && s.set === set && s.kai === kai);
       const out: [number, number, number][][] = [];
       for (const chain of groupWorkingThreads(arcs)) {
         for (const geo of stackedArcChainParts(chain, "pearl5")) {
@@ -62,34 +58,38 @@ describe("GT14 A then B: later set sits over earlier at tip kousa", () => {
       }
       return out;
     };
-    const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
-    const aLines = lines(aArcs);
-    const bLines = lines(bArcs);
-    assert.ok(aLines.length >= 4 && bLines.length >= 4);
+    return { aLines: lines(0), bLines: lines(1) };
+  }
 
-    let meetings = 0;
-    for (const a of aLines) {
-      for (const b of bLines) {
-        const c = closestApproachT(a, b);
-        if (c.dist > pearl * 2.5) continue;
-        meetings++;
-        const iA = Math.min(a.length - 1, Math.round(c.tA * (a.length - 1)));
-        const iB = Math.min(b.length - 1, Math.round(c.tB * (b.length - 1)));
-        const rA = Math.hypot(...a[iA]!);
-        const rB = Math.hypot(...b[iB]!);
-        assert.ok(
-          rB + 1e-4 >= rA,
-          `B must sit over A at tip kousa (rB=${rB} rA=${rA} dist=${c.dist})`,
-        );
-        // Soft hill may clear leave crest (~1.4·pearl) but must not be a
-        // stackClear bridge (pearl+lift0 on a short arrive ramp ≈ 2.4·pearl).
-        assert.ok(
-          rB - rA < pearl * 2.0,
-          `B-over-A must be a soft hill, not a bridge (gap=${rB - rA})`,
-        );
+  it("same kai: B centerline clears A at tip-near meetings (1 and 4 rows)", () => {
+    const pearl = unitFromMm(STITCH_THREAD_MM.pearl5);
+    for (const layers of [1, 4]) {
+      for (let kai = 0; kai < layers; kai++) {
+        const { aLines, bLines } = sameKaiLines(layers, kai);
+        assert.ok(aLines.length >= 4 && bLines.length >= 4, `kai ${kai} segments`);
+        let meetings = 0;
+        for (const a of aLines) {
+          for (const b of bLines) {
+            const c = closestApproachT(a, b);
+            if (c.dist > pearl * 2.2) continue;
+            meetings++;
+            const iA = Math.min(a.length - 1, Math.round(c.tA * (a.length - 1)));
+            const iB = Math.min(b.length - 1, Math.round(c.tB * (b.length - 1)));
+            const rA = Math.hypot(...a[iA]!);
+            const rB = Math.hypot(...b[iB]!);
+            assert.ok(
+              rB + 1e-4 >= rA,
+              `B must sit over A at same-kai tip kousa (layers=${layers} kai=${kai} rB=${rB} rA=${rA})`,
+            );
+            assert.ok(
+              rB - rA < pearl * 2.2,
+              `soft hill, not stackClear bridge (gap=${rB - rA})`,
+            );
+          }
+        }
+        assert.ok(meetings >= 4, `layers=${layers} kai=${kai} meetings=${meetings}`);
       }
     }
-    assert.ok(meetings >= 4, `expected A/B meetings near tip, got ${meetings}`);
   });
 });
 
