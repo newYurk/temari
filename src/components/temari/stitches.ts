@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { pileHeights } from "./pile-heights.ts";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import type { Stitch } from "./patterns.ts";
@@ -362,6 +363,8 @@ export function sewKagariLegs(
   /** False/0 = first row; true/1 = one under; n = overOperations.length under the tip. */
   onStack: boolean | number = false,
   tangents?: { from: THREE.Vector3; to: THREE.Vector3 },
+  /** Pile render: no count-based shelf or hump; heights come from the pile. */
+  flat = false,
 ): { inPts: THREE.Vector3[]; outPts: THREE.Vector3[] } {
   const half = unitFromMm(kindMm(kind)) * 0.5;
   const pearl = half * 2;
@@ -382,7 +385,7 @@ export function sewKagariLegs(
     scoopRadius(1, Math.min(fromR, toR), half),
     1 - unitFromMm(NEEDLE_DEPTH_MM),
   );
-  const lift0 = pearl * 1.4;
+  const lift0 = flat ? 0 : pearl * 1.4;
   const hug = unitFromMm(REVERSE_HUG_MM);
   // Marks of stacked inner tips are ~1 pearl apart; their ports can be ~0.5 mm
   // apart — closer than the tube diameter. A later catch must meet its ports
@@ -405,7 +408,7 @@ export function sewKagariLegs(
   // lift0-on-lift0 with tip hills (row-4 staircases). Leave path still uses
   // full lift0 below for same-stitch over.
   const leaveCrest = Math.min(lift0, pearl);
-  const stackClear = stacked ? pearl * stackDepth + leaveCrest : 0;
+  const stackClear = stacked && !flat ? pearl * stackDepth + leaveCrest : 0;
   const dropFloor = Math.max(fromR - buriedR, toR - buriedR);
   // Keep the dive shorter than tip→port so the V crossing stays on the mari,
   // but not so short the tube folds (full-depth band overlapped stacked rows).
@@ -593,6 +596,7 @@ function splitJoinAroundMark(
   onStack: boolean | number = false,
   arriveSitAts?: readonly { t: number; n: number }[],
   leaveSitAts?: readonly { t: number; n: number }[],
+  flat = false,
 ): { head: THREE.Vector3[]; tail: THREE.Vector3[]; outPts: THREE.Vector3[] } {
   const stackDepth = Math.min(3, typeof onStack === "number" ? Math.max(0, onStack) : onStack ? 1 : 0);
   // Clip outside the entire catch. A fixed fraction of one thread put
@@ -612,6 +616,7 @@ function splitJoinAroundMark(
       from: clip.from.clone().sub(pts.at(-1)!),
       to: piece[clip.k]!.clone().sub(clip.to),
     },
+    flat,
   );
   // Arrive sits on earlier opposite set near this tip; leave may start a leg
   // whose kousa is near t=0 (next stitch's sitAts).
@@ -767,8 +772,16 @@ function stackedArcChain(
 export function stackedArcChainParts(
   chain: Extract<Stitch, { kind: "arc" }>[],
   kind: ThreadKind,
+  /** Pile render: hand each shaped centerline out instead of building a tube. */
+  emit?: (pts: THREE.Vector3[], at: Extract<Stitch, { kind: "arc" }>) => void,
 ): THREE.BufferGeometry[] {
+  const flat = !!emit;
   if (chain.length === 1) {
+    if (emit) {
+      const pts = arcPath(chain[0]!, kind);
+      if (pts.length >= 2) emit(buryWorkingEnds(pts, kind), chain[0]!);
+      return [];
+    }
     const one = stackedArcCord(chain[0]!, kind);
     return (one.getAttribute("position")?.count ?? 0) > 0 ? [one] : [];
   }
@@ -786,6 +799,10 @@ export function stackedArcChainParts(
       );
       shaped = bite.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
     }
+    if (emit) {
+      emit(buryEnds(shaped, kind, buryStart, buryStop), current);
+      return;
+    }
     const geo = cachedTube(
       buryEnds(shaped, kind, buryStart, buryStop),
       stitchRadius(kind),
@@ -797,6 +814,7 @@ export function stackedArcChainParts(
     parts.push(geo);
   };
   let pts: THREE.Vector3[] = [];
+  let current = chain[0]!;
   let kai0 = chain[0]?.kai;
   let prevBite: { enter: [number, number, number]; exit: [number, number, number] } | undefined;
   let prevTip: "inner" | "outer" | undefined;
@@ -821,7 +839,7 @@ export function stackedArcChainParts(
   ) => {
     const mark = pts[pts.length - 1]!;
     return splitJoinAroundMark(
-      pts, piece, mark, kind, prevBite, stackDepth, arriveSitAts, leaveSitAts,
+      pts, piece, mark, kind, prevBite, stackDepth, arriveSitAts, leaveSitAts, flat,
     );
   };
   const closeKai = () => {
@@ -862,7 +880,7 @@ export function stackedArcChainParts(
     if (samePin(mark, next0) && pts.length > 1 && piece.length > 1) {
       if (prevTip === "inner") {
         const { head, tail } = splitJoinAroundMark(
-          pts, piece, mark, kind, prevBite, prevStackDepth, prevSitAts, sitAts,
+          pts, piece, mark, kind, prevBite, prevStackDepth, prevSitAts, sitAts, flat,
         );
         if (pending === null) pending = head;
         else tube(head, false, false);
@@ -882,6 +900,7 @@ export function stackedArcChainParts(
   };
   for (let i = 0; i < chain.length; i++) {
     const s = chain[i]!;
+    current = s;
     const piece = arcPath(s, kind);
     if (s.kai !== kai0 && pts.length) {
       const next0 = piece[0];
@@ -1128,10 +1147,74 @@ function geodesicRibbon(points: THREE.Vector3[], width: number) {
  * stitches that copy alone was 0.2 s, one long frame per stitch. Drawing the
  * pieces as they are keeps the kept tubes untouched.
  */
+type PilePart = { color: number; pts: THREE.Vector3[] };
+const pileCache = new WeakMap<Stitch[], Map<ThreadKind, PilePart[]>>();
+
+/**
+ * Pile render (spec/pile-render.md): every working thread's centerline in
+ * sewing order, without the count-based lifts, then one pass that rests each
+ * later sample on the threads already laid under it. Samples below the mari
+ * surface are diving into a port and neither lift nor carry.
+ */
+function pileParts(stitches: Stitch[], kind: ThreadKind): PilePart[] {
+  let byKind = pileCache.get(stitches);
+  if (!byKind) {
+    byKind = new Map();
+    pileCache.set(stitches, byKind);
+  }
+  const hit = byKind.get(kind);
+  if (hit) return hit;
+  const arcs: Extract<Stitch, { kind: "arc" }>[] = stitches
+    .filter((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc")
+    .map((s) => ({ ...s, sitA: 0, sitB: 0, sitMid: 0, sitMidT: undefined, sitAts: undefined }));
+  const order = new Map<Extract<Stitch, { kind: "arc" }>, number>(arcs.map((s, i) => [s, i]));
+  const emitted: { color: number; at: number; seq: number; pts: THREE.Vector3[] }[] = [];
+  for (const chain of groupWorkingThreads(arcs)) {
+    stackedArcChainParts(chain, kind, (pts, at) =>
+      emitted.push({ color: at.color, at: order.get(at) ?? 0, seq: emitted.length, pts }));
+  }
+  emitted.sort((a, b) => a.at - b.at || a.seq - b.seq);
+  const half = unitFromMm(kindMm(kind)) * 0.5;
+  const base = 1 + half * STITCH_FLAT;
+  // A crossing thread is narrower than an arc sample step: resample to a third
+  // of the width so every crossing lands on a sample.
+  for (const e of emitted) {
+    const dense: THREE.Vector3[] = [e.pts[0]!];
+    for (let i = 1; i < e.pts.length; i++) {
+      const a = e.pts[i - 1]!;
+      const b = e.pts[i]!;
+      const n = Math.max(1, Math.ceil(a.distanceTo(b) / (half * 2 / 3)));
+      for (let k = 1; k <= n; k++) {
+        const u = k / n;
+        const dir = a.clone().normalize().lerp(b.clone().normalize(), u).normalize();
+        dense.push(dir.multiplyScalar(a.length() + (b.length() - a.length()) * u));
+      }
+    }
+    e.pts = dense;
+  }
+  const lines = emitted.map((e) => ({
+    points: e.pts.map((p) => {
+      const u = p.clone().normalize();
+      return [u.x, u.y, u.z] as [number, number, number];
+    }),
+    dive: e.pts.map((p) => p.length() < base - 1e-6),
+  }));
+  const lifts = pileHeights(lines, { width: half * 2, height: half * 2 * STITCH_FLAT, portRadius: 0 });
+  const out = emitted.map((e, i) => ({
+    color: e.color,
+    pts: e.pts.map((p, j) => (lines[i]!.dive[j]
+      ? p.clone()
+      : p.clone().normalize().multiplyScalar(p.length() + lifts[i]![j]!))),
+  }));
+  byKind.set(kind, out);
+  return out;
+}
+
 export function createMotifGeometryParts(
   stitches: Stitch[],
   colorIndex: number,
   kind = DEFAULT_KIND.stitch,
+  opts: { pile?: boolean } = {},
 ): THREE.BufferGeometry[] {
   const width = ribbonWidth(kind);
   const cord = kind !== "metallic";
@@ -1146,7 +1229,14 @@ export function createMotifGeometryParts(
       parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, stitch.lift ?? 0, kind)), width * 1.08, true));
     }
   }
-  if (cord) {
+  if (cord && opts.pile) {
+    for (const part of pileParts(stitches, kind)) {
+      if (part.color !== colorIndex) continue;
+      const geo = cachedTube(part.pts, stitchRadius(kind), false, false, twistPerUnit(kind));
+      geo.userData.centerline = part.pts.map((p) => p.clone());
+      parts.push(geo);
+    }
+  } else if (cord) {
     for (const chain of groupWorkingThreads(arcs)) {
       parts.push(...stackedArcChainParts(chain, kind));
     }

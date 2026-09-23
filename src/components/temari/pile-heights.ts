@@ -13,6 +13,8 @@ export type PileLine = {
   points: Vec3[];
   /** Port centres of this line; within `portRadius` it dives, not lifts. */
   ports?: Vec3[];
+  /** Samples already diving into the wrap: neither lifted nor a support. */
+  dive?: boolean[];
 };
 
 export type PileOptions = {
@@ -51,7 +53,8 @@ export function pileHeights(lines: PileLine[], opts: PileOptions): number[][] {
     return out;
   };
   const swapped = new Set((opts.swaps ?? []).map(([a, b]) => `${a}:${b}`));
-  const diving = (line: PileLine, p: Vec3) => (line.ports ?? []).some((q) => dist(p, q) < portRadius);
+  const diving = (line: PileLine, p: Vec3, i: number) =>
+    !!line.dive?.[i] || (line.ports ?? []).some((q) => dist(p, q) < portRadius);
 
   const lifts: number[][] = lines.map((l) => l.points.map(() => 0));
   const alongs: number[][] = lines.map((l) => {
@@ -63,14 +66,14 @@ export function pileHeights(lines: PileLine[], opts: PileOptions): number[][] {
   lines.forEach((line, li) => {
     line.points.forEach((p, pi) => {
       let lift = 0;
-      if (!diving(line, p)) {
+      if (!diving(line, p, pi)) {
         for (const s of near(p)) {
           // Its own last stretch is not a support; coming back over an
           // earlier stretch of itself (the chidori X) is.
           if (s.line === li && alongs[li]![pi]! - s.along < 2 * width) continue;
           if (swapped.has(`${s.line}:${li}`)) continue;
           const q = lines[s.line]!.points[s.index]!;
-          if (diving(lines[s.line]!, q)) continue;
+          if (diving(lines[s.line]!, q, s.index)) continue;
           const f = profile(dist(p, q), width);
           if (f > 0) lift = Math.max(lift, lifts[s.line]![s.index]! + height * f);
         }
@@ -86,9 +89,9 @@ export function pileHeights(lines: PileLine[], opts: PileOptions): number[][] {
   // Underpassing: the earlier line of a swapped pair rests on the later one.
   for (const [early, late] of opts.swaps ?? []) {
     lines[early]?.points.forEach((p, pi) => {
-      if (diving(lines[early]!, p)) return;
+      if (diving(lines[early]!, p, pi)) return;
       lines[late]!.points.forEach((q, qi) => {
-        if (diving(lines[late]!, q)) return;
+        if (diving(lines[late]!, q, qi)) return;
         const f = profile(dist(p, q), width);
         if (f > 0) lifts[early]![pi] = Math.max(lifts[early]![pi]!, lifts[late]![qi]! + height * f);
       });

@@ -4,6 +4,7 @@
  *
  *   node --import tsx scripts/count-studio-overlaps.mts --rounds=2 --set=0
  *   node --import tsx scripts/count-studio-overlaps.mts --rounds=4 --set=all --json=screenshots/overlaps.json
+ *   ... --pile   heights by sewing order (spec/pile-render.md) instead of count lifts
  *
  * Same predicate as locate: an edge of one tube triangle passes through the
  * interior of another tube's triangle, endpoints on opposite sides of its
@@ -22,11 +23,12 @@ const arg = (name: string, fallback: string) =>
 const rounds = Number(arg('rounds', '2'));
 const set = arg('set', '0') === 'all' ? 'all' as const : 0;
 const json = arg('json', '');
+const pile = process.argv.includes('--pile');
 const R_MM = (MARI_C_CM * 10) / (2 * Math.PI);
 const CAP = 0.97;
 
 const arcs = stitchesFromOps(compileKiku('simple', 'out', 'even', 0, 0, rounds, set));
-const parts = createMotifGeometryParts(arcs, 0, 'pearl5');
+const parts = createMotifGeometryParts(arcs, 0, 'pearl5', { pile });
 const paths = arcs.filter(s => s.kind === 'arc').map(s => ({ operation: s.operation, points: arcPath(s, 'pearl5') }));
 const ringSize = 21;
 
@@ -107,7 +109,7 @@ for (let i = 0; i < bands.length; i++) {
 }
 
 const above = [...pairs.values()].filter(v => v.above > 0).length;
-console.log(`Кику S8, северный полюс, кругов ${rounds}, группы ${set}: ${parts.length} трубок.`);
+console.log(`Кику S8, северный полюс, кругов ${rounds}, группы ${set}${pile ? ', стопка' : ''}: ${parts.length} трубок.`);
 console.log(`Шапка у полюса (окно locate): над мари ${total.cap.above}, под мари ${total.cap.below}.`);
 console.log(`Остальной шар: над мари ${total.rest.above}, под мари ${total.rest.below}.`);
 console.log(`Пар трубок с пересечением над мари: ${above} (всего пар ${pairs.size}).`);
