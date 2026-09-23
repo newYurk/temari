@@ -16,10 +16,10 @@ export type PileLine = {
   /** Samples already diving into the wrap: never lifted. */
   dive?: boolean[];
   /**
-   * Radial offset of each sample from the pile base (negative while diving).
-   * With it a diving sample still carries a later thread as high as it
-   * actually is — near the port it is just under the surface. Without it a
-   * diving sample is no support at all.
+   * Signed radial offset of each sample from the pile base: negative while
+   * diving, slightly positive where the path already rises. With it a sample
+   * carries a later thread as high as it actually is — near the port just
+   * under the surface. Without it a diving sample is no support at all.
    */
   offset?: number[];
 };

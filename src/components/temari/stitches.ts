@@ -1206,7 +1206,9 @@ export function pileParts(stitches: Stitch[], kind: ThreadKind): PilePart[] {
     // Inside the wrap only once the whole section is under the mari surface;
     // a sample just starting down its port is still on the pile.
     dive: e.pts.map((p) => p.length() < base - height),
-    offset: e.pts.map((p) => Math.min(0, p.length() - base)),
+    // Signed: a sample the path already lays a little above the base lends
+    // support from where it is, not from the base.
+    offset: e.pts.map((p) => p.length() - base),
   }));
   const lifts = pileHeights(lines, { width: half * 2, height, portRadius: 0 }, lastPile.get(kind));
   lastPile.set(kind, { lines, lifts });

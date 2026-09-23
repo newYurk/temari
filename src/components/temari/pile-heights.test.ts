@@ -67,6 +67,9 @@ describe("pile heights: later lies on earlier (spec/pile-render.md)", () => {
     const later: PileLine = { points: run("z", 0), offset: sunk(81, -H / 2) };
     const [, up] = pileHeights([{ points: run("x", 0) }, later], opts);
     assert.ok(Math.abs(mid(up!) - 1.5 * H) < 1e-6, `climbs from where it is ${mid(up!)}`);
+    const raised: PileLine = { points: run("x", 0), offset: sunk(81, H / 4) };
+    const [, onRaised] = pileHeights([raised, { points: run("z", 0) }], opts);
+    assert.ok(Math.abs(mid(onRaised!) - 1.25 * H) < 1e-6, `rests on a raised one ${mid(onRaised!)}`);
   });
 
   it("lays only what changed after an earlier pile, with the same heights", () => {
