@@ -2,7 +2,7 @@
 
 Уточнение 19.09: описанный ниже `round`/`row2` относится к одной рабочей нити. Две группы A/B имеют отдельную постановку и проверку: [первый проход A1 → B1](s8-two-threads.md). Численные результаты одной нити не являются приёмкой композиции двух наборов.
 
-16.09.2026, дополнено 17.09; темы `codex/temari-next-s8` и `codex/temari-next-uwagake2` слиты в `codex/temari-next`, в `main` не принято. Модуль — `src/components/temari/s8-kiku.ts`, просмотр — `lab.html#s8-kiku`. Модель толстой нити и её решатель — [spatial-contact.md](spatial-contact.md), маршрут иглы — [needle-route.md](needle-route.md).
+16.09.2026, дополнено 17.09; темы `codex/temari-next-s8` и `codex/temari-next-uwagake2` включены в `codex/temari-next`; состояние интеграции — [STATE.md](../STATE.md). Модуль — `src/components/temari/s8-kiku.ts`, просмотр — `lab.html#s8-kiku`. Модель толстой нити и её решатель — [spatial-contact.md](spatial-contact.md), маршрут иглы — [needle-route.md](needle-route.md).
 
 ## Ремесленные основания
 
