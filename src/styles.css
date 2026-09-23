@@ -39,6 +39,19 @@
     overflow: hidden;
   }
 
+  /* Night workshop: the same tokens, dark page and light ink. */
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --color-ink: #e9e4db;
+    --color-linen: #1a1815;
+    --color-paper: #2a2622;
+    --color-elevated: #24211d;
+    --color-stone: #9a938a;
+    --color-line: color-mix(in oklab, #e9e4db 16%, transparent);
+    --color-line-strong: color-mix(in oklab, #e9e4db 30%, transparent);
+  }
+
+
   button:not(:disabled),
   [role="button"]:not(:disabled) {
     cursor: pointer;
@@ -54,6 +67,11 @@
   h3 {
     text-wrap: balance;
   }
+}
+
+/* Unlayered, so it beats the backdrop utility (bg-ink/30 turns light at night). */
+html[data-theme="dark"] dialog::backdrop {
+  background: rgb(0 0 0 / 0.5);
 }
 
 @keyframes temari-rise {

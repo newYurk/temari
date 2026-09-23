@@ -9,6 +9,13 @@
       content="Темари — нить на сфере. Сначала намотка, потом кагари."
     />
     <meta name="theme-color" content="#ece8e1" />
+    <script>
+      try {
+        var saved = localStorage.getItem("temari-theme");
+        document.documentElement.dataset.theme = saved === "dark" || saved === "light" ? saved
+          : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      } catch (e) {}
+    </script>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta property="og:title" content="Темари" />
     <meta property="og:description" content="Нить на сфере. Сначала намотка, потом кагари." />

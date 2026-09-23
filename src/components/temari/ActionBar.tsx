@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
-import { CircleHelp, MoreHorizontal, Palette, PencilLine, Pin, RotateCcw, Undo2, X } from "lucide-react";
+import { CircleHelp, Moon, MoreHorizontal, Palette, PencilLine, Pin, RotateCcw, Sun, Undo2, X } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { cn } from "@/lib/utils";
 import { THREAD_COLORS } from "./palettes";
@@ -9,6 +9,7 @@ import { useTemari } from "./store";
 import { CRAFT_ACTIONS, dispatchCommand, getCraftState } from "./actions";
 import { IconKiku, IconNeedle } from "./icons";
 import { MarkingDiagram } from "./MarkingDiagram";
+import { setTheme, useTheme } from "./theme";
 
 type Stage = "jiwari" | "kagari";
 type Panel = "pattern" | "threads" | "more" | "help";
@@ -60,6 +61,7 @@ function KikuHelp() {
 }
 
 export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
+  const theme = useTheme();
   const s = useTemari(useShallow((s) => ({
     division: s.division, motif: s.motif, craft: s.craft, pins: s.pins,
     facingPole: s.facingPole, jiwariOn: s.jiwariOn, jiwariPhase: s.jiwariPhase,
@@ -505,6 +507,12 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
               <button type="button" onClick={() => openPanel("help")}
                 className={cn("flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-sm hover:bg-ink/5", focusStyle)}>
                 <CircleHelp className="size-5" />Справка
+              </button>
+              <button type="button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                aria-pressed={theme === "dark"}
+                className={cn("flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-sm hover:bg-ink/5", focusStyle)}>
+                {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
+                {theme === "dark" ? "Светлый фон" : "Тёмный фон"}
               </button>
               <a href="./design.html#interface" className={cn("flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm hover:bg-ink/5", focusStyle)}>
                 <Palette className="size-5" />О стенде и ограничениях

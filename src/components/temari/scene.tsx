@@ -127,8 +127,9 @@ export function TemariScene({ children, inspection, onError }: {
         toneMappingExposure: 1.05,
       }}
       onCreated={({ gl, scene }) => {
-        gl.setClearColor("#ece8e1", 1);
-        scene.background = new THREE.Color("#ece8e1");
+        // Transparent: the page colour (light or night theme) shows around the ball.
+        gl.setClearColor("#000000", 0);
+        scene.background = null;
       }}
     >
       <hemisphereLight color="#f4efe6" groundColor="#c4b8a4" intensity={0.72} />
