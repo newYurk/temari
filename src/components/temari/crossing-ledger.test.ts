@@ -37,7 +37,7 @@ describe("crossing ledger: who lies on whom, from sewing order", () => {
   const ledger = buildCrossingLedger(ops);
   const orderOf = new Map(ledger.spans.map((s) => [s.operationId, s]));
 
-  it("puts the later run on top everywhere except the sourced round closure", () => {
+  it("puts the later run on top everywhere except the sourced final closure", () => {
     assert.ok(ledger.crossings.length > 0);
     for (const c of ledger.crossings) {
       const top = orderOf.get(c.top)!;
@@ -45,13 +45,14 @@ describe("crossing ledger: who lies on whom, from sewing order", () => {
       if (c.rule === "later-over") {
         assert.ok(top.order > under.order, `${short(c.top)} over ${short(c.under)}`);
       } else {
-        // TemariKai underpassing: the run into the last stitch goes under the start.
-        assert.ok(top.firstOfRound && under.lastOfRound && top.threadId === under.threadId
-          && top.kai === under.kai, `${short(c.top)} / ${short(c.under)}`);
+        // TemariKai underpassing: the last stitch of the thread's last round
+        // goes under that round's start; earlier rounds step over.
+        assert.ok(top.firstOfRound && under.lastOfRound && under.finalRound
+          && top.threadId === under.threadId && top.kai === under.kai, `${short(c.top)} / ${short(c.under)}`);
       }
     }
-    const rounds = new Set(ledger.spans.map((s) => `${s.threadId}/${s.kai}`));
-    assert.equal(ledger.crossings.filter((c) => c.rule === "underpass-closure").length, rounds.size);
+    const threads = new Set(ledger.spans.map((s) => s.threadId));
+    assert.equal(ledger.crossings.filter((c) => c.rule === "underpass-closure").length, threads.size);
   });
 
   it("crosses every catch's arriving run with its leaving run: the chidori X", () => {
@@ -118,8 +119,9 @@ describe("crossing ledger: who lies on whom, from sewing order", () => {
       .filter((s) => s.operationId === id || s.leaves === id).map((s) => s.operationId));
     const byId = new Map(three.spans.map((s) => [s.operationId, s]));
     for (const k of three.catches) {
-      // The catch that closes a round is underpassing's: its run goes under the start.
-      if (byId.get(k.operationId)!.lastOfRound) continue;
+      // The catch that closes the thread's last round is underpassing's.
+      const span = byId.get(k.operationId)!;
+      if (span.lastOfRound && span.finalRound) continue;
       for (const earlier of k.declared) {
         const under = runsOf(earlier);
         assert.ok(three.crossings.some((c) => c.top === k.operationId && under.has(c.under)),

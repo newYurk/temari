@@ -5,8 +5,8 @@
  *   node --import tsx scripts/kiku-crossing-ledger.mts --rounds=4 --set=0 --json=screenshots/ledger.json
  *
  * Rule: later over earlier; exceptions — the catch (needle under the pile,
- * inside the wrap) and underpassing at a round's last stitch. Reads the
- * recipe lay (working end → via → far port), not the studio tubes.
+ * inside the wrap) and underpassing at the last stitch of a thread's last
+ * round. Reads the recipe lay (working end → via → far port), not the tubes.
  */
 import { writeFileSync } from 'node:fs';
 import { compileKiku } from '../src/components/temari/patterns.ts';
@@ -31,7 +31,7 @@ console.log('Пролёт «→s0/r1/inner-2» — нить, идущая к п�
 console.log('| где | от метки, мм | от полюса, мм | сверху | снизу | правило |');
 console.log('|---|---:|---:|---|---|---|');
 for (const c of [...ledger.crossings].sort((a, b) => a.poleMm - b.poleMm)) {
-  const rule = c.rule === 'underpass-closure' ? 'замыкание круга (underpassing)'
+  const rule = c.rule === 'underpass-closure' ? 'последний стежок нити (underpassing)'
     : c.chidori ? 'крестик тидори' : c.sameThread ? 'позже — выше' : 'позже — выше (другая группа)';
   console.log(`| ${short(c.near.operationId)} | ${c.near.mm.toFixed(2)} | ${c.poleMm.toFixed(2)} `
     + `| ${run(c.top)} | ${run(c.under)} | ${rule} |`);

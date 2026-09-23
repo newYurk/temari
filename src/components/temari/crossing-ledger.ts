@@ -12,8 +12,10 @@ type Vec3 = [number, number, number];
  * only from the order of rounds; the needle does no over/under weaving.
  * Two sourced exceptions:
  * - a catch: the needle passes under the pile inside the wrap;
- * - underpassing: the run into the last stitch of a round goes under the
- *   starting run of that round (TemariKai names uwagake chidori explicitly).
+ * - underpassing: the run into the last stitch of a thread's last round
+ *   goes under that round's starting run (TemariKai, polygons page, which
+ *   names uwagake chidori). Earlier rounds step over into the next round
+ *   (Toolkit uwagake, photo 02) and follow the ordinary rule.
  *
  * Geometry here is the recipe's lay on the unit sphere: working end → via →
  * far port of the catch. Heights, tubes and contact are not modelled.
@@ -32,6 +34,8 @@ export type LedgerSpan = {
   leaves: string | null;
   firstOfRound: boolean;
   lastOfRound: boolean;
+  /** This run belongs to the last round its thread sews. */
+  finalRound: boolean;
   path: Vec3[];
 };
 
@@ -206,10 +210,12 @@ export function buildCrossingLedger(
   const round = (op: KagariOp) => `${traces[ops.indexOf(op)]!.threadId}/r${op.kai}`;
   const firstInRound = new Map<string, number>();
   const lastInRound = new Map<string, number>();
-  for (const op of ops) {
+  const lastKai = new Map<string, number>();
+  for (const [i, op] of ops.entries()) {
     const key = round(op);
     if (!firstInRound.has(key)) firstInRound.set(key, op.i);
     lastInRound.set(key, op.i);
+    lastKai.set(traces[i]!.threadId, Math.max(lastKai.get(traces[i]!.threadId) ?? 0, op.kai));
   }
 
   const spans: LedgerSpan[] = ops.map((op, i) => {
@@ -226,6 +232,7 @@ export function buildCrossingLedger(
       leaves: prevId,
       firstOfRound: firstInRound.get(round(op)) === op.i,
       lastOfRound: lastInRound.get(round(op)) === op.i,
+      finalRound: lastKai.get(trace.threadId) === op.kai,
       path: arrivingRun(ops, i),
     };
   });
@@ -255,7 +262,7 @@ export function buildCrossingLedger(
       if (early.pole !== late.pole) continue;
       for (const at of pathCrossings(early.path, late.path)) {
         const sameThread = early.threadId === late.threadId;
-        const closure = sameThread && early.kai === late.kai
+        const closure = sameThread && early.kai === late.kai && late.finalRound
           && early.firstOfRound && late.lastOfRound;
         crossings.push({
           top: closure ? early.operationId : late.operationId,

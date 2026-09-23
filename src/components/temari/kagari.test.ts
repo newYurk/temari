@@ -78,7 +78,7 @@ describe("kagari recipe atom", () => {
     );
   });
 
-  it("inner rounds pack out by about one pearl; pierce follows the lay", () => {
+  it("inner rounds step one pearl; they do not skip after a doubled first", () => {
     const spec = kikuSpec("simple", "even");
     const ops = compileKiku("simple", "out", "even", 0, 0, 6);
     const th = (p: [number, number, number]) =>
@@ -92,15 +92,15 @@ describe("kagari recipe atom", () => {
     });
     for (let i = 1; i < inners.length; i++) {
       const dMark = inners[i]!.mark - inners[i - 1]!.mark;
-      // Pack-pierce (lay ∩ meridian), not a rigid pearl×ring ladder.
+      // GT14: the next top stitch one thread below the previous one.
       assert.ok(
-        dMark > spec.pitch * 0.55 && dMark < spec.pitch * 1.65,
+        Math.abs(dMark - spec.pitch) < spec.pitch * 0.45,
         `kai ${i - 1}→${i} mark step ${dMark} vs pitch ${spec.pitch}`,
       );
       const dVia = inners[i]!.viaMin - inners[i - 1]!.viaMin;
       assert.ok(
-        dVia > spec.pitch * 0.55 && dVia < spec.pitch * 1.65,
-        `kai ${i - 1}→${i} path step ${dVia} — still about one thread pack`,
+        Math.abs(dVia - spec.pitch) < spec.pitch * 0.35,
+        `kai ${i - 1}→${i} path step ${dVia} — a doubled first then a skip`,
       );
     }
     assert.ok(
