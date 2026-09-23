@@ -4,7 +4,9 @@
  *
  *   node --import tsx scripts/count-studio-overlaps.mts --rounds=2 --set=0
  *   node --import tsx scripts/count-studio-overlaps.mts --rounds=4 --set=all --json=screenshots/overlaps.json
- *   ... --pile   heights by sewing order (spec/pile-render.md) instead of count lifts
+ *   ... --pile   heights by sewing order (spec/pile-render.md) instead of count lifts;
+ *                also checks the axes: sample pairs of two pieces above the mari
+ *                that sit closer than their flattened sections allow
  *
  * Same predicate as locate: an edge of one tube triangle passes through the
  * interior of another tube's triangle, endpoints on opposite sides of its
@@ -15,7 +17,7 @@
 import { writeFileSync } from 'node:fs';
 import { Box3, Ray, Triangle, Vector3 } from 'three';
 import { compileKiku, stitchesFromOps } from '../src/components/temari/patterns.ts';
-import { arcPath, createMotifGeometryParts } from '../src/components/temari/stitches.ts';
+import { arcPath, createMotifGeometryParts, pileParts } from '../src/components/temari/stitches.ts';
 import { MARI_C_CM } from '../src/components/temari/measure.ts';
 
 const arg = (name: string, fallback: string) =>
@@ -116,6 +118,36 @@ console.log(`Пар трубок с пересечением над мари: ${
 const top = [...pairs.entries()].sort((a, b) => b[1].above - a[1].above).slice(0, 12);
 for (const [k, v] of top) {
   console.log(`  ${k}: над ${v.above}, под ${v.below}, ${v.polarMin.toFixed(1)}–${v.polarMax.toFixed(1)} мм от полюса`);
+}
+if (pile) {
+  // Axes, not tubes: a pair of samples of two pieces, both above the mari,
+  // laterally within one thread width and radially closer than the section
+  // profile allows (5% slack). Zero means the pile kept later over earlier.
+  const pieces = pileParts(arcs, 'pearl5');
+  const W = 0.71 / R_MM;
+  const H = W * 0.5;
+  const grid = new Map<string, { piece: number; p: Vector3 }[]>();
+  const cell = (p: Vector3) => [p.x, p.y, p.z].map(v => Math.floor(v / W));
+  pieces.forEach((piece, i) => piece.pts.forEach(p => {
+    if (p.length() <= 1) return;
+    const k = cell(p.clone().normalize()).join(',');
+    (grid.get(k) ?? grid.set(k, []).get(k)!).push({ piece: i, p });
+  }));
+  let axes = 0;
+  pieces.forEach((piece, i) => piece.pts.forEach(p => {
+    if (p.length() <= 1) return;
+    const u = p.clone().normalize();
+    const [x, y, z] = cell(u);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) {
+      for (const q of grid.get(`${x + a},${y + b},${z + c}`) ?? []) {
+        if (q.piece <= i) continue;
+        const d = u.distanceTo(q.p.clone().normalize());
+        if (d >= W) continue;
+        if (H * Math.sqrt(1 - (d / W) ** 2) - Math.abs(p.length() - q.p.length()) > 0.05 * H) axes++;
+      }
+    }
+  }));
+  console.log(`Оси (стопка): пар точек ближе сечения ${axes}.`);
 }
 if (json) {
   writeFileSync(json, JSON.stringify({ rounds, set, parts: parts.length, total, pairs: Object.fromEntries(pairs) }, null, 1));
