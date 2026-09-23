@@ -45,8 +45,31 @@ function profile(d: number, width: number) {
   return x >= 1 ? 0 : Math.sqrt(1 - x * x);
 }
 
-export function pileHeights(lines: PileLine[], opts: PileOptions): number[][] {
+/** A finished pile: the lines it was laid from and their lifts. */
+export type Pile = { lines: PileLine[]; lifts: number[][] };
+
+function sameLine(a: PileLine, b: PileLine) {
+  if (a === b) return true;
+  if (a.points.length !== b.points.length || a.ports || b.ports) return false;
+  for (let i = 0; i < a.points.length; i++) {
+    const p = a.points[i]!, q = b.points[i]!;
+    if (p[0] !== q[0] || p[1] !== q[1] || p[2] !== q[2]) return false;
+    if (!!a.dive?.[i] !== !!b.dive?.[i] || a.offset?.[i] !== b.offset?.[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * `after`: the pile of an earlier call. A line never changes for the ones
+ * laid after it, so the lines it shares with this call from the start keep
+ * their lifts and only the rest is laid — one new stitch, not the flower.
+ */
+export function pileHeights(lines: PileLine[], opts: PileOptions, after?: Pile): number[][] {
   const { width, height, portRadius } = opts;
+  let kept = 0;
+  if (after && !opts.swaps?.length) {
+    while (kept < lines.length && kept < after.lines.length && sameLine(lines[kept]!, after.lines[kept]!)) kept++;
+  }
   // A flower is tens of thousands of samples and every new stitch recomputes
   // the pile: numeric cell keys and flat cell lists, no strings or arrays per
   // lookup. Cells are one width across; a support is within one cell.
@@ -74,9 +97,12 @@ export function pileHeights(lines: PileLine[], opts: PileOptions): number[][] {
 
   lines.forEach((line, li) => {
     const along = alongs[li]!;
+    if (li < kept) lifts[li] = after!.lifts[li]!.slice();
     line.points.forEach((p, pi) => {
       let top = -Infinity;
-      if (!inside[li]![pi]) {
+      if (li < kept) {
+        // Laid before: only goes into the grid.
+      } else if (!inside[li]![pi]) {
         const x = cellOf(p[0]), y = cellOf(p[1]), z = cellOf(p[2]);
         for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) {
           const list = grid.get(((x + i) * K + (y + j)) * K + (z + k));
@@ -99,7 +125,7 @@ export function pileHeights(lines: PileLine[], opts: PileOptions): number[][] {
         }
       }
       // A sample already partly down its port rests on the pile from where it is.
-      lifts[li]![pi] = Math.max(0, top - (line.offset?.[pi] ?? 0));
+      if (li >= kept) lifts[li]![pi] = Math.max(0, top - (line.offset?.[pi] ?? 0));
       const key = (cellOf(p[0]) * K + cellOf(p[1])) * K + cellOf(p[2]);
       const list = grid.get(key);
       if (list) list.push(li, pi);

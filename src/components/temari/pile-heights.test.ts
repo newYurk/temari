@@ -69,6 +69,20 @@ describe("pile heights: later lies on earlier (spec/pile-render.md)", () => {
     assert.ok(Math.abs(mid(up!) - 1.5 * H) < 1e-6, `climbs from where it is ${mid(up!)}`);
   });
 
+  it("lays only what changed after an earlier pile, with the same heights", () => {
+    const diag = run("x", 0).map(([x, y]) => norm([x, y, x]));
+    const anti = run("x", 0).map(([x, y]) => norm([x, y, -x]));
+    const before = [{ points: run("x", 0) }, { points: run("z", 0) }, { points: diag }];
+    const pile = { lines: before, lifts: pileHeights(before, opts) };
+    for (const next of [
+      [...before, { points: anti }],
+      [before[0]!, before[1]!, { points: anti }],
+      [{ points: run("x", W / 2) }, before[1]!, before[2]!],
+    ]) {
+      assert.deepEqual(pileHeights(next, opts, pile), pileHeights(next, opts));
+    }
+  });
+
   it("comes back over its own earlier stretch: the chidori X within one thread", () => {
     const loop = [...run("x", 0), ...run("z", 0)];
     const [l] = pileHeights([{ points: loop }], opts);

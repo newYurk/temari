@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { pileHeights } from "./pile-heights.ts";
+import { pileHeights, type Pile } from "./pile-heights.ts";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import type { Stitch } from "./patterns.ts";
@@ -1152,6 +1152,8 @@ function geodesicRibbon(points: THREE.Vector3[], width: number) {
  */
 export type PilePart = { color: number; at: Extract<Stitch, { kind: "arc" }>; pts: THREE.Vector3[]; lift: number[] };
 const pileCache = new WeakMap<Stitch[], Map<ThreadKind, PilePart[]>>();
+/** The last pile per thread: the next stitch lays only what changed. */
+const lastPile = new Map<ThreadKind, Pile>();
 
 /**
  * Pile render (spec/pile-render.md): every working thread's centerline in
@@ -1206,7 +1208,8 @@ export function pileParts(stitches: Stitch[], kind: ThreadKind): PilePart[] {
     dive: e.pts.map((p) => p.length() < base - height),
     offset: e.pts.map((p) => Math.min(0, p.length() - base)),
   }));
-  const lifts = pileHeights(lines, { width: half * 2, height, portRadius: 0 });
+  const lifts = pileHeights(lines, { width: half * 2, height, portRadius: 0 }, lastPile.get(kind));
+  lastPile.set(kind, { lines, lifts });
   const out = emitted.map((e, i) => ({
     color: e.color,
     at: e.stitch,
@@ -1228,7 +1231,8 @@ export function createMotifGeometryParts(
   const width = ribbonWidth(kind);
   const cord = kind !== "metallic";
   const parts: THREE.BufferGeometry[] = [];
-  const annotated = annotateSetCrossings(stitches);
+  // The pile lays its own heights; the count-based crossings are only for the old path.
+  const annotated = cord && opts.pile ? stitches : annotateSetCrossings(stitches);
   const arcs: Extract<Stitch, { kind: "arc" }>[] = [];
   for (const stitch of annotated) {
     if (stitch.color !== colorIndex) continue;
