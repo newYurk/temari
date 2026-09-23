@@ -94,7 +94,7 @@ function Workbench() {
     <>
       <header
         ref={headerRef}
-        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-4 pt-4 md:px-8 md:pt-8"
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 pt-4 md:px-8 md:pt-8"
       >
         <div className="pt-[env(safe-area-inset-top)]">
           <p className="font-display text-xl font-medium tracking-tight text-ink">Темари</p>
@@ -110,6 +110,10 @@ function Workbench() {
           ) : null}
           <RecenterButton />
         </div>
+        {mode === "studio" && <p className="pointer-events-auto basis-full rounded-lg bg-ink/5 px-3 py-2 text-xs leading-relaxed" aria-label="Состояние модели мастерской">
+          <b>Модель в работе.</b> Ширина подхвата, укладка и проколы ещё не исправлены.{" "}
+          <a className="underline underline-offset-2" href="?upper-bundle=1&control=needle">Проверка одного прохода</a>
+        </p>}
       </header>
       {mode === "kata" ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-28 z-20 px-3 md:px-8">

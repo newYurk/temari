@@ -129,6 +129,7 @@ function vec(p: [number, number, number], lift = 0, kind: ThreadKind = DEFAULT_K
   return new THREE.Vector3(p[0], p[1], p[2]).normalize().multiplyScalar(r);
 }
 
+/** `width` is the full transverse width before projection back onto the sphere. */
 export function ribbonFromPoints(pts: THREE.Vector3[], width: number, closed: boolean) {
   const n = pts.length;
   if (n < 2) return new THREE.BufferGeometry();
@@ -1256,7 +1257,7 @@ export function createMotifGeometryParts(
     if (stitch.kind === "arc") {
       arcs.push(stitch);
     } else {
-      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, stitch.lift ?? 0, kind)), width * 1.08, true));
+      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, stitch.lift ?? 0, kind)), width, true));
     }
   }
   if (cord && opts.pile) {
@@ -1293,7 +1294,7 @@ export function createMotifGeometry(
     if (stitch.kind === "arc") {
       arcs.push(stitch);
     } else {
-      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, stitch.lift ?? 0, kind)), width * 1.08, true));
+      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, stitch.lift ?? 0, kind)), width, true));
     }
   }
   if (cord) {
