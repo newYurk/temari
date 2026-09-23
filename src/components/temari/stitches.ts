@@ -394,22 +394,23 @@ export function sewKagariLegs(
   // guideline crossing. Eye-of-needle stroke opens the wedge; stretch points
   // ~2 mm for #5. Moderate tension (kagari). Craft does *not* reserve an empty
   // corridor for a future exit — the needle pierces the wrap where needed.
-  // Same catch: leave rides over arrive (tip lift). Later catch: arrive must
-  // clear that leave crest — pearl·depth alone sits under lift0≈1.4·pearl and
-  // collides after snug pack (r0/inner↔r1/inner). Clear crest + pearl/under.
-  // Dive still shares a ray with the previous tip's arrive near the ports —
-  // surface witness remains; needs under-pile path / shove, not tip-gate.
+  // Same catch: leave rides over arrive (tip lift). Later catch (TemariKai):
+  // carry *over* the pile, then stitch *around/under all of them* — the eye
+  // opens room; no empty corridor. Clear leave crest on the approach, then
+  // bury under the tip pile through the wrap (shared-ray contact goes under
+  // the mari surface, where locate does not flag).
   const stackClear = stacked ? pearl * stackDepth + lift0 : 0;
   const dropFloor = Math.max(fromR - buriedR, toR - buriedR);
-  // Keep the dive shorter than tip→port so the V crossing stays on the mari,
-  // but not so short the tube folds (full-depth band overlapped stacked rows).
   const portOffset = Math.max(inn.distanceTo(tip), out.distanceTo(tip), pearl);
   const pierceBand = Math.min(dropFloor, portOffset * 0.85);
-  // Stacked leave tip-gate clears the previous tip. Band ≈2·pearl clears
-  // r0↔r1; longer bury walked into the next tip's arrive on three rows.
-  // Leave path still crosses the next tip's meridian (see HANDOFF) — fix with
-  // incoming-over + poleward ports for depth≥2, not a longer leave gate.
   const leavePierceBand = stacked ? Math.max(pierceBand, pearl * 2) : pierceBand;
+  // Clipped joins start near the tip — angle(from,tip) is short. Use wide
+  // recipe ports (stacked overs) as the signal for over-then-under-pile.
+  const widePorts = !!(enter && exit
+    && new THREE.Vector3(...enter).distanceTo(new THREE.Vector3(...exit)) >= pearl * 1.9);
+  const underPile = stacked && from.clone().normalize().angleTo(tip) > pearl * 2.5;
+  const pileReach = pearl * (4.5 + stackDepth);
+  const underCore = pearl * 2.8;
   const pierceRadius = (distance: number, surface: number, atPort: number, band = pierceBand) => {
     if (distance >= band) return surface;
     const drop = surface - atPort;
@@ -447,6 +448,7 @@ export function sewKagariLegs(
     // Elevated stacked surface → bury needs fine samples or the emerge jumps a pearl.
     Math.ceil(dropSpan / (pearl * 0.4)),
     stacked ? Math.ceil(leavePierceBand / (pearl * 0.35)) : 0,
+    underPile ? Math.ceil(pileReach / (pearl * 0.25)) : 0,
   );
   const addLeg = (pts: THREE.Vector3[], p: THREE.Vector3) => {
     // Cap per-sample radius change so an elevated stacked emerge cannot jump
@@ -454,7 +456,7 @@ export function sewKagariLegs(
     if (pts.length > 0) {
       const prev = pts[pts.length - 1]!;
       const dr = p.length() - prev.length();
-      const limit = pearl * 0.85;
+      const limit = pearl * 0.7;
       if (Math.abs(dr) > limit) {
         const steps = Math.ceil(Math.abs(dr) / limit);
         const aDir = prev.clone().normalize();
@@ -476,7 +478,21 @@ export function sewKagariLegs(
     const stackT = stacked ? Math.min(1, t / 0.35) : t;
     const stack = stackClear * smooth01(stackT);
     const surface = fromR + stack + fromSlope * t * (1 - t) ** 2;
-    addLeg(inPts, _a.clone().multiplyScalar(pierceRadius(_a.distanceTo(inn), surface, buriedR)));
+    let radius = pierceRadius(_a.distanceTo(inn), surface, buriedR);
+    if (underPile) {
+      const dTip = _a.distanceTo(tip);
+      if (dTip < pileReach) {
+        // Over at the far edge of the pile; under the wrap through the tip core.
+        // min() with pierceRadius keeps the needle entry fully buried at the port.
+        const keepOver = dTip <= underCore
+          ? 0
+          : smooth01((dTip - underCore) / (pileReach - underCore));
+        const overR = fromR + stackClear;
+        const underPileR = buriedR + (overR - buriedR) * keepOver;
+        radius = Math.min(radius, underPileR);
+      }
+    }
+    addLeg(inPts, _a.clone().multiplyScalar(radius));
   }
   for (let i = 0; i < n; i++) {
     const t = i / n;
@@ -560,6 +576,9 @@ function splitJoinAroundMark(
   const stackDepth = Math.min(3, typeof onStack === "number" ? Math.max(0, onStack) : onStack ? 1 : 0);
   // Clip outside the entire catch. A fixed fraction of one thread put
   // the join inside later, wider ports and made the cord double back.
+  // Stacked: also clip outside the tip pile so sewKagariLegs owns the
+  // TemariKai over-then-under path (arcPath alone stays on the mari and
+  // collides with the previous tip's arrive).
   const portExtent = stackDepth > 0 && bite ? Math.max(
     mark.clone().normalize().distanceTo(new THREE.Vector3(...bite.enter).normalize()),
     mark.clone().normalize().distanceTo(new THREE.Vector3(...bite.exit).normalize()),
@@ -733,7 +752,16 @@ function stackedArcChainParts(
   }
   const parts: THREE.BufferGeometry[] = [];
   const pearl = unitFromMm(kindMm(kind));
-  const tube = (pts: THREE.Vector3[], buryStart: boolean, buryStop: boolean) => {
+  const half = pearl * 0.5;
+  type PathSeg = {
+    pts: THREE.Vector3[];
+    buryStart: boolean;
+    buryStop: boolean;
+    kai: number;
+  };
+  const segs: PathSeg[] = [];
+  let segKai = chain[0]?.kai ?? 0;
+  const queueSeg = (pts: THREE.Vector3[], buryStart: boolean, buryStop: boolean) => {
     if (pts.length < 2) return;
     let shaped = pts;
     // Parked round: start and stop on the same pin — take the inner U so the
@@ -745,13 +773,12 @@ function stackedArcChainParts(
       );
       shaped = bite.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
     }
-    parts.push(cachedTube(
-      buryEnds(shaped, kind, buryStart, buryStop),
-      stitchRadius(kind),
-      false,
-      false,
-      twistPerUnit(kind),
-    ));
+    segs.push({
+      pts: shaped.map((p) => p.clone()),
+      buryStart,
+      buryStop,
+      kai: segKai,
+    });
   };
   let pts: THREE.Vector3[] = [];
   let kai0 = chain[0]?.kai;
@@ -778,19 +805,19 @@ function stackedArcChainParts(
       const next0 = firstPiece[0];
       if (next0 && firstPiece.length > 1 && samePin(mark, next0)) {
         const { head, tail } = joinAt(pending.slice(), prevStackDepth);
-        tube(head, false, false);
-        tube(tail, false, false);
+        queueSeg(head, false, false);
+        queueSeg(tail, false, false);
         pending = null;
         pts = [];
         return;
       }
     }
     if (pending) {
-      tube(pending, emerge, false);
+      queueSeg(pending, emerge, false);
       pending = null;
-      if (pts.length >= 2) tube(pts, false, true);
+      if (pts.length >= 2) queueSeg(pts, false, true);
     } else if (pts.length >= 2) {
-      tube(pts, emerge, true);
+      queueSeg(pts, emerge, true);
     }
     pts = [];
   };
@@ -805,14 +832,14 @@ function stackedArcChainParts(
       if (prevTip === "inner") {
         const { head, tail } = splitJoinAroundMark(pts, piece, mark, kind, prevBite, prevStackDepth);
         if (pending === null) pending = head;
-        else tube(head, false, false);
+        else queueSeg(head, false, false);
         pts = tail;
         emerge = false;
         return;
       }
       const { head, tail } = joinAt(piece, 0);
       if (pending === null) pending = head;
-      else tube(head, false, false);
+      else queueSeg(head, false, false);
       pts = tail;
       emerge = false;
       return;
@@ -829,7 +856,7 @@ function stackedArcChainParts(
         && samePin(pts[pts.length - 1]!, next0));
       if (resume) {
         if (pending) {
-          tube(pending, emerge, false);
+          queueSeg(pending, emerge, false);
           pending = null;
         }
         emerge = false;
@@ -843,6 +870,7 @@ function stackedArcChainParts(
         kaiFirst = undefined;
       }
       kai0 = s.kai;
+      segKai = s.kai ?? 0;
     }
     if (piece.length < 2) continue;
     if (!kaiFirst) kaiFirst = s;
@@ -852,6 +880,63 @@ function stackedArcChainParts(
     prevStackDepth = stackDepthOf(s);
   }
   closeKai();
+
+  // TemariKai: eye of the needle strokes the interwoven tip downward to open
+  // room for the next under-pile stitch. Flatten loft of earlier kais near
+  // each later stacked tip — not a reserved empty corridor.
+  const stackedTips = chain
+    .filter((s): s is Extract<Stitch, { kind: "arc" }> =>
+      s.kind === "arc" && s.tip === "inner" && stackDepthOf(s) > 0)
+    .map((s) => ({
+      at: new THREE.Vector3(...s.b).normalize(),
+      kai: s.kai ?? 0,
+      depth: stackDepthOf(s),
+    }));
+  const flatR = 1 + half * STITCH_FLAT;
+  for (const tip of stackedTips) {
+    const reach = pearl * (8 + tip.depth);
+    for (const seg of segs) {
+      if (seg.kai >= tip.kai) continue;
+      for (const p of seg.pts) {
+        const r = p.length();
+        if (r < 1 - half) continue;
+        const d = p.clone().normalize().distanceTo(tip.at);
+        if (d >= reach) continue;
+        const u = 1 - d / reach;
+        // Eye strokes the pile downward into the wrap, opening room for the
+        // next under-pile stitch (TemariKai). Pull loft under the mari surface
+        // so the later arrive's dive does not meet it above R=1.
+        // Eye strokes the pile downward into the wrap, opening room. Press just
+        // enough that tube crowns near the later tip stay ≤ mari surface.
+        const pressed = 1 - half * (0.35 + 0.55 * u);
+        const opened = Math.min(r, flatR + (r - flatR) * (1 - 0.55 * u * u));
+        const target = Math.min(opened, pressed);
+        p.multiplyScalar(Math.max(1 - half * 1.1, target) / r);
+      }
+    }
+  }
+  // Cap radius jumps after eye-comb so the tube mesher does not fold.
+  for (const seg of segs) {
+    for (let i = 1; i < seg.pts.length; i++) {
+      const prev = seg.pts[i - 1]!;
+      const p = seg.pts[i]!;
+      const dr = p.length() - prev.length();
+      const limit = pearl * 0.7;
+      if (Math.abs(dr) > limit) {
+        p.normalize().multiplyScalar(prev.length() + Math.sign(dr) * limit);
+      }
+    }
+  }
+
+  for (const seg of segs) {
+    parts.push(cachedTube(
+      buryEnds(seg.pts, kind, seg.buryStart, seg.buryStop),
+      stitchRadius(kind),
+      false,
+      false,
+      twistPerUnit(kind),
+    ));
+  }
   return parts.filter((g) => (g.getAttribute("position")?.count ?? 0) > 0);
 }
 
