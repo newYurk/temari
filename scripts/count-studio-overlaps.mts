@@ -47,7 +47,7 @@ const bands = parts.map((geometry, part) => {
     .map(p => ({ op: p.operation?.operationId ?? '?', d: Math.min(...p.points.map(q => q.distanceTo(centre))) }))
     .sort((a, b) => a.d - b.d)[0];
   names[part] = String(nearest?.op ?? '?').replace(/^.*?\/p\d+\//, '');
-  const rings: { triangles: Triangle[]; box: Box3 }[] = [];
+  const rings: { triangles: Triangle[]; tris: { t: Triangle; n: Vector3; box: Box3 }[]; box: Box3 }[] = [];
   for (let ring = 0; ring < count - 1; ring++) {
     const first = ring * 20 * 6;
     if (first + 120 > index.count) break;
@@ -59,16 +59,18 @@ const bands = parts.map((geometry, part) => {
       triangles.push(t);
       box.expandByPoint(t.a).expandByPoint(t.b).expandByPoint(t.c);
     }
-    rings.push({ triangles, box });
+    // Normals and boxes once per triangle, not once per tested pair.
+    const tris = triangles.map((t) => ({
+      t, n: t.getNormal(new Vector3()), box: new Box3().setFromPoints([t.a, t.b, t.c]),
+    }));
+    rings.push({ triangles, tris, box });
   }
   return rings;
 });
 
 const ray = new Ray();
 const hit = new Vector3();
-function edgeHit(a: Triangle, b: Triangle): Vector3 | null {
-  const nA = a.getNormal(new Vector3());
-  const nB = b.getNormal(new Vector3());
+function edgeHit(a: Triangle, b: Triangle, nA: Vector3, nB: Vector3): Vector3 | null {
   if (Math.abs(nA.dot(nB)) > 1 - 1e-8) return null;
   for (const [p, q] of [[a.a, a.b], [a.b, a.c], [a.c, a.a]] as const) {
     const len = p.distanceTo(q);
@@ -87,12 +89,43 @@ function edgeHit(a: Triangle, b: Triangle): Vector3 | null {
 type Tally = { above: number; below: number; polarMin: number; polarMax: number };
 const total = { cap: { above: 0, below: 0 }, rest: { above: 0, below: 0 } };
 const pairs = new Map<string, Tally>();
-for (let i = 0; i < bands.length; i++) {
-  for (let j = i + 1; j < bands.length; j++) {
-    for (const a of bands[i]!) for (const b of bands[j]!) {
+// Only rings whose boxes can meet: a grid of ring boxes, then the same
+// triangle test on each candidate pair of rings of two different tubes.
+// All tube pairs x all ring pairs was minutes on a full flower.
+const rings = bands.flatMap((band, part) => band.map((ring) => ({ part, ring })));
+const cell = rings.reduce((most, { ring }) => {
+  const size = ring.box.getSize(new Vector3());
+  return Math.max(most, size.x, size.y, size.z);
+}, 1e-6);
+const cellOf = (v: number) => Math.floor(v / cell);
+const grid = new Map<string, number[]>();
+rings.forEach(({ ring }, index) => {
+  const lo = ring.box.min, hi = ring.box.max;
+  for (let x = cellOf(lo.x); x <= cellOf(hi.x); x++) for (let y = cellOf(lo.y); y <= cellOf(hi.y); y++)
+    for (let z = cellOf(lo.z); z <= cellOf(hi.z); z++) {
+      const key = `${x},${y},${z}`;
+      (grid.get(key) ?? grid.set(key, []).get(key)!).push(index);
+    }
+});
+const candidates = new Map<number, Set<number>>();
+for (const list of grid.values()) {
+  for (let m = 0; m < list.length; m++) for (let n = m + 1; n < list.length; n++) {
+    let r = list[m]!, q = list[n]!;
+    if (rings[r]!.part === rings[q]!.part) continue;
+    if (rings[r]!.part > rings[q]!.part) [r, q] = [q, r];
+    (candidates.get(r) ?? candidates.set(r, new Set()).get(r)!).add(q);
+  }
+}
+for (const [ra, qs] of candidates) {
+  const a = rings[ra]!.ring, i = rings[ra]!.part;
+  for (const q of qs) {
+    const b = rings[q]!.ring, j = rings[q]!.part;
+    {
       if (!a.box.intersectsBox(b.box)) continue;
-      for (const ta of a.triangles) for (const tb of b.triangles) {
-        const x = edgeHit(ta, tb) ?? edgeHit(tb, ta);
+      // Two triangles whose boxes miss cannot cross: skip them before the ray tests.
+      for (const A of a.tris) for (const B of b.tris) {
+        if (!A.box.intersectsBox(B.box)) continue;
+        const x = edgeHit(A.t, B.t, A.n, B.n) ?? edgeHit(B.t, A.t, B.n, A.n);
         if (!x) continue;
         const r = x.length();
         const where = x.y / r > CAP ? total.cap : total.rest;
