@@ -27,8 +27,11 @@ import * as feel from "./feel";
 import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
 import { C8_EXTRA, jiwariMarkColor, jiwariStitches, jiwariVisibleStitches, vRulerLegs } from "./jiwari";
 
-/** `?pile=1`: heights by sewing order (spec/pile-render.md) instead of count lifts — for comparison. */
-const PILE_RENDER = typeof location !== "undefined" && new URLSearchParams(location.search).has("pile");
+/**
+ * Heights by sewing order (spec/pile-render.md). `?pile=0` shows the old
+ * count-based lifts for comparison until they are removed.
+ */
+const PILE_RENDER = typeof location === "undefined" || new URLSearchParams(location.search).get("pile") !== "0";
 
 const pointer = { x: 0, y: 0, down: false, dragged: false, multi: false };
 /** Recent turns of the ball, for a throw that follows the finger, not the last event. */
