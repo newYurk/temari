@@ -4,11 +4,14 @@ import { TemariScene } from "./scene";
 import { unlock } from "./feel";
 
 const UpperKikuControl = lazy(() => import("./UpperKikuControl"));
+const UpperBundleControl = lazy(() => import("./UpperBundleControl"));
 
 export function TemariApp() {
   const [on, setOn] = useState(false);
   const [upperControl] = useState(() => typeof window !== "undefined"
     && new URLSearchParams(window.location.search).get("upper-kiku") === "1");
+  const [bundleControl] = useState(() => typeof window !== "undefined"
+    && new URLSearchParams(window.location.search).get("upper-bundle") === "1");
 
   useEffect(() => {
     setOn(true);
@@ -19,7 +22,8 @@ export function TemariApp() {
       className="relative h-dvh overflow-hidden bg-linen text-ink"
       onPointerDownCapture={() => unlock()}
     >
-      {upperControl ? <Suspense fallback={<p role="status">Загрузка контроля…</p>}><UpperKikuControl /></Suspense> : <>
+      {bundleControl ? <Suspense fallback={<p role="status">Загрузка трёх подхватов…</p>}><UpperBundleControl /></Suspense>
+      : upperControl ? <Suspense fallback={<p role="status">Загрузка контроля…</p>}><UpperKikuControl /></Suspense> : <>
       <div
         className="absolute inset-x-0 z-0"
         style={{
