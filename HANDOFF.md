@@ -121,15 +121,20 @@ PATH="/Users/newyurk/.local/node-v24/bin:$PATH" \
 
 ### Правка прямого прокола — в работе (22.09)
 
-В `sewKagariLegs` / рецепте (ветка `cursor/fix-stacked-inner-pickup-115f`):
+В `sewKagariLegs` / рецепте (ветка `codex/temari-next`):
 
 - Короткая pierce-band (≤ 0,85·tip→port) + эллиптический спуск к
   `min(scoopRadius floor, 1 − NEEDLE_DEPTH_MM)`; stacked ведёт к портам и
   ramp `stackClear=pearl` к порту; сэмплы без скачка радиуса >0,85 pearl.
-- **Шаг ряда `pitch = 1,5 × толщина нити`** (было 1×) — инженерный выбор;
-  `fit` стал 6 вместо прежних ~8–9 при том же Ozaki. Повторная сверка GT14
-  показала, что poleward-сдвиг `biteAcross` был ошибочным: следующий верхний
-  стежок должен быть шире и ниже предыдущего.
+- **Шаг ряда `pitch = 1 × толщина нити`** (craft; 1,5× отклонён).
+- **Inner pierce = packed lay ∩ meridian (22.09):** `kikuFlank` для ring>0
+  ставит внутреннюю метку через `pierceOnMeridian`, как уже outer — не
+  жёсткий `tInner = inner + ring·pitch`. Формула оставляла reverse-bite
+  ~0,5–0,8 мм к полюсу от тела фланка (via0); соседние лепестки по-прежнему
+  сходятся (меридианный snap). Тест «inner steps about one pearl» смягчён
+  под pack-pierce. Попытка всегда брать recipe-порты ±½ pearl на row-0
+  дала folded faces / отрицательный section gap — откатена; leave tip-gate
+  (`tip≥portOffset`, band `2·pearl`) остаётся инженерным для трубок.
 - Оси **`r0/r1 inner-2` теперь чисты** (~0,86 мм > 0,71 мм диаметра).
 - `stitches` + `pickup-volume` + `patterns`/`kagari` — зелёные.
 - **`locate-studio-overlap --assert-clear` → exit 2 (inconclusive / нет свидетеля)**

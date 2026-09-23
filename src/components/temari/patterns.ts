@@ -848,17 +848,39 @@ export function kikuFlank(
   const ceiling = spec.ceiling ?? Math.PI / 2 - spec.pitch * 0.35;
   const bTheta = Math.min(ceiling, Math.max(prevOuter + spec.pitch * 0.85, naturalTheta));
   const b = around(pole, bTheta, phiOuter);
-  // Inner is the offset of the previous inner, snapped to this meridian —
-  // the new thread hugs the last inner from the outside (uwagake).
-  const span = Math.max(bTheta - tInner, spec.pitch);
+  // Inner tip: same craft law as outer — pierce where the packed lay meets
+  // this meridian. Formula tInner left the catch ~1 pitch poleward of the
+  // body (via0), so the reverse bite sat off the guideline crossing.
+  const piercedIn = pierceOnMeridian(off, pole, phiInner);
+  const prevInner = polarAround(pole, prev.a).theta;
+  const naturalIn = piercedIn ? polarAround(pole, piercedIn).theta : tInner;
+  // Floor: never unpack past the previous inner. Cap below the outer pierce
+  // so the flank still has a turn. Meridian snap keeps neighbouring petals
+  // meeting (raw off[0] of two flanks is not one point).
+  const aTheta = Math.min(
+    bTheta - spec.pitch * 0.5,
+    Math.max(prevInner + spec.pitch * 0.85, naturalIn),
+  );
+  const a = around(pole, aTheta, phiInner);
+  const span = Math.max(bTheta - aTheta, spec.pitch);
   const outerJoin = Math.max(3, Math.round((unitFromMm(2.6) / span) * n));
   const i1 = Math.max(4, n - 1 - Math.min(Math.floor(n / 4), outerJoin));
-  const i0 = Math.min(2, i1 - 2);
+  // Body starts at the offset sample nearest the inner pierce — a fixed
+  // off[0..2] left a hermite stub from the catch out to the packed lay.
+  let i0 = 0;
+  let best = Infinity;
+  for (let i = 0; i <= i1 - 2; i++) {
+    const p = off[i]!;
+    const d =
+      (p[0] - a[0]) ** 2 + (p[1] - a[1]) ** 2 + (p[2] - a[2]) ** 2;
+    if (d < best) {
+      best = d;
+      i0 = i;
+    }
+  }
+  i0 = Math.min(i0, i1 - 2);
   const p0 = off[i0]!;
   const p1 = off[i1]!;
-  // Inner mark stays on this meridian so neighbouring petals meet.
-  // Offset off[0] of two flanks is not the same point — that left gaps.
-  const a = a0;
   const head = hermiteJoin(a, p0, dirOnSphere(a, p0), tangentAt(off, i0), 8);
   const tail = hermiteJoin(p1, b, tangentAt(off, i1), dirOnSphere(p1, b), 8);
   const pts: Vec3[] = [
