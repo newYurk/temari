@@ -394,9 +394,12 @@ export function sewKagariLegs(
   // guideline crossing. Eye-of-needle stroke opens the wedge; stretch points
   // ~2 mm for #5. Moderate tension (kagari). Craft does *not* reserve an empty
   // corridor for a future exit — the needle pierces the wrap where needed.
-  // Studio goal for depth≥2: arrive rides over the laid leave until near the
-  // far edge of the pile, then dives under the bundle — not a tall separate U.
-  const stackClear = pearl * stackDepth;
+  // Same catch: leave rides over arrive (tip lift). Later catch: arrive must
+  // clear that leave crest — pearl·depth alone sits under lift0≈1.4·pearl and
+  // collides after snug pack (r0/inner↔r1/inner). Clear crest + pearl/under.
+  // Dive still shares a ray with the previous tip's arrive near the ports —
+  // surface witness remains; needs under-pile path / shove, not tip-gate.
+  const stackClear = stacked ? pearl * stackDepth + lift0 : 0;
   const dropFloor = Math.max(fromR - buriedR, toR - buriedR);
   // Keep the dive shorter than tip→port so the V crossing stays on the mari,
   // but not so short the tube folds (full-depth band overlapped stacked rows).
@@ -469,9 +472,8 @@ export function sewKagariLegs(
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     pickupDirection(fromDir, inC1, inC2, inn, t, _a);
-    // Depth≥2: reach full stackClear early so arrive rides over the previous
-    // leave (TemariKai: carry over, then stitch under the tip bundle).
-    const stackT = stackDepth >= 2 ? Math.min(1, t / 0.4) : t;
+    // Stacked: reach full stackClear early so arrive rides over the previous leave.
+    const stackT = stacked ? Math.min(1, t / 0.35) : t;
     const stack = stackClear * smooth01(stackT);
     const surface = fromR + stack + fromSlope * t * (1 - t) ** 2;
     addLeg(inPts, _a.clone().multiplyScalar(pierceRadius(_a.distanceTo(inn), surface, buriedR)));
