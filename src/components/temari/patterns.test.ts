@@ -247,9 +247,8 @@ describe("kiku on Simple 8", () => {
     const spec = kikuSpec("simple");
     // GT14: each top stitch one thread width below the previous one.
     assert.ok(Math.abs(bIn - aIn - 3 * spec.pitch) < spec.pitch * 0.55, "inner steps about one pearl per round");
-    // Outer pierce = snug-packed flank ∩ guideline, not equal Ozaki 2 mm×ring.
-    assert.ok(bOut > aOut + spec.pitch * 1.5, "outer packs outward with each round");
-    assert.ok(bOut < aOut + 3 * spec.stretch * 0.85, "outer is packed pierce, not a 2 mm×ring fan");
+    // Bottom stitch stretched about 2 mm below the previous (TemariKai, GT14).
+    assert.ok(Math.abs(bOut - aOut - 3 * spec.stretch) < 1e-6, "outer steps the 2 mm stretch");
     assert.ok(b.via && b.via.length > 4, "later kai is an offset path");
     const mid0 = polar(pole, slerp(a.a, a.b, 0.5));
     const midVia = b.via[Math.floor(b.via.length / 2)];

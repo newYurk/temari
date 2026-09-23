@@ -840,13 +840,15 @@ export function kikuFlank(
   const n = off.length;
   if (n < 6) return { a: a0, b: bPin, via: off };
   const pierced = pierceOnMeridian(off, pole, phiOuter);
-  // Pierce where the snug lay meets the guideline. Floor: at least ~one
-  // thread past the previous outer (never un-pack). Ceiling: this pole's rim.
-  // Stretch-based tOuter is only a capacity estimate now, not the pierce law.
+  // Pierce where the snug lay meets the guideline, but never less than the
+  // stretch below the previous point: TemariKai (stretch points, GT14) puts
+  // the #5 bottom stitch about 2 mm below the previous one so the point stays
+  // smooth; the old 0.85-thread floor stacked the rows onto each other.
+  // Ceiling: this pole's rim.
   const prevOuter = polarAround(pole, prev.b).theta;
   const naturalTheta = pierced ? polarAround(pole, pierced).theta : tOuter;
   const ceiling = spec.ceiling ?? Math.PI / 2 - spec.pitch * 0.35;
-  const bTheta = Math.min(ceiling, Math.max(prevOuter + spec.pitch * 0.85, naturalTheta));
+  const bTheta = Math.min(ceiling, Math.max(prevOuter + spec.stretch, naturalTheta));
   const b = around(pole, bTheta, phiOuter);
   // Inner tip is not the outer law. GT14: "place needle about 1 thread width
   // wider and below previous stitch" — the top stitch steps one thread down

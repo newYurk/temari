@@ -158,7 +158,7 @@ describe("kagari recipe atom", () => {
     }
   });
 
-  it("later kai: inner one thread, outer packed pierce; flanks stay parallel mid-petal", () => {
+  it("later kai: inner one thread, outer stretched 2 mm; flanks stay parallel mid-petal", () => {
     const spec = kikuSpec("simple", "even");
     const ops = compileKiku("simple", "out", "even", 0);
     const outer0 = ops.find((op) => op.kai === 0 && op.mark.t === "outer");
@@ -170,8 +170,9 @@ describe("kagari recipe atom", () => {
     const th = (p: [number, number, number]) => Math.acos(Math.min(1, Math.max(-1, p[1])));
     const dOut = th(outer1.mark.at) - th(outer0.mark.at);
     const dIn = th(inner1.mark.at) - th(inner0.mark.at);
-    // Outer = snug flank ∩ guideline (≈0.6 mm here), not a rigid Ozaki 2 mm step.
-    assert.ok(dOut > spec.pitch * 0.5 && dOut < spec.stretch * 0.85, `outer packed pierce ${dOut}`);
+    // TemariKai stretch points / GT14: the #5 bottom stitch about 2 mm below the
+    // previous one. The 0.85-thread floor of 22.09 stacked the rows (night task 3).
+    assert.ok(Math.abs(dOut - spec.stretch) < 1e-6, `outer step ${dOut} is the stretch`);
     assert.ok(Math.abs(dIn - spec.pitch) < spec.pitch * 0.45, `inner step ${dIn} is about one thread`);
     assert.ok(outer1.lay.via && outer1.lay.via.length > 4, "later kai follow the offset path, not a free geodesic");
   });
@@ -351,9 +352,10 @@ describe("kagari recipe atom", () => {
     // measured at this density after natural outer pierce. 23.09: the uwagake
     // wedge pulls earlier legs onto the line at the upper tips, so the deep
     // flower meets fewer A/B crossings there (440 → 365; 368 with the
-    // two-thread first bite); the same count comes out with the cap rejection
+    // two-thread first bite; 272 once the bottom stitch is stretched 2 mm and
+    // the petals lengthen); the same count comes out with the cap rejection
     // switched off.
-    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 48], [10, 160, 152, 368]]) {
+    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 48], [10, 160, 152, 272]]) {
       const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, layers!, "all"))
         .filter((s) => s.kind === "arc");
       assert.equal(stitches.length, arcs, `arcs at ${layers} rounds`);
