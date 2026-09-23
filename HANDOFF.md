@@ -248,12 +248,11 @@ visible tubes (clipped fragments / staircased radii in studio). Root cause of
 that visual regression — not “still need more tip-gate.” Code restored to
 `b035092` stackClear path; do not treat the false clear as progress.
 
-**A/B tip kousa layering (22.09):** craft GT14 is A then B; later set must sit
-*over* earlier at kousa. Tip join erased B's `sitMid`. `stackClear` for tip-kousa
-made rectangular bridges. Fix: wide soft tip hill on `arcPath` sitAts
-(`midW≈0.12`, height≈leave crest) + re-apply after tip join (~10 mm falloff).
-Same-kai B clears A through 4 packed rows; cross-kai later-over-earlier is
-separate. Circled “exit under white” was that tip kousa, not outer packed pierce.
+**A/B tip kousa layering (22.09):** tall tip-kousa hills (1.65·d to clear leave
+crest) made the row-4 staircase elbows — reverted to STACK_LIFT only + gentle
+re-apply after tip join. `stackClear` uses capped leaveCrest (≤1·pearl), longer
+arrive ramp (0.55). Same-stitch leave still full `lift0`. Order B-over-A is
+soft; no more bridge/hill nightmare.
 
 Не закрывать #94. Шаг ряда кику — **1× толщина нити** (snug, craft 22.09);
 прежний 1½× — инженерный зазор под порты, отклонён. Нижний прокол на луче —
