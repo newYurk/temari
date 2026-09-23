@@ -67,6 +67,8 @@ type Save = {
 
 const SAVE_KEY = "temari-v1";
 const MAX_PINS = 48;
+const INITIAL_WRAP = 0;
+const INITIAL_WRAP_HEX = threadHex(INITIAL_WRAP);
 
 function isDivision(value: unknown): value is Division {
   return value === "simple" || value === "c8" || value === "c10";
@@ -143,13 +145,13 @@ function writeSave(save: Save) {
 const initial = loadSave();
 
 let studioDraft: Omit<Save, "v" | "solved"> = {
-  division: isDivision(initial.division) ? initial.division : "c8",
+  division: isDivision(initial.division) ? initial.division : "simple",
   paletteId: isPaletteId(initial.paletteId) ? initial.paletteId : "beni",
   selectedColor:
-    typeof initial.selectedColor === "number"
+    typeof initial.selectedColor === "number" && Number.isFinite(initial.selectedColor)
       ? clampColor(initial.selectedColor)
-      : 0,
-  fills: Array.isArray(initial.fills) ? initial.fills : emptyFills("c8"),
+      : kikuThreads(INITIAL_WRAP)[0],
+  fills: Array.isArray(initial.fills) ? initial.fills : [],
   motif: isMotifId(initial.motif) ? initial.motif : "none",
   sewn: isSewn(initial.sewn) ? initial.sewn : [],
   craft: isCraft(initial.craft) ? initial.craft : "wind",
@@ -388,26 +390,31 @@ function pushKagari(s: TemariState) {
   return [...s.kagariHistory, kagariStep(s)].slice(-20);
 }
 
-const INITIAL_WRAP = 0;
-const INITIAL_WRAP_HEX = threadHex(INITIAL_WRAP);
-
 function draftKagariColors(wrapColor: number): [number, number] {
   return isPair(studioDraft.kagariColors)
     ? [clampColor(studioDraft.kagariColors[0]), clampColor(studioDraft.kagariColors[1])]
     : kikuThreads(wrapColor);
 }
 
+/** Restore preferences before an action can persist the new workshop state. */
+function draftStudioSettings(wrapColor: number) {
+  return {
+    division: studioDraft.division,
+    paletteId: studioDraft.paletteId,
+    selectedColor: studioDraft.selectedColor,
+    fills: padFills(studioDraft.fills, studioDraft.division),
+    kagariColors: draftKagariColors(wrapColor),
+  };
+}
+
 export const useTemari = create<TemariState>((set, get) => ({
   // Workshop first: a prepared mari. Wrap colour is a workshop control.
   mode: "studio",
-  division: "simple",
-  paletteId: "beni",
+  ...draftStudioSettings(INITIAL_WRAP),
   motif: "none",
   craft: "pin",
-  selectedColor: draftKagariColors(INITIAL_WRAP)[0],
   wrapColor: INITIAL_WRAP,
   wrapHex: INITIAL_WRAP_HEX,
-  fills: emptyFills("simple"),
   sewn: [],
   pins: [],
   pinArcs: [],
@@ -441,7 +448,6 @@ export const useTemari = create<TemariState>((set, get) => ({
   kagariFocus: null,
   kagariKept: [],
   kagariSet: 0,
-  kagariColors: draftKagariColors(INITIAL_WRAP),
   kagariEdit: null,
   kagariHistory: [],
   facingPole: 0,
@@ -454,24 +460,14 @@ export const useTemari = create<TemariState>((set, get) => ({
 
   enterStudio: () => {
     feel.unlock();
-    const division = studioDraft.division;
-    const hasPaint = studioDraft.fills.some((v) => v >= 0);
-    const kagariColors = draftKagariColors(get().wrapColor);
     set({
       mode: "studio",
-      division,
-      paletteId: studioDraft.paletteId,
+      ...draftStudioSettings(get().wrapColor),
       motif: "none",
       craft: "pin",
-      // A thread that reads on this wrap; tone on tone stays a deliberate choice.
-      // A pair kept from the last visit is the maker's, and outlives the default.
-      selectedColor: kagariColors[0],
-      // Two working threads, as the control pattern asks for; each keeps its set.
-      kagariColors,
       kagariEdit: null,
       wrapColor: get().wrapColor,
       wrapHex: get().wrapHex,
-      fills: hasPaint ? padFills(studioDraft.fills, division) : emptyFills(division),
       sewn: [],
       pins: [],
       pinArcs: [],
