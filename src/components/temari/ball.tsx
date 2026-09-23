@@ -27,6 +27,9 @@ import * as feel from "./feel";
 import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
 import { C8_EXTRA, jiwariMarkColor, jiwariStitches, jiwariVisibleStitches, vRulerLegs } from "./jiwari";
 
+/** `?pile=1`: heights by sewing order (spec/pile-render.md) instead of count lifts — for comparison. */
+const PILE_RENDER = typeof location !== "undefined" && new URLSearchParams(location.search).has("pile");
+
 const pointer = { x: 0, y: 0, down: false, dragged: false, multi: false };
 /** Recent turns of the ball, for a throw that follows the finger, not the last event. */
 const swings: { t: number; ax: number; ay: number; az: number; ang: number }[] = [];
@@ -91,7 +94,7 @@ function ThreadLayer({
   const geos = useMemo(() => {
     return colors.map((_, i) =>
       opacity >= 1
-        ? createMotifGeometryParts(stitches, i, kind)
+        ? createMotifGeometryParts(stitches, i, kind, { pile: PILE_RENDER })
         : [createMotifGeometry(stitches, i, kind)].filter((g): g is THREE.BufferGeometry => !!g),
     );
   }, [stitches, kind, colors, opacity]);
