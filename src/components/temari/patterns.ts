@@ -1107,10 +1107,12 @@ export function compileKiku(
           }
           first = false;
           const over = stackOver(innerOver[line2] ?? [], crossing);
-          // GT14: needle about one thread width wider — on each side, so the
-          // woven wedge widens downward as an inverted V (owner's frame 23.09;
-          // Toolkit photo 06: ~9 threads by the 3rd–4th round). The first is an
-          // ordinary small kagari, 1–2 mm (TemariKai): two threads of #5.
+          // GT14: needle "about 1 thread width wider and below previous
+          // stitch" — one thread wider in total, half a thread each side. The
+          // finished GT14 wedges widen ~1 mm per mm down the line (half-angle
+          // ~26°); a thread each side made a 45° wedge whose pierces landed on
+          // the neighbouring points from the 4th round (craft sweep 23.09). The
+          // first is an ordinary small kagari, 1–2 mm (TemariKai): two threads.
           cursor = pushKikuLeg(
             ops,
             pole,
@@ -1121,12 +1123,12 @@ export function compileKiku(
             cursor,
             { line: line2, t: "inner", at: right.a },
             over,
-            cornerMm * (2 + 2 * over.length),
+            cornerMm * (2 + over.length),
             [...right.via].reverse(),
           );
           if (over.length) {
             gatherUnderBite(ops, over, pole, right.a,
-              unitFromMm(cornerMm * (2 + 2 * over.length)) / 2, unitFromMm(STITCH_THREAD_MM[recipe.thread]));
+              unitFromMm(cornerMm * (2 + over.length)) / 2, unitFromMm(STITCH_THREAD_MM[recipe.thread]));
           }
           innerOver[line2]?.push(ops.length - 1);
         }
