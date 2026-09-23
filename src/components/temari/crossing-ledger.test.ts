@@ -93,7 +93,7 @@ describe("crossing ledger: who lies on whom, from sewing order", () => {
     assert.deepEqual(key(turned), key(ledger));
   });
 
-  // Recipe finding 23.09: each later upper bite widens by one thread in total
+  // Recipe finding 23.09 (20 of 24 on four rounds): each later upper bite widens by one thread in total
   // while the earlier flanks spread ~1 mm per side per round, so the ports
   // land on the previous round's flank and older rounds are never enclosed.
   // GT14 / Toolkit uwagake: the top stitch goes around all earlier threads.

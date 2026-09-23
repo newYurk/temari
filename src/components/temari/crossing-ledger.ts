@@ -1,4 +1,4 @@
-import { MARI_C_CM } from "./measure.ts";
+import { MARI_C_CM, STITCH_THREAD_MM } from "./measure.ts";
 import { KIKU_8_POINT, type KagariMark, type KagariOp } from "./kagari.ts";
 import { traceKagariOperations } from "./kagari-topology.ts";
 
@@ -51,15 +51,15 @@ export type LedgerCrossing = {
 
 export type LedgerCatch = {
   operationId: string;
-  /** Earlier runs lying across the bite: the needle goes under them. */
+  /** Earlier runs whose centreline passes between the ports: the needle goes under them. */
   under: string[];
-  /** Earlier catches at this mark whose arriving or leaving run is under the needle. */
+  /** Declared catches both of whose runs pass between the ports, a thread radius clear. */
   catches: string[];
   /** Catches the compiler declares for this bite (`overOperations`). */
   declared: string[];
-  /** Half the bite across the line, mm. */
+  /** Half the bite along the mark's latitude, mm. */
   halfMm: number;
-  /** Declared catches the needle misses: where their runs cross the bite line, mm from the mark. */
+  /** Declared catches not enclosed: where their runs cross the bite's latitude, mm from the mark. */
   missed: { operationId: string; lateralMm: number[] }[];
 };
 
@@ -121,20 +121,51 @@ function pathCrossings(a: Vec3[], b: Vec3[]): Vec3[] {
   return hits;
 }
 
-/** Where a run crosses the great circle `normal` near `mark` (same hemisphere, within ~25°). */
-function lineCrossings(path: Vec3[], normal: Vec3, mark: Vec3): Vec3[] {
+/** Great-circle arcs cut to ≤ ~0.15 mm, so a chord stands in for its arc. */
+function densify(path: Vec3[]): Vec3[] {
+  const out: Vec3[] = path.slice(0, 1);
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1]!;
+    const b = path[i]!;
+    const n = Math.max(1, Math.ceil(angle(a, b) / 0.004));
+    const w = angle(a, b);
+    for (let k = 1; k <= n; k++) {
+      const t = k / n;
+      const s = Math.sin(w) || 1;
+      const u = w < 1e-9 ? 1 - t : Math.sin((1 - t) * w) / s;
+      const v = w < 1e-9 ? t : Math.sin(t * w) / s;
+      out.push(normalize([a[0] * u + b[0] * v, a[1] * u + b[1] * v, a[2] * u + b[2] * v]));
+    }
+  }
+  return out;
+}
+
+/** Where a run crosses the latitude circle of `mark` about `pole`. */
+function latitudeCrossings(run: Vec3[], pole: Vec3, mark: Vec3): Vec3[] {
+  const level = dot(mark, pole);
+  const path = densify(run);
   const hits: Vec3[] = [];
   for (let i = 1; i < path.length; i++) {
     const a = path[i - 1]!;
     const b = path[i]!;
-    const da = dot(a, normal);
-    const db = dot(b, normal);
+    const da = dot(a, pole) - level;
+    const db = dot(b, pole) - level;
     if (da * db > 0 || da === db) continue;
     const t = da / (da - db);
-    const x = normalize([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
-    if (dot(x, mark) > 0.9) hits.push(x);
+    hits.push(normalize([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]));
   }
   return hits;
+}
+
+/** Signed arc length along the mark's latitude, mm; positive toward `toward`. */
+function latitudeFrame(pole: Vec3, mark: Vec3, toward: Vec3) {
+  const c = dot(mark, pole);
+  const e1 = normalize([mark[0] - pole[0] * c, mark[1] - pole[1] * c, mark[2] - pole[2] * c]);
+  const e2 = cross(pole, e1);
+  const sinT = Math.sqrt(Math.max(0, 1 - c * c));
+  const phi = (x: Vec3) => Math.atan2(dot(x, e2), dot(x, e1));
+  const sign = phi(toward) < 0 ? -1 : 1;
+  return (x: Vec3) => sign * phi(x) * sinT * R_MM;
 }
 
 /** Far port: the needle goes in across the line from the arriving flank. */
@@ -223,36 +254,38 @@ export function buildCrossingLedger(
     }
   }
 
+  // The bite runs along the mark's latitude (biteAcross turns the mark about
+  // the pole), so runs are measured where they cross that circle.
+  const radius = STITCH_THREAD_MM.pearl5 / 2;
   const catches: LedgerCatch[] = ops.map((op, i) => {
     const { far, near } = ports(op);
-    const chord: Vec3[] = [far, near];
+    const pole = poles.get(op.pole) ?? op.mark.at;
+    const lateral = latitudeFrame(pole, op.mark.at, far);
+    const halfMm = lateral(far);
+    const across = (s: LedgerSpan) => latitudeCrossings(s.path, pole, op.mark.at).map(lateral);
     const under: string[] = [];
-    const caught = new Set<string>();
     for (const span of spans) {
       if (span.order >= op.i || span.pole !== op.pole) continue;
-      if (pathCrossings(span.path, chord).length === 0) continue;
-      under.push(span.operationId);
-      const sameMark = (m: KagariMark) => m.line === op.mark.line && m.t === op.mark.t;
-      if (sameMark(span.mark)) caught.add(span.operationId);
-      const left = span.leaves ? spans.find((s) => s.operationId === span.leaves) : undefined;
-      if (left && sameMark(left.mark)) caught.add(left.operationId);
+      if (across(span).some((mm) => Math.abs(mm) < halfMm)) under.push(span.operationId);
     }
     const declared = traces[i]!.overOperations;
-    const line = normalize(cross(far, near));
-    const along = normalize(cross(line, op.mark.at));
-    const missed = declared.filter((id) => !caught.has(id)).map((id) => {
-      const runs = spans.filter((s) => s.operationId === id || s.leaves === id);
-      const lateralMm = runs.flatMap((s) => lineCrossings(s.path, line, op.mark.at))
-        .map((x) => Math.sign(dot(x, along)) * angle(x, op.mark.at) * R_MM);
-      return { operationId: id, lateralMm };
-    });
+    // Enclosed: both runs of the earlier catch pass between the ports with a
+    // thread radius to spare — a port on a thread pierces it.
+    const runsOf = (id: string) => spans.filter((s) => s.operationId === id || s.leaves === id);
+    const lateralOf = (id: string) => runsOf(id).flatMap(across);
+    const encloses = (id: string) => {
+      const runs = runsOf(id);
+      return runs.length === 2
+        && runs.every((s) => across(s).some((mm) => Math.abs(mm) + radius <= halfMm));
+    };
     return {
       operationId: traces[i]!.operationId,
       under,
-      catches: [...caught],
+      catches: declared.filter(encloses),
       declared,
-      halfMm: (angle(far, near) * R_MM) / 2,
-      missed,
+      halfMm,
+      missed: declared.filter((id) => !encloses(id))
+        .map((id) => ({ operationId: id, lateralMm: lateralOf(id) })),
     };
   });
 
