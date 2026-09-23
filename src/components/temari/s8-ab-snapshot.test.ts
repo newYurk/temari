@@ -1,8 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { resolve, join } from 'node:path';
-import { assertS8ABSnapshot, firstS8ABPass, projectAB, renderABOverview, type S8ABSnapshot } from '../../../scripts/lib/s8-ab-diagram';
+import { assertS8ABFirstPassSnapshot, assertS8ABSnapshot, firstS8ABPass, projectAB, renderABOverview, type S8ABSnapshot } from '../../../scripts/lib/s8-ab-diagram';
 import { checkS8AB } from './s8-kiku-ab';
 import { validateThreadCoupon } from './thread-geometry';
 
@@ -11,13 +12,22 @@ const data: S8ABSnapshot = JSON.parse(readFileSync(join(root, 'public/fixtures/s
 const pass = firstS8ABPass(data);
 
 describe('shared S8 AB numerical snapshot and illustrations', () => {
-  it('is current and never promotes a diagnostic calculation to accepted', () => {
-    assert.doesNotThrow(() => assertS8ABSnapshot(data, root));
+  it('has a current first pass and never promotes a diagnostic calculation to accepted', () => {
+    assert.doesNotThrow(() => assertS8ABFirstPassSnapshot(data, root));
     const invalid = structuredClone(data);
     if (invalid.version === 1) invalid.status = 'accepted';
     else invalid.ab1Verdict = 'accepted';
     invalid.acceptance.B.status = 'unresolved';
-    assert.throws(() => assertS8ABSnapshot(invalid, root), /requires both/);
+    assert.throws(() => assertS8ABFirstPassSnapshot(invalid, root), /requires both/);
+  });
+  it('does not certify the historical second pass whose sources were not recorded', () => {
+    assert.equal(data.version, 2);
+    const files = data.source.files.filter(f => f.path !== 'src/components/temari/s8-kiku-ab2.ts');
+    const historical = { ...data, source: { ...data.source, files,
+      digest: createHash('sha256').update(JSON.stringify(files)).digest('hex') } };
+    assert.throws(() => assertS8ABSnapshot(historical, root), /A2\/B2 sources changed or were not recorded/);
+    assert.doesNotThrow(() => assertS8ABFirstPassSnapshot(historical, root),
+      'the passport and illustration can still use independently checked A1/B1 evidence');
   });
   it('rejects stale or structurally incomplete snapshots', () => {
     assert.throws(() => assertS8ABSnapshot({ ...data, source: { ...data.source, digest: 'stale' } }, root), /changed/);

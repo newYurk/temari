@@ -6,6 +6,30 @@ import { join } from "node:path";
 import { matchesRuntimeModelSource, modelSource, runtimeModelSource } from "../../../scripts/lib/stitch-diagram-data.ts";
 
 describe("numerical snapshot runtime provenance", () => {
+  it("includes every pass and shared dependencies once in multi-entry cache keys", () => {
+    const root = mkdtempSync(join(tmpdir(), "temari-model-source-"));
+    try {
+      writeFileSync(join(root, "first.ts"), 'import { value } from "./shared"; export const first = value;');
+      writeFileSync(join(root, "second.ts"), 'import { value } from "./shared"; export const second = value + 1;');
+      writeFileSync(join(root, "shared.ts"), "export const value = 1;");
+      const firstOnly = modelSource(root, "first.ts");
+      const both = modelSource(root, "first.ts", "second.ts");
+      assert.deepEqual(both.files.map(f => f.path), ["first.ts", "second.ts", "shared.ts"]);
+      assert.notEqual(both.digest, firstOnly.digest);
+      assert.deepEqual(modelSource(root, "second.ts", "first.ts", "first.ts"), both);
+      assert.equal(matchesRuntimeModelSource(firstOnly, root, "first.ts", "second.ts"), false,
+        "a first-pass record cannot certify an unrecorded second pass");
+      assert.equal(matchesRuntimeModelSource(both, root, "first.ts", "second.ts"), true);
+      writeFileSync(join(root, "second.ts"), 'import { value } from "./shared"; export const second = value + 2;');
+      assert.notEqual(modelSource(root, "first.ts", "second.ts").digest, both.digest,
+        "changing only the second pass invalidates the numerical cache");
+      assert.equal(modelSource(root, "first.ts").digest, firstOnly.digest);
+      assert.equal(matchesRuntimeModelSource(both, root, "first.ts", "second.ts"), false);
+    } finally {
+      rmSync(root, { recursive: true });
+    }
+  });
+
   it("ignores type-only dependencies without rewriting historical evidence", () => {
     const root = mkdtempSync(join(tmpdir(), "temari-model-source-"));
     try {

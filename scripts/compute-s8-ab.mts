@@ -167,6 +167,10 @@ if (smoke) {
     marks: { A: plans.A.tips, B: plans.B.tips, A2: plans2.A2.tips, B2: plans2.B2.tips },
   };
 
+  if (modelSource(root, 'src/components/temari/s8-kiku-ab.ts',
+    'src/components/temari/s8-kiku-ab2.ts').digest !== source.digest) {
+    throw new Error('S8 AB model changed while computing: refusing to publish mixed-source evidence.');
+  }
   mkdirSync(join(root, 'public/fixtures'), { recursive: true });
   writeFileSync(join(root, 'public/fixtures/s8-ab.json'), JSON.stringify(artifact));
   console.log(JSON.stringify({

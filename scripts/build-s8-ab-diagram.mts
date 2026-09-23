@@ -1,12 +1,12 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { assertS8ABSnapshot, firstS8ABPass, renderABOverview, type S8ABSnapshot } from './lib/s8-ab-diagram.ts';
+import { assertS8ABFirstPassSnapshot, firstS8ABPass, renderABOverview, type S8ABSnapshot } from './lib/s8-ab-diagram.ts';
 import { checkS8AB } from '../src/components/temari/s8-kiku-ab.ts';
 const root = resolve(import.meta.dirname, '..');
 const write = process.argv.includes('--write'), check = process.argv.includes('--check');
 if (write === check) throw new Error('Choose --write or --check.');
 const snapshot: S8ABSnapshot = JSON.parse(readFileSync(join(root, 'public/fixtures/s8-ab.json'), 'utf8'));
-assertS8ABSnapshot(snapshot, root);
+assertS8ABFirstPassSnapshot(snapshot, root);
 const pass = firstS8ABPass(snapshot);
 const actual = checkS8AB(pass.A, pass.B);
 if (JSON.stringify(actual) !== JSON.stringify(pass.checks[4])) throw new Error('Stored AB check does not match the displayed material.');

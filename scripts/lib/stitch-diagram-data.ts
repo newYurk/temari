@@ -33,7 +33,7 @@ export type DiagramSnapshot = {
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 
 /** Fingerprint the actual model dependency closure, not a hand-maintained list. */
-export function modelSource(root: string, entry = 'src/components/temari/computed-lower-kagari.ts') {
+export function modelSource(root: string, entry = 'src/components/temari/computed-lower-kagari.ts', ...additionalEntries: string[]) {
   const seen = new Set<string>();
   const walk = (path: string) => {
     if (seen.has(path)) return;
@@ -48,7 +48,7 @@ export function modelSource(root: string, entry = 'src/components/temari/compute
     }
 
   };
-  walk(join(root, entry));
+  for (const source of [entry, ...additionalEntries]) walk(join(root, source));
   const files = [...seen].map((path) => ({
     path: relative(root, path).replaceAll('\\', '/'),
     sha256: hash(readFileSync(path, 'utf8')),
@@ -57,7 +57,7 @@ export function modelSource(root: string, entry = 'src/components/temari/compute
 }
 
 /** Type-only imports cannot affect numerical paths; retain all runtime imports. */
-export function runtimeModelSource(root: string, entry: string) {
+export function runtimeModelSource(root: string, entry: string, ...additionalEntries: string[]) {
   const seen = new Set<string>();
   const walk = (path: string) => {
     if (seen.has(path)) return;
@@ -92,7 +92,7 @@ export function runtimeModelSource(root: string, entry: string) {
     };
     visit(source);
   };
-  walk(join(root, entry));
+  for (const source of [entry, ...additionalEntries]) walk(join(root, source));
   const files = [...seen].map(path => ({
     path: relative(root, path).replaceAll('\\', '/'), sha256: hash(readFileSync(path, 'utf8')),
   })).sort((a, b) => a.path.localeCompare(b.path));
@@ -103,11 +103,12 @@ export function matchesRuntimeModelSource(
   recorded: { digest: string; files: { path: string; sha256: string }[] },
   root: string,
   entry: string,
+  ...additionalEntries: string[]
 ): boolean {
   if (recorded.digest !== hash(JSON.stringify(recorded.files))) return false;
   const hashes = new Map(recorded.files.map(file => [file.path, file.sha256]));
   if (hashes.size !== recorded.files.length) return false;
-  return runtimeModelSource(root, entry).files.every(file => hashes.get(file.path) === file.sha256);
+  return runtimeModelSource(root, entry, ...additionalEntries).files.every(file => hashes.get(file.path) === file.sha256);
 }
 
 /** Refuse a stale or diagnostic solve before generating any current illustration. */

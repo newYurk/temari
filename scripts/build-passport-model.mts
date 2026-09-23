@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { assertS8ABSnapshot, firstS8ABPass, type S8ABSnapshot } from './lib/s8-ab-diagram.ts';
+import { assertS8ABFirstPassSnapshot, firstS8ABPass, type S8ABSnapshot } from './lib/s8-ab-diagram.ts';
 import { validateThreadCoupon } from '../src/components/temari/thread-geometry.ts';
 import { validateModel } from '../src/components/temari/craft-passport.ts';
 const root = resolve(import.meta.dirname, '..');
@@ -9,7 +9,7 @@ const write = process.argv.includes('--write'), check = process.argv.includes('-
 if (write === check) throw new Error('Choose --write or --check.');
 const raw = readFileSync(join(root, 'public/fixtures/s8-ab.json'), 'utf8');
 const snapshot: S8ABSnapshot = JSON.parse(raw);
-assertS8ABSnapshot(snapshot, root);
+assertS8ABFirstPassSnapshot(snapshot, root);
 const pass = firstS8ABPass(snapshot);
 if (pass.status !== 'accepted') throw new Error('A passport estimate requires an accepted A1/B1 model snapshot.');
 const a = validateThreadCoupon(pass.A, .001), b = validateThreadCoupon(pass.B, .001);

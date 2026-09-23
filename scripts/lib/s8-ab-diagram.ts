@@ -34,7 +34,8 @@ export function firstS8ABPass(s: S8ABSnapshot) {
     : { status: s.ab1Verdict, A: s.A1, B: s.B1, marks: { A: s.marks.A, B: s.marks.B }, checks: s.ab1Checks, acceptance: { A: s.acceptance.A, B: s.acceptance.B } };
 }
 
-export function assertS8ABSnapshot(s: S8ABSnapshot, root: string) {
+/** The published illustration/passport use only A1/B1, never second-pass evidence. */
+export function assertS8ABFirstPassSnapshot(s: S8ABSnapshot, root: string) {
   if (!((s.version === 1 && s.kind === 's8-a1-b1-control') || (s.version === 2 && s.kind === 's8-a1-b1-a2-b2-control')))
     throw new Error('Invalid A1/B1 control snapshot.');
   const pass = firstS8ABPass(s);
@@ -59,6 +60,15 @@ export function assertS8ABSnapshot(s: S8ABSnapshot, root: string) {
   }
   if (!matchesRuntimeModelSource(s.source, root, 'src/components/temari/s8-kiku-ab.ts'))
     throw new Error('S8 AB sources changed: recompute the snapshot before generating its illustration.');
+}
+
+/** Whole-snapshot provenance must cover the second pass as well, if present. */
+export function assertS8ABSnapshot(s: S8ABSnapshot, root: string) {
+  assertS8ABFirstPassSnapshot(s, root);
+  if (s.version === 2 && !matchesRuntimeModelSource(s.source, root,
+    'src/components/temari/s8-kiku-ab.ts', 'src/components/temari/s8-kiku-ab2.ts')) {
+    throw new Error('S8 A2/B2 sources changed or were not recorded: historical second-pass evidence must be recomputed.');
+  }
 }
 
 /** Orthographic pole camera. The scale is shared by body, marks and actual thread paths. */
