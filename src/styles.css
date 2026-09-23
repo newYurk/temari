@@ -7,6 +7,8 @@
   --color-paper: #d4cfc5;
   --color-stone: #8a847c;
   --color-cinnabar: #8f3d32;
+  /* Text on the cinnabar accent: stays light in the night theme too. */
+  --color-on-accent: #ece8e1;
   --color-border: color-mix(in oklab, #ece8e1 14%, transparent);
   --color-border-strong: color-mix(in oklab, #ece8e1 24%, transparent);
   --color-line: color-mix(in oklab, #0c0b09 14%, transparent);

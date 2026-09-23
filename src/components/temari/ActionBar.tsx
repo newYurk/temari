@@ -244,7 +244,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
           "flex min-h-11 items-center justify-center gap-2 rounded-2xl text-sm transition-colors disabled:cursor-not-allowed",
           focusStyle,
           primary
-            ? cn("min-w-0 flex-1 px-3", available ? "bg-cinnabar text-linen hover:bg-cinnabar/90" : "bg-ink/8 text-ink/50")
+            ? cn("min-w-0 flex-1 px-3", available ? "bg-cinnabar text-on-accent hover:bg-cinnabar/90" : "bg-ink/8 text-ink/50")
             : cn(
                 "size-11 shrink-0 ring-1 ring-line",
                 active ? "font-medium ring-ink/40" : "hover:bg-ink/5",
@@ -262,7 +262,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const sewVerb = () =>
     emptySketch ? (
       <button type="button" aria-haspopup="dialog" onClick={() => openPanel("pattern")}
-        className={cn("flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl bg-cinnabar px-3 text-sm text-linen hover:bg-cinnabar/90", focusStyle)}>
+        className={cn("flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl bg-cinnabar px-3 text-sm text-on-accent hover:bg-cinnabar/90", focusStyle)}>
         <IconKiku className="size-5" />Выбрать узор
       </button>
     ) : motif === "none"
@@ -439,7 +439,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
                   </p>
                   <button type="button" disabled={!actionById("quick-kiku").canExecute(state) || kagariPlaying}
                     onClick={() => { run("quick-kiku"); closePanel(); }}
-                    className={cn("flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-cinnabar px-3 text-sm text-linen disabled:opacity-40", focusStyle)}>
+                    className={cn("flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-cinnabar px-3 text-sm text-on-accent disabled:opacity-40", focusStyle)}>
                     <IconKiku className="size-5" />Кику здесь
                   </button>
                 </div>
@@ -525,7 +525,7 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
                     <button type="button" onClick={() => setConfirmReset(false)}
                       className={cn("min-h-11 flex-1 rounded-xl px-2 text-sm ring-1 ring-line", focusStyle)}>Отмена</button>
                     <button type="button" onClick={() => { run("reset"); closePanel(); }}
-                      className={cn("min-h-11 flex-1 rounded-xl bg-cinnabar px-2 text-sm text-linen", focusStyle)}>Сбросить работу</button>
+                      className={cn("min-h-11 flex-1 rounded-xl bg-cinnabar px-2 text-sm text-on-accent", focusStyle)}>Сбросить работу</button>
                   </div>
                 </div>
               ) : (
