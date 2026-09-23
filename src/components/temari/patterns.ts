@@ -1105,10 +1105,11 @@ export function compileKiku(
           }
           first = false;
           const over = stackOver(innerOver[line2] ?? [], crossing);
-          // GT14: each later top stitch about one thread wider. Masters'
-          // photos (TemariKai, Russian and Chinese classes) show ~(n+1)
-          // threads after n rounds, because the earlier legs are gathered
-          // into a braid on the line — not a bite wide enough for a fan.
+          // GT14: each later top stitch about one thread wider. The first is an
+          // ordinary small kagari, 1–2 mm (TemariKai): two threads of #5 — one
+          // thread left no room for the chidori X at the first round's tip.
+          // Masters' photos show the width then growing by about a thread a
+          // round, the earlier legs gathered into a braid on the line.
           cursor = pushKikuLeg(
             ops,
             pole,
@@ -1119,12 +1120,12 @@ export function compileKiku(
             cursor,
             { line: line2, t: "inner", at: right.a },
             over,
-            cornerMm * (1 + over.length),
+            cornerMm * (2 + over.length),
             [...right.via].reverse(),
           );
           if (over.length) {
             gatherUnderBite(ops, over, pole, right.a,
-              unitFromMm(cornerMm * (1 + over.length)) / 2, unitFromMm(STITCH_THREAD_MM[recipe.thread]));
+              unitFromMm(cornerMm * (2 + over.length)) / 2, unitFromMm(STITCH_THREAD_MM[recipe.thread]));
           }
           innerOver[line2]?.push(ops.length - 1);
         }
