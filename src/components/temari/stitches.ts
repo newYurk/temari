@@ -411,11 +411,6 @@ export function sewKagariLegs(
   // but not so short the tube folds (full-depth band overlapped stacked rows).
   const portOffset = Math.max(inn.distanceTo(tip), out.distanceTo(tip), pearl);
   const pierceBand = Math.min(dropFloor, portOffset * 0.85);
-  // Stacked leave tip-gate clears the previous tip. Band ≈2·pearl clears
-  // r0↔r1; longer bury walked into the next tip's arrive on three rows.
-  // Leave path still crosses the next tip's meridian (see HANDOFF) — fix with
-  // incoming-over + poleward ports for depth≥2, not a longer leave gate.
-  const leavePierceBand = stacked ? Math.max(pierceBand, pearl * 2) : pierceBand;
   const pierceRadius = (distance: number, surface: number, atPort: number, band = pierceBand) => {
     if (distance >= band) return surface;
     const drop = surface - atPort;
@@ -452,7 +447,7 @@ export function sewKagariLegs(
     Math.ceil(3 * lengthBound / (pearl / 6)),
     // Elevated stacked surface → bury needs fine samples or the emerge jumps a pearl.
     Math.ceil(dropSpan / (pearl * 0.4)),
-    stacked ? Math.ceil(leavePierceBand / (pearl * 0.35)) : 0,
+    stacked ? Math.ceil(pierceBand / (pearl * 0.35)) : 0,
   );
   const addLeg = (pts: THREE.Vector3[], p: THREE.Vector3) => {
     // Cap per-sample radius change so an elevated stacked emerge cannot jump
@@ -496,15 +491,11 @@ export function sewKagariLegs(
     // need this clearance). Opposite-set layering stays at STACK_LIFT only.
     const lift = lift0 * over * smooth01(_a.distanceTo(toDir) / unitFromMm(1.5));
     const surface = toR + toSlope * t * t * (t - 1) + lift;
-    // Arrive: port distance. Stacked leave: require both distance from the
-    // port *and* tip travel past the port radius, so wide recipe ports stay
-    // buried at t=0 while the rise still waits until past the previous tip.
-    const dPort = _a.distanceTo(out);
-    const leaveDist = stacked
-      ? Math.min(dPort, Math.max(0, _a.distanceTo(tip) - portOffset))
-      : dPort;
+    // The leave comes up out of its own port and lies over the arrive — the
+    // chidori X. The 22.09 tip-gate kept stacked leaves buried until past the
+    // tip, so one side of every later stitch surfaced short, under the other.
     addLeg(outPts, _a.clone().multiplyScalar(
-      pierceRadius(leaveDist, surface, buriedR, leavePierceBand),
+      pierceRadius(_a.distanceTo(out), surface, buriedR),
     ));
   }
   return { inPts, outPts };
