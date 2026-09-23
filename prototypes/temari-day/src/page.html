@@ -1,0 +1,1151 @@
+<title>Тэмари дня</title>
+<meta name="description" content="Каждый день — новая раскладка кику на S8: шить по рядам, собрать полку, скачать рецепт и полоску разметки.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  --ground: #ece8e1;
+  --paper: #e3ded5;
+  --card: #f4f1ec;
+  --ink: #1b1814;
+  --ink-soft: #4a443d;
+  --stone: #7c766e;
+  --line: color-mix(in oklab, #1b1814 14%, transparent);
+  --line-strong: color-mix(in oklab, #1b1814 30%, transparent);
+  --accent: #8f3d32;
+  --accent-ink: #ece8e1;
+  --gold: #a88a52;
+  --stage: #ddd7cd;
+  --focus: #3d5f86;
+  --display: "Cormorant Garamond", "Iowan Old Style", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --radius: 10px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #1a1815;
+    --paper: #221f1b;
+    --card: #26221e;
+    --ink: #ebe6dd;
+    --ink-soft: #c2bbb0;
+    --stone: #9a938a;
+    --line: color-mix(in oklab, #ebe6dd 14%, transparent);
+    --line-strong: color-mix(in oklab, #ebe6dd 30%, transparent);
+    --accent: #b4574a;
+    --accent-ink: #f4efe8;
+    --gold: #c4a574;
+    --stage: #13110f;
+    --focus: #8eb1dd;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #1a1815;
+  --paper: #221f1b;
+  --card: #26221e;
+  --ink: #ebe6dd;
+  --ink-soft: #c2bbb0;
+  --stone: #9a938a;
+  --line: color-mix(in oklab, #ebe6dd 14%, transparent);
+  --line-strong: color-mix(in oklab, #ebe6dd 30%, transparent);
+  --accent: #b4574a;
+  --accent-ink: #f4efe8;
+  --gold: #c4a574;
+  --stage: #13110f;
+  --focus: #8eb1dd;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font: 400 15px/1.55 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 0 48px; }
+@media (min-width: 720px) { .wrap { padding-inline: 32px; } }
+h1, h2, h3 { text-wrap: balance; margin: 0; font-weight: 500; }
+p { margin: 0; }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* Masthead */
+.mast { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px 24px; padding-block: 20px 12px; }
+.brand { display: flex; align-items: baseline; gap: 12px; }
+.brand b { font: italic 600 26px/1 var(--display); letter-spacing: 0.01em; }
+.brand span { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--stone); }
+.tabs { display: flex; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; }
+.tabs button { border: 0; background: none; padding: 6px 14px; border-radius: 999px; font-size: 14px; color: var(--ink-soft); }
+.tabs button[aria-selected="true"] { background: var(--ink); color: var(--ground); }
+
+/* Paper strip rule: the marking strip is the page's recurring ruler */
+.rule { height: 18px; margin-block: 8px 20px; position: relative;
+  background:
+    repeating-linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px 10px) bottom / 100% 5px no-repeat,
+    repeating-linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px 50px) bottom / 100% 10px no-repeat;
+  border-bottom: 1px solid var(--line-strong);
+}
+.rule i { position: absolute; bottom: 0; width: 2px; height: 18px; background: var(--accent); }
+
+/* Hero: the ball and its kit tag */
+.day { display: grid; gap: 20px; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .day { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; } }
+.stage { position: relative; aspect-ratio: 1 / 1; max-width: 100%; border-radius: 14px; overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 38%, color-mix(in oklab, var(--stage) 70%, var(--ground)) 0%, var(--stage) 70%); }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.stage canvas:active { cursor: grabbing; }
+.stage .fallback { position: absolute; inset: 8%; }
+.stage .fallback svg { width: 100%; height: 100%; }
+.stage-bar { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; pointer-events: none; }
+.stage-bar > * { pointer-events: auto; }
+.chip-btn { border: 1px solid var(--line-strong); background: color-mix(in oklab, var(--card) 82%, transparent); backdrop-filter: blur(6px);
+  padding: 5px 12px; border-radius: 999px; font-size: 13px; color: var(--ink); }
+.chip-btn[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.hint { font-size: 12px; color: var(--stone); background: color-mix(in oklab, var(--card) 70%, transparent); padding: 3px 10px; border-radius: 999px; }
+
+.tag { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 16px; }
+.datebar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.datebar button { border: 1px solid var(--line); background: none; width: 36px; height: 36px; border-radius: 50%; font-size: 18px; line-height: 1; }
+.datebar button:disabled { opacity: 0.3; cursor: default; }
+.datebar .d { text-align: center; }
+.datebar .d b { display: block; font-weight: 500; font-size: 14px; }
+.datebar .d span { font-size: 12px; color: var(--stone); letter-spacing: 0.08em; text-transform: uppercase; }
+.name { font: italic 500 clamp(40px, 7vw, 64px)/0.95 var(--display); letter-spacing: -0.01em; }
+.gloss { color: var(--ink-soft); font-size: 15px; }
+.skeins { display: flex; flex-wrap: wrap; gap: 10px; }
+.skein { display: grid; justify-items: center; gap: 4px; font-size: 11px; color: var(--stone); }
+.skein .ball { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line-strong); box-shadow: inset -4px -5px 8px rgb(0 0 0 / 0.18), inset 3px 3px 6px rgb(255 255 255 / 0.18); }
+.skein .ball.wrap-ball { border-style: dashed; }
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; border-block: 1px solid var(--line); padding-block: 10px; }
+.facts div { display: grid; gap: 2px; }
+.facts dt { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--stone); }
+.facts dd { margin: 0; font-size: 17px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn { border: 1px solid var(--line-strong); background: none; padding: 9px 16px; border-radius: 999px; font-size: 14px; font-weight: 500; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.status { font-size: 13px; color: var(--ink-soft); min-height: 1.5em; }
+
+/* Step strip */
+.steps-wrap { margin-top: 20px; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.section-head h2 { font: 500 28px/1.1 var(--display); }
+.section-head p { font-size: 13px; color: var(--stone); }
+.steps { display: flex; gap: 6px; overflow-x: auto; padding-block: 10px 6px; scroll-snap-type: x proximity; }
+.step { flex: none; scroll-snap-align: center; display: grid; gap: 3px; justify-items: center; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); min-width: 52px; font-size: 12px; color: var(--stone); }
+.step i { width: 18px; height: 6px; border-radius: 3px; display: block; }
+.step.done { color: var(--ink); }
+.step.now { border-color: var(--ink); color: var(--ink); background: var(--card); }
+.step .pole { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+
+/* Recipe */
+.recipe { margin-top: 36px; display: grid; gap: 24px; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .recipe { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.daisies { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.daisy { display: grid; gap: 6px; justify-items: center; }
+.daisy svg { width: 100%; height: auto; max-width: 280px; }
+.daisy figcaption { font-size: 12px; color: var(--stone); text-align: center; }
+table.rows { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.rows th { text-align: left; font-weight: 500; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--stone); padding: 6px 8px; border-bottom: 1px solid var(--line-strong); }
+table.rows td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.sw { display: inline-flex; align-items: center; gap: 6px; }
+.sw i { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--line-strong); display: inline-block; }
+.meters { display: grid; gap: 6px; margin-top: 12px; }
+.meter { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; font-size: 14px; }
+.meter .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.meter .bar b { display: block; height: 100%; border-radius: 3px; }
+.note { font-size: 12.5px; color: var(--stone); line-height: 1.5; }
+.strip-box { display: grid; gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.strip-box label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
+.strip-box input { width: 88px; padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--card); }
+.strip-preview { overflow-x: auto; }
+.strip-preview svg { display: block; min-width: 520px; width: 100%; height: auto; }
+
+/* Shelf */
+.shelf-wrap { margin-top: 40px; }
+.shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; margin-top: 12px; }
+.shelf a { display: grid; gap: 4px; justify-items: center; text-decoration: none; color: var(--ink-soft); font-size: 12px; padding: 8px; border-radius: 10px; border: 1px solid transparent; }
+.shelf a:hover, .shelf a[aria-current="true"] { border-color: var(--line-strong); background: var(--card); }
+.shelf svg { width: 88px; height: 88px; }
+.shelf-empty { grid-column: 1 / -1; font-size: 14px; color: var(--stone); padding: 16px; border: 1px dashed var(--line-strong); border-radius: 10px; }
+
+/* Ideas */
+.ideas { display: grid; gap: 28px; padding-top: 8px; }
+.ideas-lede { max-width: 68ch; font: 500 22px/1.35 var(--display); color: var(--ink-soft); }
+.idea-grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
+@media (min-width: 820px) { .idea-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.idea { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 12px; align-content: start; }
+.idea h3 { font: italic 500 26px/1.1 var(--display); }
+.idea > p { color: var(--ink-soft); font-size: 14px; max-width: 62ch; }
+.idea ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.idea li { display: grid; gap: 2px; padding-left: 14px; border-left: 2px solid var(--line-strong); }
+.idea li b { font-weight: 500; }
+.idea li span { font-size: 13.5px; color: var(--ink-soft); }
+.idea li em { font-style: normal; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.pick { border: 1px solid var(--accent); border-radius: 14px; padding: 20px; display: grid; gap: 10px; }
+.pick h3 { font: italic 500 26px/1.1 var(--display); }
+.pick p { max-width: 70ch; color: var(--ink-soft); font-size: 14.5px; }
+
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+footer p { font-size: 12.5px; color: var(--stone); max-width: 90ch; }
+
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <div class="brand"><b>Тэмари дня</b><span>кику · S8 · мари 24 см</span></div>
+    <nav class="tabs" role="tablist" aria-label="Разделы">
+      <button id="tab-day" role="tab" aria-selected="true" aria-controls="view-day">Шар дня</button>
+      <button id="tab-ideas" role="tab" aria-selected="false" aria-controls="view-ideas">Куда расти</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="view-day" role="tabpanel" aria-labelledby="tab-day">
+      <div class="rule" id="rule-top" aria-hidden="true"></div>
+      <div class="day">
+        <div class="stage" id="stage">
+          <canvas id="ball" aria-label="Шар дня: кику на обоих полюсах, вращается перетаскиванием"></canvas>
+          <div class="fallback" id="fallback" hidden></div>
+          <div class="stage-bar">
+            <span class="hint" id="drag-hint">Тяните, чтобы повернуть</span>
+            <span style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="chip-btn" id="pole-n" aria-pressed="true">Север</button>
+              <button class="chip-btn" id="pole-s" aria-pressed="false">Юг</button>
+            </span>
+          </div>
+        </div>
+
+        <aside class="tag" aria-label="Ярлык шара">
+          <div class="datebar">
+            <button id="prev-day" aria-label="Предыдущий день">‹</button>
+            <div class="d"><span id="day-no" class="num">№ —</span><b id="day-date">—</b></div>
+            <button id="next-day" aria-label="Следующий день">›</button>
+          </div>
+          <div>
+            <h1 class="name" id="cw-name">—</h1>
+            <p class="gloss" id="cw-gloss">—</p>
+          </div>
+          <div class="skeins" id="skeins" aria-label="Нити и намотка"></div>
+          <dl class="facts">
+            <div><dt>Кругов</dt><dd class="num" id="f-rows">—</dd></div>
+            <div><dt>Шагов</dt><dd class="num" id="f-steps">—</dd></div>
+            <div><dt>Нити, м</dt><dd class="num" id="f-meters">—</dd></div>
+          </dl>
+          <div class="actions">
+            <button class="btn primary" id="sew">Шить с начала</button>
+            <button class="btn" id="speed" aria-pressed="false">×3</button>
+            <button class="btn" id="finish">Сразу всё</button>
+            <button class="btn" id="sound" aria-pressed="true">Звук</button>
+          </div>
+          <div class="actions">
+            <button class="btn" id="to-shelf" disabled>Положить на полку</button>
+            <button class="btn" id="card-png" hidden>Открытка PNG</button>
+          </div>
+          <p class="status" id="status" role="status" aria-live="polite"></p>
+        </aside>
+      </div>
+
+      <div class="steps-wrap">
+        <div class="section-head">
+          <h2>Порядок шитья</h2>
+          <p>север: A1, B1, A2, B2… затем юг так же</p>
+        </div>
+        <div class="steps" id="steps" aria-label="Шаги"></div>
+      </div>
+
+      <section class="recipe" aria-labelledby="recipe-h">
+        <div>
+          <div class="section-head"><h2 id="recipe-h">Рецепт</h2><p>вид сверху на каждый полюс</p></div>
+          <div class="daisies" id="daisies"></div>
+          <p class="note" style="margin-top:8px">Ромашка — азимутальная проекция: вдоль лучей расстояние от полюса в масштабе 1:1 для мари 24 см, поперёк лучей к экватору растянуто. Ряды нарисованы в порядке шитья: поздняя нить поверх ранней.</p>
+        </div>
+        <div>
+          <table class="rows" id="rows-table">
+            <thead><tr><th>Круг</th><th>Набор A</th><th>Набор B</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="meters" id="meters"></div>
+          <p class="note" style="margin-top:8px" id="meters-note">Метраж — длина пути нити в модели мастерской, оба полюса: по поверхности и в проколах на расчётную глубину. Хвосты, запас на иглу и закрепление не входят. Не откалибровано по настоящей работе.</p>
+          <div class="strip-box">
+            <label for="circ">Обхват вашей мари, см <input id="circ" type="number" inputmode="decimal" min="15" max="50" step="0.1" value="24"></label>
+            <div class="strip-preview" id="strip-preview" aria-label="Полоска разметки меридиана"></div>
+            <p class="note">Бумажная полоска меридиана: полюс, первый верхний стежок в 5 мм, булавки кику на 1/6 обхвата, экватор на 1/4. В файле рецепта — полоски в натуральную величину с контрольной линейкой 50 мм.</p>
+            <div class="actions"><button class="btn" id="recipe-svg" hidden>Скачать рецепт (SVG, A4)</button></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="shelf-wrap" aria-labelledby="shelf-h">
+        <div class="section-head"><h2 id="shelf-h">Полка</h2><p id="shelf-note">сшитые шары остаются здесь, в этом браузере</p></div>
+        <div class="shelf" id="shelf"></div>
+      </section>
+    </section>
+
+    <section id="view-ideas" role="tabpanel" aria-labelledby="tab-ideas" hidden>
+      <div class="rule" aria-hidden="true"></div>
+      <div class="ideas">
+        <p class="ideas-lede">Темари уже умеет главное, чего нет ни у кого: шьёт кику в настоящем порядке мастера, а не рисует картинку. Ниже — куда это можно развернуть, не ломая спокойную мастерскую, которую вы задумали.</p>
+
+        <div class="pick">
+          <h3>Что я бы сделал первым</h3>
+          <p>«Шар дня» в самом приложении, для ранних тестировщиков бесплатно навсегда. Ежедневный повод открыть мастерскую без очков и таймеров. Шар кладут на полку, а рецепт уносят в настоящую работу. Всё собрано из того, что уже есть в коде: рецепт кику, стопка, метраж, звуки. Не хватает ленты шагов, ромашки и полки — это как раз ваш минимум I4 + I5 + I1 из мозгового штурма.</p>
+        </div>
+
+        <div class="idea-grid">
+          <article class="idea">
+            <h3>Улучшить сейчас</h3>
+            <p>Уже написано, но не видно пользователю.</p>
+            <ul>
+              <li><b>Включить «ката»</b><span>Пять головоломок раскраски лежат в коде готовыми, но до них нельзя добраться.</span></li>
+              <li><b>Сохранять вышивку</b><span>Настройки после перезагрузки уже восстанавливаются, а сшитое пропадает — мастерская начинается заново.</span></li>
+              <li><b>Лента шагов, ромашка, метраж</b><span>Расчёт метража написан, но интерфейс его не использует. Ромашка и лента — как на этой странице.</span></li>
+              <li><b>Прозрачная мари</b><span>Видно ход нити внутри шара: проколы и проходы. Ваше следующее желание.</span></li>
+              <li><b>Ссылка на шар</b><span>Шар по ссылке открывается у другого человека таким же — это первое «поделиться».</span></li>
+            </ul>
+          </article>
+
+          <article class="idea">
+            <h3>Игра без ловкости</h3>
+            <p>Не соревнование, а ритуал и коллекция, как в уютных играх про порядок и заботу.</p>
+            <ul>
+              <li><b>Шар дня и полка</b><span>Одна раскладка на всех в день, неторопливое шитьё, коллекция на полке. Прототип — на соседней вкладке.</span></li>
+              <li><b>Сезонные коллекции</b><span>Японский календарь в 24 сезона: гаммы «клён», «снег», «луна». Полка собирает год.</span></li>
+              <li><b>Режим ученицы</b><span>«Призрак» следующего стежка (идея из мозгового штурма): мастерская подсказывает, куда идёт игла, и объясняет почему.</span></li>
+              <li><b>Ката как «восстанови узор»</b><span>Готовые головоломки превращаются в сюжет: по фотографии шара угадать разметку и раскладку.</span></li>
+              <li><b>Вехи ремесла вместо очков</b><span>«Первая разметка S8», «кику до экватора», «оба полюса» — отметки в паспорте, а не рейтинг.</span></li>
+            </ul>
+          </article>
+
+          <article class="idea">
+            <h3>Заработок</h3>
+            <p>Ваше правило остаётся первым: всё, что есть у ранних тестировщиков, у них бесплатно навсегда.</p>
+            <ul>
+              <li><em>ближе всего</em><b>Платные рецепты</b><span>Карточка шара: порядок, ромашка, метраж, полоски разметки 1:1. Отдельно или подпиской на сезон.</span></li>
+              <li><em>партнёры</em><b>Наборы нитей по метражу</b><span>Шар дня или месяца набором: мари, нити ровно на раскладку, рецепт. Сначала метраж нужно откалибровать по паспортам мастериц.</span></li>
+              <li><b>«Паспорт мастера» Pro</b><span>Программа калибровки из ваших документов: прогноз против факта, журнал работ, советы по покупке нитей.</span></li>
+              <li><b>Для преподавателей</b><span>Лицензия на кружок или мастер-класс: общий шар на экране, лента шагов, раздатка с рецептом.</span></li>
+            </ul>
+          </article>
+
+          <article class="idea">
+            <h3>Дешёвые проверки</h3>
+            <p>Прежде чем строить, узнать, что откликается. Здесь только способы проверки — цифр отклика у нас пока нет.</p>
+            <ul>
+              <li><b>Неделя шара дня в чате мастериц</b><span>Ссылка на эту страницу, семь дней. Смотрим, возвращаются ли, кладут ли на полку, скачивают ли рецепт.</span></li>
+              <li><b>Десять разговоров с мастерицами</b><span>Как считают нить, как размечают, что бесит. Проверяет, нужны ли рецепты и наборы.</span></li>
+              <li><b>Лендинг с листом ожидания</b><span>Две страницы: «рецепты» и «набор месяца». Какая набирает больше адресов.</span></li>
+              <li><b>Замер нити по паспорту</b><span>Пять настоящих шаров с прогнозом метража — без этого наборы продавать нельзя.</span></li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Геометрия шара — модель мастерской Темари (main после слияния Temari Next, 2efa537): кику по рецепту GT14 на разметке S8, нити уложены по порядку шитья. На живой мари не проверена; у верхних остриёв модель пока кладёт ряды лесенкой, выше, чем у мастера. В прототипе каждый круг — отдельная нить; если цвет в наборе не меняется, мастер продолжает ту же нить.</p>
+    <p>Раскладка дня выбирается по дате этого устройства. Полка хранится только в этом браузере.</p>
+  </footer>
+</div>
+
+<script type="application/json" id="kiku-meta">__META__</script>
+<script type="text/plain" id="kiku-data">__B64__</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.min.js"}}</script>
+<script type="module">
+// ---------------------------------------------------------------- data
+const META = JSON.parse(document.getElementById('kiku-meta').textContent);
+const R_MM = META.R;
+const PARTS = (() => {
+  const bin = atob(document.getElementById('kiku-data').textContent.trim());
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  const i16 = new Int16Array(u8.buffer);
+  let off = 0;
+  return META.parts.map((p) => {
+    const pts = new Float32Array(p.n * 3);
+    for (let k = 0; k < p.n * 3; k++) pts[k] = i16[off + k] / META.Q;
+    off += p.n * 3;
+    return { ...p, pts };
+  });
+})();
+const groupKey = (pole, row, set) => `${pole}-${row}-${set}`;
+const GROUPS = new Map();
+for (const p of PARTS) {
+  const k = groupKey(p.pole, p.row, p.set);
+  if (!GROUPS.has(k)) GROUPS.set(k, []);
+  GROUPS.get(k).push(p);
+}
+
+// ---------------------------------------------------------------- colourways
+const CW = [
+  { id: 'beni', name: 'Бэни', gloss: 'киноварь', wrap: '#4a1410', threads: ['#c4a574', '#ece8e1', '#3d5f86', '#8e9bb3'], names: ['золото', 'лён', 'индиго', 'сизый'] },
+  { id: 'ai', name: 'Ай', gloss: 'индиго', wrap: '#1f2d3d', threads: ['#ece8e1', '#9aa9b6', '#c4a574', '#b0483a'], names: ['лён', 'пепел', 'золото', 'киноварь'] },
+  { id: 'matsu', name: 'Мацу', gloss: 'сосна', wrap: '#243322', threads: ['#ece8e1', '#c4a574', '#7f9a6a', '#b0483a'], names: ['лён', 'золото', 'хвоя', 'киноварь'] },
+  { id: 'sumi', name: 'Суми', gloss: 'тушь', wrap: '#1a1916', threads: ['#ece8e1', '#9a938a', '#c4a574', '#b0483a'], names: ['лён', 'камень', 'золото', 'киноварь'] },
+  { id: 'momiji', name: 'Момидзи', gloss: 'клён', wrap: '#2a2420', threads: ['#c2472e', '#e08a33', '#e8c35a', '#ece8e1'], names: ['багрянец', 'охра', 'желток', 'лён'] },
+  { id: 'sakura', name: 'Сакура', gloss: 'вишня в цвету', wrap: '#f1e6e4', threads: ['#b8456a', '#6b2d3c', '#8a847c', '#d97a98'], names: ['вишня', 'вино', 'камень', 'лепесток'] },
+  { id: 'yuki', name: 'Юки', gloss: 'снег', wrap: '#e8e6e1', threads: ['#3d5f86', '#2a3a4a', '#7b8b98', '#b08a4a'], names: ['индиго', 'ночь', 'пепел', 'бронза'] },
+  { id: 'tsuki', name: 'Цуки', gloss: 'луна', wrap: '#202634', threads: ['#e8d9a8', '#8e9bb3', '#c4a574', '#5d6f9e'], names: ['лунный', 'сизый', 'золото', 'сумерки'] },
+  { id: 'kikyo', name: 'Кикё', gloss: 'колокольчик', wrap: '#3b2f5c', threads: ['#ece8e1', '#b8a9d9', '#c4a574', '#8f7fc4'], names: ['лён', 'лаванда', 'золото', 'фиалка'] },
+  { id: 'hagi', name: 'Хаги', gloss: 'леспедеца', wrap: '#5a2a3a', threads: ['#e0a6b8', '#ece8e1', '#7f9a6a', '#c4a574'], names: ['цветок', 'лён', 'листва', 'золото'] },
+  { id: 'kohaku', name: 'Кохаку', gloss: 'янтарь', wrap: '#3a2410', threads: ['#e0a040', '#f2d48a', '#ece8e1', '#b0483a'], names: ['янтарь', 'мёд', 'лён', 'киноварь'] },
+  { id: 'wakaba', name: 'Вакаба', gloss: 'молодая листва', wrap: '#ece8e1', threads: ['#5f7f2e', '#3c5a2a', '#9ab85a', '#b08a4a'], names: ['листва', 'хвоя', 'побег', 'бронза'] },
+  { id: 'kami', name: 'Ками', gloss: 'бумага васи', wrap: '#d4cfc5', threads: ['#8f3d32', '#2a2420', '#3d5f86', '#8a6a2a'], names: ['киноварь', 'тушь', 'индиго', 'бронза'] },
+  { id: 'nami', name: 'Нами', gloss: 'волна', wrap: '#173a4a', threads: ['#ece8e1', '#7cc0d0', '#c4a574', '#3f93ad'], names: ['пена', 'бирюза', 'золото', 'глубина'] },
+  { id: 'hanabi', name: 'Ханаби', gloss: 'фейерверк', wrap: '#0f1020', threads: ['#e84a3a', '#f2c14e', '#4ab0d9', '#ece8e1'], names: ['огонь', 'искра', 'небо', 'дым'] },
+  { id: 'sumomo', name: 'Сумомо', gloss: 'слива', wrap: '#4a2040', threads: ['#e39cc2', '#ece8e1', '#c4a574', '#b0588a'], names: ['цвет сливы', 'лён', 'золото', 'слива'] },
+];
+const LAYOUTS = [
+  { id: 'gt14', name: 'две нити, как в GT14' },
+  { id: 'stripes', name: 'полосы' },
+  { id: 'fade', name: 'перелив от центра' },
+  { id: 'check', name: 'шахматка A/B' },
+];
+
+// ---------------------------------------------------------------- date & seed
+const pad = (n) => String(n).padStart(2, '0');
+const EPOCH = Date.UTC(2026, 8, 1);
+const keyOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const dayNo = (key) => { const [y, m, d] = key.split('-').map(Number); return Math.round((Date.UTC(y, m - 1, d) - EPOCH) / 864e5) + 1; };
+const keyFromNo = (n) => { const t = new Date(EPOCH + (n - 1) * 864e5); return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`; };
+const todayKey = () => keyOf(new Date());
+const validKey = (k) => /^\d{4}-\d{2}-\d{2}$/.test(k) && dayNo(k) >= 1 && dayNo(k) <= dayNo(todayKey());
+const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+const human = (key) => { const [y, m, d] = key.split('-').map(Number); return `${d} ${MONTHS[m - 1]} ${y}`; };
+
+function cyrb53(str, seed = 0) {
+  let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+  for (let i = 0; i < str.length; i++) { const ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+function mulberry32(a) {
+  return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+const rngFor = (s) => mulberry32(cyrb53(s) % 4294967296);
+function shuffle(arr, rng) { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+function lightness(hex) {
+  const c = [1, 3, 5].map((i) => { const v = parseInt(hex.slice(i, i + 2), 16) / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  const l = Math.cbrt(0.4122214708 * c[0] + 0.5363325363 * c[1] + 0.0514459929 * c[2]);
+  const m = Math.cbrt(0.2119034982 * c[0] + 0.6806995451 * c[1] + 0.1073969566 * c[2]);
+  const s = Math.cbrt(0.0883024619 * c[0] + 0.2817188376 * c[1] + 0.6299787005 * c[2]);
+  return 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+}
+
+/** Everything about one day, from its date alone. */
+function dayPlan(key) {
+  const n = dayNo(key);
+  const block = Math.floor((n - 1) / 14);
+  const order = shuffle(CW.map((_, i) => i), rngFor(`temari-day/v1/block/${block}`));
+  const cw = CW[order[(n - 1) % 14]];
+  const rng = rngFor(`temari-day/v1/${key}`);
+  const rows = 6 + Math.floor(rng() * 5);
+  const layout = LAYOUTS[Math.floor(rng() * LAYOUTS.length)];
+  const pick = shuffle(cw.threads.map((hex, i) => ({ hex, name: cw.names[i] })), rng);
+  const k = 3 + Math.floor(rng() * 2);
+  const used = pick.slice(0, k);
+  const colors = [[], []]; // [set][row] -> {hex,name}
+  for (let r = 0; r < rows; r++) {
+    let a, b;
+    if (layout.id === 'gt14') { a = used[0]; b = used[1]; if (r === rows - 1) a = b = used[2]; }
+    else if (layout.id === 'stripes') { a = b = used[r % used.length]; }
+    else if (layout.id === 'fade') {
+      const byL = used.slice().sort((x, y) => lightness(y.hex) - lightness(x.hex));
+      const band = Math.min(byL.length - 1, Math.floor((r / rows) * byL.length));
+      a = b = byL[band];
+    } else { a = used[r % 2]; b = used[(r + 1) % 2]; if (used[2] && r === rows - 1) a = b = used[2]; }
+    colors[0][r] = a; colors[1][r] = b;
+  }
+  const seen = new Map();
+  for (let r = 0; r < rows; r++) for (const set of [0, 1]) { const c = colors[set][r]; if (!seen.has(c.hex)) seen.set(c.hex, c); }
+  return { key, n, cw, rows, layout, used: [...seen.values()], colors };
+}
+
+// ---------------------------------------------------------------- meters & threads
+function metersOf(plan) {
+  const byHex = new Map();
+  for (const p of PARTS) {
+    if (p.row >= plan.rows) continue;
+    const c = plan.colors[p.set][p.row];
+    const e = byHex.get(c.hex) ?? { hex: c.hex, name: c.name, mm: 0 };
+    e.mm += p.lenMm;
+    byHex.set(c.hex, e);
+  }
+  return [...byHex.values()].sort((a, b) => b.mm - a.mm);
+}
+function threadCount(plan) {
+  let n = 0;
+  for (let pole = 0; pole < 2; pole++) for (let set = 0; set < 2; set++) {
+    let prev = null;
+    for (let r = 0; r < plan.rows; r++) { const c = plan.colors[set][r].hex; if (c !== prev) n++; prev = c; }
+  }
+  return n;
+}
+function stepsOf(plan) {
+  const out = [];
+  for (let pole = 0; pole < 2; pole++) for (let r = 0; r < plan.rows; r++) for (let set = 0; set < 2; set++) {
+    const c = plan.colors[set][r];
+    const prev = r > 0 ? plan.colors[set][r - 1].hex : null;
+    out.push({ pole, row: r, set, color: c, fresh: prev !== c.hex, key: groupKey(pole, r, set) });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- polar «ромашка»
+function project(x, y, z, pole) {
+  const len = Math.hypot(x, y, z);
+  const yy = pole === 0 ? y / len : -y / len;
+  const theta = Math.acos(Math.max(-1, Math.min(1, yy)));
+  const phi = pole === 0 ? Math.atan2(z, x) : Math.atan2(z, -x);
+  return [theta * Math.cos(phi), theta * Math.sin(phi)];
+}
+/** SVG of one pole seen from outside. size: px; unit: scale of theta; mm: stroke in theta units. */
+function daisySVG(plan, pole, { size = 280, wrap = true, guides = true, mmUnits = false, upto = Infinity } = {}) {
+  const maxT = Math.PI / 2;
+  const half = size / 2;
+  const s = (half * 0.96) / maxT;
+  const thread = (0.71 / R_MM) * s;
+  let out = '';
+  if (wrap) out += `<circle cx="${half}" cy="${half}" r="${(half * 0.96).toFixed(2)}" fill="${plan.cw.wrap}"/>`;
+  if (guides) {
+    const g = plan.cw.wrap === '#ece8e1' || lightness(plan.cw.wrap) > 0.8 ? '#a88a52' : '#c4a574';
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      out += `<line x1="${half}" y1="${half}" x2="${(half + Math.cos(a) * half * 0.96).toFixed(2)}" y2="${(half + Math.sin(a) * half * 0.96).toFixed(2)}" stroke="${g}" stroke-width="${Math.max(0.5, thread * 0.28).toFixed(2)}" opacity="0.8"/>`;
+    }
+  }
+  let i = 0;
+  for (const p of PARTS) {
+    if (p.pole !== pole || p.row >= plan.rows) continue;
+    if (i++ >= upto) break;
+    const c = plan.colors[p.set][p.row].hex;
+    const runs = [];
+    let cur = [];
+    for (let k = 0; k < p.n; k++) {
+      const x = p.pts[3 * k], y = p.pts[3 * k + 1], z = p.pts[3 * k + 2];
+      if (Math.hypot(x, y, z) < 0.99995) { if (cur.length > 1) runs.push(cur); cur = []; continue; }
+      const [u, v] = project(x, y, z, pole);
+      cur.push(`${(half + u * s).toFixed(2)},${(half + v * s).toFixed(2)}`);
+    }
+    if (cur.length > 1) runs.push(cur);
+    for (const r of runs) {
+      const d = 'M' + r.join('L');
+      out += `<path d="${d}" fill="none" stroke="${plan.cw.wrap}" stroke-opacity="0.55" stroke-width="${(thread * 1.45).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+      out += `<path d="${d}" fill="none" stroke="${c}" stroke-width="${thread.toFixed(2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    }
+  }
+  const unit = mmUnits ? ` width="${size}mm" height="${size}mm"` : '';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}"${unit} role="img">${out}</svg>`;
+}
+
+// ---------------------------------------------------------------- paper strips (mm)
+function stripMarks(C) {
+  const half = C / 2;
+  return {
+    meridian: { length: half, marks: [
+      { at: 0, label: 'С. полюс', major: true }, { at: 5, label: '5 мм' },
+      { at: C / 6, label: 'булавка кику', major: true }, { at: C / 4, label: 'экватор', major: true },
+      { at: half - C / 6, label: 'булавка кику', major: true }, { at: half - 5, label: '5 мм' },
+      { at: half, label: 'Ю. полюс', major: true } ] },
+    equator: { length: C, marks: Array.from({ length: 9 }, (_, i) => ({ at: (i * C) / 8, label: i === 8 ? '= 1' : `${i + 1}`, major: true })) },
+  };
+}
+/** One strip drawn in mm, split into pieces no longer than maxPiece. Returns {svg, height}. */
+function stripSVG(title, strip, x0, y0, maxPiece, ink, accent) {
+  const pieces = Math.max(1, Math.ceil(strip.length / maxPiece));
+  const len = strip.length / pieces;
+  const H = 12;
+  let s = `<text x="${x0}" y="${y0}" font-size="3.4" font-family="IBM Plex Sans, Arial, sans-serif" fill="${ink}">${title} · ${strip.length.toFixed(1).replace('.', ',')} мм${pieces > 1 ? ` · ${pieces} куска, склеить по ▲` : ''}</text>`;
+  let y = y0 + 3;
+  for (let k = 0; k < pieces; k++) {
+    const a = k * len, b = (k + 1) * len;
+    s += `<rect x="${x0}" y="${y}" width="${len.toFixed(3)}" height="${H}" fill="none" stroke="${ink}" stroke-width="0.25"/>`;
+    for (let mm = Math.ceil(a); mm <= Math.floor(b + 1e-9); mm++) {
+      const x = x0 + (mm - a);
+      const t = mm % 10 === 0 ? 4 : mm % 5 === 0 ? 2.6 : 1.4;
+      s += `<line x1="${x.toFixed(3)}" y1="${y}" x2="${x.toFixed(3)}" y2="${(y + t).toFixed(3)}" stroke="${ink}" stroke-width="0.15"/>`;
+      if (mm % 10 === 0 && mm > 0) s += `<text x="${(x + 0.4).toFixed(3)}" y="${(y + 5.6).toFixed(3)}" font-size="2.2" font-family="IBM Plex Sans, Arial, sans-serif" fill="${ink}">${mm / 10}</text>`;
+    }
+    for (const m of strip.marks) {
+      if (m.at < a - 1e-6 || m.at > b + 1e-6) continue;
+      const x = x0 + (m.at - a);
+      s += `<line x1="${x.toFixed(3)}" y1="${y}" x2="${x.toFixed(3)}" y2="${y + H}" stroke="${accent}" stroke-width="${m.major ? 0.45 : 0.3}"/>`;
+      const ly = m.major ? y + H - 1.4 : y + 8.2;
+      const anchor = m.at > b - 12 ? 'end' : 'start';
+      const lx = anchor === 'end' ? x - 0.6 : x + 0.6;
+      s += `<text x="${lx.toFixed(3)}" y="${ly.toFixed(3)}" text-anchor="${anchor}" font-size="2.3" font-family="IBM Plex Sans, Arial, sans-serif" fill="${accent}">${m.label}</text>`;
+    }
+    if (k < pieces - 1) s += `<text x="${(x0 + len - 2.4).toFixed(3)}" y="${(y - 0.6).toFixed(3)}" font-size="2.6" fill="${ink}">▲${k + 1}</text>`;
+    if (k > 0) s += `<text x="${x0 - 0.6}" y="${(y - 0.6).toFixed(3)}" font-size="2.6" fill="${ink}">▲${k}</text>`;
+    y += H + 7;
+  }
+  return { svg: s, height: y - y0 };
+}
+function stripPreviewSVG(C, ink, accent) {
+  const m = stripMarks(C).meridian;
+  const W = m.length + 8;
+  const { svg } = stripSVG('Меридиан, полюс — полюс', m, 4, 5, Infinity, ink, accent);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} 24">${svg}</svg>`;
+}
+function recipeSVG(plan, C) {
+  const ink = '#1b1814', accent = '#8f3d32';
+  const meters = metersOf(plan);
+  const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  let s = '';
+  s += `<rect width="210" height="297" fill="#fbfaf7"/>`;
+  s += `<text x="12" y="18" font-size="9" font-style="italic" font-family="Cormorant Garamond, Georgia, serif" fill="${ink}">${esc(plan.cw.name)} · ${esc(plan.cw.gloss)}</text>`;
+  s += `<text x="12" y="25" font-size="3.4" font-family="IBM Plex Sans, Arial, sans-serif" fill="${ink}">Тэмари дня № ${plan.n} · ${human(plan.key)} · кику на S8, ${plan.rows} кругов на каждом полюсе · раскладка: ${esc(plan.layout.name)}</text>`;
+  // daisy: radial 1:1 for a 24 cm mari (equator at C/4 = 60 mm)
+  const r = (Math.PI / 2) * R_MM; // 60 mm
+  const size = (2 * r) / 0.96;
+  const daisy = daisySVG(plan, 0, { size: 400, guides: true });
+  s += `<g transform="translate(8 30) scale(${(size / 400).toFixed(5)})">${daisy.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '')}</g>`;
+  s += `<text x="12" y="${(30 + size + 4).toFixed(2)}" font-size="2.6" font-family="IBM Plex Sans, Arial, sans-serif" fill="${ink}">Северный полюс сверху. Вдоль лучей 1:1 для мари 24 см (экватор — 60 мм от центра), поперёк растянуто.</text>`;
+  // table
+  let y = 36;
+  const x = 142;
+  s += `<text x="${x}" y="${y}" font-size="3.2" font-weight="600" font-family="IBM Plex Sans, Arial, sans-serif" fill="${ink}">Круг   A        B</text>`;
+  y += 5;
+  for (let rI = 0; rI < plan.rows; rI++) {
+    const a = plan.colors[0][rI], b = plan.colors[1][rI];
+    s += `<text x="${x}" y="${y}" font-size="3" font-family="IBM Plex Sans, Arial, sans-serif" fill="${ink}">${rI + 1}</text>`;
+    s += `<circle cx="${x + 11}" cy="${y - 1}" r="1.6" fill="${a.hex}" stroke="${ink}" stroke-width="0.15"/><text x="${x + 14}" y="${y}" font-size="2.6" font-family="IBM Plex Sans, Arial, sans-serif" fill="${ink}">${esc(a.name)}</text>`;
+    s += `<circle cx="${x + 36}" cy="${y - 1}" r="1.6" fill="${b.hex}" stroke="${ink}" stroke-width="0.15"/><text x="${x + 39}" y="${y}" font-size="2.6" font-family="IBM Plex Sans, Arial, sans-serif" fill="${ink}">${esc(b.name)}</text>`;
+    y += 5;
+  }
+  y += 3;
+  s += `<text x="${x}" y="${y}" font-size="3.2" font-weight="600" font-family="IBM Plex Sans, Arial, sans-serif" fill="${ink}">Нить по модели, оба полюса</text>`;
+  y += 5;
+  for (const m of meters) {
+    s += `<circle cx="${x + 1.6}" cy="${y - 1}" r="1.6" fill="${m.hex}" stroke="${ink}" stroke-width="0.15"/><text x="${x + 5}" y="${y}" font-size="2.8" font-family="IBM Plex Sans, Arial, sans-serif" fill="${ink}">${esc(m.name)} — ${(m.mm / 1000).toFixed(2)} м</text>`;
+    y += 4.6;
+  }
+  s += `<text x="${x}" y="${y + 1}" font-size="2.3" font-family="IBM Plex Sans, Arial, sans-serif" fill="${ink}"><tspan x="${x}" dy="0">Без хвостов и запаса на иглу.</tspan><tspan x="${x}" dy="3">Не откалибровано.</tspan><tspan x="${x}" dy="3">Порядок: север A1, B1, A2…,</tspan><tspan x="${x}" dy="3">затем юг так же.</tspan></text>`;
+  // strips at 1:1 for the viewer's circumference
+  const st = stripMarks(C);
+  let yy = 30 + size + 14;
+  const a = stripSVG(`Полоска меридиана для обхвата ${(C / 10).toFixed(1).replace('.', ',')} см`, st.meridian, 12, yy, 180, ink, accent);
+  s += a.svg; yy += a.height + 4;
+  const b = stripSVG('Полоска экватора: 8 меток через 1/8 обхвата', st.equator, 12, yy, 180, ink, accent);
+  s += b.svg; yy += b.height + 2;
+  // control bar
+  const cy = Math.min(286, yy + 4);
+  s += `<line x1="12" y1="${cy}" x2="62" y2="${cy}" stroke="${ink}" stroke-width="0.5"/><line x1="12" y1="${cy - 2}" x2="12" y2="${cy + 2}" stroke="${ink}" stroke-width="0.4"/><line x1="62" y1="${cy - 2}" x2="62" y2="${cy + 2}" stroke="${ink}" stroke-width="0.4"/>`;
+  s += `<text x="66" y="${cy + 1}" font-size="2.8" font-family="IBM Plex Sans, Arial, sans-serif" fill="${ink}">Контроль: отрезок слева — ровно 50 мм. Печатайте в масштабе 100 %, без «вписать в страницу».</text>`;
+  s += `<text x="12" y="293" font-size="2.2" font-family="IBM Plex Sans, Arial, sans-serif" fill="#7c766e">Модель мастерской Темари (main, 2efa537); на живой мари не проверена.</text>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 210 297">${s}</svg>`;
+}
+
+// ---------------------------------------------------------------- sound (ported from feel.ts)
+const Sound = (() => {
+  let ac = null, master = null, on = true;
+  const ensure = () => {
+    if (ac) return ac;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    try { ac = new AC(); master = ac.createGain(); master.gain.value = 0.52; master.connect(ac.destination); } catch { ac = null; }
+    return ac;
+  };
+  const tone = (freq, dur, type, gain, delay = 0, decay = 0.45) => {
+    if (!on || !ac || !master) return;
+    const t = ac.currentTime + delay;
+    const osc = ac.createOscillator(), g = ac.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(40, freq * decay), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(g); g.connect(master); osc.start(t); osc.stop(t + dur + 0.04);
+  };
+  const PENTA = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.66, 1318.51, 1567.98, 1760.0];
+  return {
+    unlock() { const a = ensure(); if (a && a.state === 'suspended') a.resume().catch(() => {}); },
+    set(v) { on = v; },
+    get on() { return on; },
+    step(row, set) { const f = PENTA[row % PENTA.length]; if (set === 0) { tone(f, 0.16, 'triangle', 0.06, 0, 0.55); } else { tone(f * 1.5, 0.2, 'sine', 0.045, 0, 0.5); } },
+    done() { tone(523, 0.16, 'sine', 0.05, 0, 0.6); tone(659, 0.2, 'triangle', 0.045, 0.08, 0.55); tone(784, 0.28, 'sine', 0.04, 0.16, 0.5); },
+  };
+})();
+
+// ---------------------------------------------------------------- storage (per viewer)
+const SHELF_KEY = 'temari-day/shelf/v1';
+let memShelf = [];
+let storageOK = true;
+function readShelf() { try { const v = JSON.parse(localStorage.getItem(SHELF_KEY) || '[]'); return Array.isArray(v) ? v.filter(validKey) : []; } catch { storageOK = false; return memShelf; } }
+function writeShelf(list) { memShelf = list; try { localStorage.setItem(SHELF_KEY, JSON.stringify(list)); } catch { storageOK = false; } }
+
+// ---------------------------------------------------------------- page state
+const $ = (id) => document.getElementById(id);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let plan = null;
+let steps = [];
+let Ball = null; // 3D view, set once three.js is in
+const inkColor = () => getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#1b1814';
+const accentColor = () => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#8f3d32';
+
+function setTab(which) {
+  const ideas = which === 'ideas';
+  $('tab-day').setAttribute('aria-selected', String(!ideas));
+  $('tab-ideas').setAttribute('aria-selected', String(ideas));
+  $('view-day').hidden = ideas;
+  $('view-ideas').hidden = !ideas;
+}
+$('tab-day').addEventListener('click', () => { setTab('day'); history.replaceState(null, '', `#${plan.key}`); });
+$('tab-ideas').addEventListener('click', () => { setTab('ideas'); history.replaceState(null, '', '#ideas'); });
+
+function renderTag() {
+  $('day-no').textContent = `№ ${plan.n}${plan.key === todayKey() ? ' · сегодня' : ''}`;
+  $('day-date').textContent = human(plan.key);
+  $('cw-name').textContent = plan.cw.name;
+  $('cw-gloss').textContent = `${plan.cw.gloss} · ${plan.layout.name}`;
+  $('prev-day').disabled = plan.n <= 1;
+  $('next-day').disabled = plan.key >= todayKey();
+  const sk = $('skeins');
+  sk.innerHTML = '';
+  const add = (hex, label, wrap) => {
+    const d = document.createElement('div');
+    d.className = 'skein';
+    d.innerHTML = `<span class="ball${wrap ? ' wrap-ball' : ''}" style="background:${hex}"></span><span></span>`;
+    d.lastChild.textContent = label;
+    sk.appendChild(d);
+  };
+  add(plan.cw.wrap, 'намотка', true);
+  for (const c of plan.used) add(c.hex, c.name, false);
+  const m = metersOf(plan).reduce((s, e) => s + e.mm, 0) / 1000;
+  $('f-rows').textContent = `${plan.rows} + ${plan.rows}`;
+  $('f-steps').textContent = String(steps.length);
+  $('f-meters').textContent = m.toFixed(1).replace('.', ',');
+  // ruler marks under the masthead: the 8 divisions of S8
+  const rule = $('rule-top');
+  rule.innerHTML = '';
+  for (let i = 0; i <= 8; i++) { const t = document.createElement('i'); t.style.left = `calc(${(i / 8) * 100}% - 1px)`; rule.appendChild(t); }
+}
+
+function renderSteps(done, now) {
+  const box = $('steps');
+  if (!box.childElementCount || box.dataset.key !== plan.key) {
+    box.innerHTML = '';
+    box.dataset.key = plan.key;
+    steps.forEach((st, i) => {
+      const d = document.createElement('div');
+      d.className = 'step';
+      d.title = `${st.pole ? 'Юг' : 'Север'}, набор ${st.set ? 'B' : 'A'}, круг ${st.row + 1} — ${st.color.name}${st.fresh ? ', новая нить' : ', та же нить'}`;
+      d.innerHTML = `<span class="pole">${st.pole ? 'юг' : 'сев'}</span><i style="background:${st.color.hex}"></i><span>${st.set ? 'B' : 'A'}${st.row + 1}</span>`;
+      box.appendChild(d);
+    });
+  }
+  [...box.children].forEach((el, i) => {
+    el.classList.toggle('done', i < done);
+    el.classList.toggle('now', i === now);
+  });
+  const cur = box.children[now];
+  if (cur && now >= 0) cur.scrollIntoView({ block: 'nearest', inline: 'center', behavior: reduced ? 'auto' : 'smooth' });
+}
+
+function renderRecipe() {
+  $('daisies').innerHTML = [0, 1].map((pole) => `<figure class="daisy" style="margin:0">${daisySVG(plan, pole)}<figcaption>${pole ? 'Южный полюс, вид снаружи' : 'Северный полюс, вид снаружи'}</figcaption></figure>`).join('');
+  const tb = $('rows-table').querySelector('tbody');
+  tb.innerHTML = '';
+  for (let r = 0; r < plan.rows; r++) {
+    const a = plan.colors[0][r], b = plan.colors[1][r];
+    const tr = document.createElement('tr');
+    const cell = (c) => `<span class="sw"><i style="background:${c.hex}"></i>${c.name}</span>`;
+    tr.innerHTML = `<td class="num">${r + 1}</td><td>${cell(a)}</td><td>${cell(b)}</td>`;
+    tb.appendChild(tr);
+  }
+  const ms = metersOf(plan);
+  const max = Math.max(...ms.map((e) => e.mm));
+  $('meters').innerHTML = ms.map((e) => `<div class="meter"><span class="sw"><i style="background:${e.hex}"></i>${e.name}</span><span class="bar"><b style="width:${((e.mm / max) * 100).toFixed(1)}%;background:${e.hex}"></b></span><span class="num">${(e.mm / 1000).toFixed(2).replace('.', ',')} м</span></div>`).join('')
+    + `<p class="note">Новых нитей: ${threadCount(plan)} — нить начинают заново, когда в наборе меняется цвет.</p>`;
+  renderStrip();
+}
+function circumference() { const v = parseFloat(String($('circ').value).replace(',', '.')); return Number.isFinite(v) ? Math.min(50, Math.max(15, v)) : 24; }
+function renderStrip() { $('strip-preview').innerHTML = stripPreviewSVG(circumference() * 10, inkColor(), accentColor()); }
+$('circ').addEventListener('input', renderStrip);
+
+function renderShelf() {
+  const list = readShelf().slice().sort().reverse();
+  const box = $('shelf');
+  if (!list.length) { box.innerHTML = `<p class="shelf-empty">Пока пусто. Сшейте шар дня и положите его на полку.</p>`; }
+  else {
+    box.innerHTML = list.map((k) => { const p = dayPlan(k); return `<a href="#${k}" aria-current="${k === plan.key}" title="${p.cw.name} — ${human(k)}">${daisySVG(p, 0, { size: 88, guides: false })}<span>${p.cw.name}</span><span class="num">${k.slice(8)}.${k.slice(5, 7)}</span></a>`; }).join('');
+  }
+  $('shelf-note').textContent = storageOK ? 'сшитые шары остаются здесь, в этом браузере' : 'браузер не даёт хранить данные — полка живёт до закрытия страницы';
+  const onShelf = list.includes(plan.key);
+  $('to-shelf').textContent = onShelf ? 'На полке' : 'Положить на полку';
+  $('to-shelf').disabled = onShelf || !sewnOnce;
+}
+let sewnOnce = false;
+$('to-shelf').addEventListener('click', () => {
+  const list = readShelf();
+  if (!list.includes(plan.key)) writeShelf([...list, plan.key]);
+  renderShelf();
+  $('status').textContent = `${plan.cw.name} на полке.`;
+});
+
+function openDay(key, { fromHash = false } = {}) {
+  if (!validKey(key)) key = todayKey();
+  plan = dayPlan(key);
+  steps = stepsOf(plan);
+  sewnOnce = readShelf().includes(key);
+  renderTag();
+  renderSteps(steps.length, -1);
+  renderRecipe();
+  renderShelf();
+  if (Ball) Ball.show(plan, steps);
+  else renderFallback();
+  if (!fromHash) history.replaceState(null, '', `#${key}`);
+  $('status').textContent = key === todayKey() ? 'Шар готов. «Шить с начала» — посмотреть, как он собирается по рядам.' : `Архивный день: ${human(key)}.`;
+}
+function renderFallback() {
+  const f = $('fallback');
+  f.hidden = false;
+  f.innerHTML = daisySVG(plan, 0, { size: 400 });
+}
+$('prev-day').addEventListener('click', () => openDay(keyFromNo(plan.n - 1)));
+$('next-day').addEventListener('click', () => openDay(keyFromNo(plan.n + 1)));
+window.addEventListener('hashchange', () => {
+  const h = location.hash.slice(1);
+  if (h === 'ideas') { setTab('ideas'); return; }
+  setTab('day');
+  if (validKey(h) && h !== plan?.key) openDay(h, { fromHash: true });
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !plan) return;
+  const t = todayKey();
+  if (plan.n === dayNo(t) - 1 && !Ball?.busy) openDay(t);
+  else $('next-day').disabled = plan.key >= t;
+});
+
+// ---------------------------------------------------------------- sewing controls (work with or without 3D)
+let speed = 1;
+$('speed').addEventListener('click', () => { speed = speed === 1 ? 3 : 1; $('speed').setAttribute('aria-pressed', String(speed === 3)); });
+$('sound').addEventListener('click', () => { Sound.set(!Sound.on); $('sound').setAttribute('aria-pressed', String(Sound.on)); $('sound').textContent = Sound.on ? 'Звук' : 'Без звука'; });
+function onStep(i) {
+  const st = steps[i];
+  renderSteps(i, i);
+  Sound.step(st.row, st.set);
+  $('status').textContent = `${st.pole ? 'Юг' : 'Север'} · набор ${st.set ? 'B' : 'A'} · круг ${st.row + 1} — ${st.color.name}${st.fresh ? ', новая нить' : ', та же нить продолжает'}`;
+}
+function onDone() {
+  renderSteps(steps.length, -1);
+  Sound.done();
+  sewnOnce = true;
+  renderShelf();
+  $('status').textContent = `Готово: ${steps.length} шагов, ${plan.rows} кругов на каждом полюсе.`;
+}
+$('sew').addEventListener('click', () => {
+  Sound.unlock();
+  if (Ball) Ball.sew(speedRef, onStep, onDone);
+  else fallbackSew();
+});
+$('finish').addEventListener('click', () => { if (Ball) Ball.finish(); else { fallbackStop = true; renderFallback(); onDone(); } });
+const speedRef = { get v() { return speed; } };
+let fallbackStop = false;
+function fallbackSew() {
+  fallbackStop = false;
+  let i = 0;
+  const f = $('fallback');
+  const tick = () => {
+    if (fallbackStop) return;
+    if (i >= steps.length) { onDone(); return; }
+    onStep(i);
+    const st = steps[i];
+    // draw the pole being sewn, up to this step
+    const upto = PARTS.filter((p) => p.pole === st.pole && p.row < plan.rows && (p.row < st.row || (p.row === st.row && p.set <= st.set))).length;
+    f.innerHTML = daisySVG(plan, st.pole, { size: 400, upto });
+    i++;
+    setTimeout(tick, 900 / speed);
+  };
+  tick();
+}
+
+// ---------------------------------------------------------------- downloads (platform capability)
+(async () => {
+  const dl = await window.claude?.use?.('downloads').catch(() => null);
+  if (!dl) return;
+  $('recipe-svg').hidden = false;
+  $('card-png').hidden = false;
+  const save = async (filename, data, done) => {
+    try { await dl.save({ filename, data }); $('status').textContent = done; }
+    catch (e) {
+      if (e?.code === 'declined') $('status').textContent = 'Сохранение отменено.';
+      else if (e?.code === 'rate_limited') $('status').textContent = 'Окно сохранения уже открыто — закройте его и попробуйте ещё раз.';
+      else { $('status').textContent = 'Сохранять файлы здесь нельзя.'; $('recipe-svg').hidden = true; $('card-png').hidden = true; }
+    }
+  };
+  $('recipe-svg').addEventListener('click', () => save(`temari-${plan.key}-recipe.svg`, recipeSVG(plan, circumference() * 10), 'Рецепт отдан на сохранение. Откройте его в браузере и печатайте в масштабе 100 %.'));
+  $('card-png').addEventListener('click', async () => {
+    const blob = await cardPNG();
+    if (blob) save(`temari-${plan.key}.png`, blob, 'Открытка отдана на сохранение.');
+  });
+})();
+
+async function cardPNG() {
+  const W = 1080, H = 1350;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  try { await Promise.all([document.fonts.load('italic 500 96px "Cormorant Garamond"'), document.fonts.load('400 28px "IBM Plex Sans"')]); } catch {}
+  g.fillStyle = '#ece8e1'; g.fillRect(0, 0, W, H);
+  let img = null;
+  if (Ball) img = Ball.snapshot();
+  if (!img) {
+    const svg = daisySVG(plan, 0, { size: 900 });
+    img = await new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); });
+  }
+  g.fillStyle = '#ddd7cd';
+  g.beginPath(); g.roundRect ? g.roundRect(60, 60, 960, 960, 28) : g.rect(60, 60, 960, 960); g.fill();
+  if (img) g.drawImage(img, 60, 60, 960, 960);
+  g.fillStyle = '#1b1814';
+  g.font = 'italic 500 104px "Cormorant Garamond", Georgia, serif';
+  g.fillText(plan.cw.name, 64, 1136);
+  g.font = '400 30px "IBM Plex Sans", system-ui, sans-serif';
+  g.fillStyle = '#4a443d';
+  g.fillText(`${plan.cw.gloss} · ${plan.layout.name}`, 68, 1186);
+  g.fillText(`Тэмари дня № ${plan.n} · ${human(plan.key)} · кику S8, ${plan.rows} кругов`, 68, 1232);
+  let x = 1016;
+  for (const col of [...plan.used].reverse()) { g.beginPath(); g.arc(x, 1120, 22, 0, Math.PI * 2); g.fillStyle = col.hex; g.fill(); g.strokeStyle = 'rgba(27,24,20,.3)'; g.lineWidth = 2; g.stroke(); x -= 56; }
+  g.font = '400 22px "IBM Plex Sans", system-ui, sans-serif';
+  g.fillStyle = '#7c766e';
+  g.fillText('Модель мастерской Темари — геометрия нити по порядку шитья', 68, 1300);
+  return new Promise((res) => c.toBlob((b) => res(b), 'image/png'));
+}
+
+// ---------------------------------------------------------------- start (2D first, 3D when three.js arrives)
+const h0 = location.hash.slice(1);
+openDay(validKey(h0) ? h0 : todayKey(), { fromHash: validKey(h0) });
+if (h0 === 'ideas') setTab('ideas');
+
+try {
+  const THREE = await import('three');
+  Ball = makeBall(THREE);
+  $('fallback').hidden = true;
+  Ball.show(plan, steps);
+} catch (e) {
+  $('drag-hint').textContent = 'Трёхмерный вид не загрузился — показана ромашка';
+  $('pole-n').hidden = $('pole-s').hidden = true;
+}
+
+// ---------------------------------------------------------------- 3D ball
+function makeBall(THREE) {
+  const canvas = $('ball');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 20);
+  camera.position.set(0, 0, 5.1);
+  scene.add(new THREE.HemisphereLight(0xfff4e6, 0x3a3028, 1.1));
+  const key = new THREE.DirectionalLight(0xffffff, 1.9); key.position.set(2.2, 3, 4); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xdfe6ff, 0.45); fill.position.set(-3, -1.5, 2); scene.add(fill);
+
+  const ball = new THREE.Group();
+  scene.add(ball);
+  const narrow = matchMedia('(max-width: 600px)').matches;
+  const SIDES = narrow ? 5 : 6;
+
+  // textures
+  function perle(relief) {
+    const w = 64, h = 64, cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const x2 = cv.getContext('2d'), im = x2.createImageData(w, h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const u = x / w, v = y / h;
+      const phase = 2 * (v - u);
+      const across = Math.abs(((phase % 1) + 1.5) % 1 - 0.5) * 2;
+      const round = Math.cos(across * Math.PI * 0.5);
+      const level = relief ? round : 0.8 + 0.2 * round;
+      const val = Math.round(Math.max(0, Math.min(1, level)) * 255), i = (y * w + x) * 4;
+      im.data[i] = im.data[i + 1] = im.data[i + 2] = val; im.data[i + 3] = 255;
+    }
+    x2.putImageData(im, 0, 0);
+    const t = new THREE.CanvasTexture(cv);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    if (!relief) t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+  const perleMap = perle(false), perleBump = perle(true);
+  function feltTexture(hex, seed) {
+    const w = 1024, h = 512, cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const x2 = cv.getContext('2d');
+    x2.fillStyle = hex; x2.fillRect(0, 0, w, h);
+    const rng = mulberry32(seed);
+    const light = lightness(hex) < 0.5;
+    for (let i = 0; i < 5200; i++) {
+      const x = rng() * w, y = rng() * h, a = (rng() - 0.5) * 1.1, l = 18 + rng() * 60;
+      x2.strokeStyle = light ? `rgba(255,255,255,${0.02 + rng() * 0.05})` : `rgba(0,0,0,${0.02 + rng() * 0.05})`;
+      x2.lineWidth = 0.6 + rng() * 0.8;
+      x2.beginPath(); x2.moveTo(x, y); x2.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); x2.stroke();
+    }
+    const t = new THREE.CanvasTexture(cv);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    return t;
+  }
+  const mariMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.96, metalness: 0 });
+  const mari = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), mariMat);
+  ball.add(mari);
+
+  // tube along a polyline on/above the sphere; flattened like the workshop (height 0.5 of width)
+  const HALF_W = 0.355 / R_MM, HALF_H = HALF_W * 0.5, PITCH = (0.71 * 3.6) / R_MM;
+  function tubeInto(pts, n, halfW, halfH, sides, acc) {
+    const base = acc.pos.length / 3;
+    let s = 0;
+    const P = (i) => [pts[3 * i], pts[3 * i + 1], pts[3 * i + 2]];
+    let prevT = [1, 0, 0];
+    for (let i = 0; i < n; i++) {
+      const p = P(i), a = P(Math.max(0, i - 1)), b = P(Math.min(n - 1, i + 1));
+      if (i > 0) { const q = P(i - 1); s += Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); }
+      let t = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+      let tl = Math.hypot(...t);
+      if (tl < 1e-9) t = prevT; else { t = t.map((v) => v / tl); prevT = t; }
+      const pl = Math.hypot(...p) || 1;
+      const r = [p[0] / pl, p[1] / pl, p[2] / pl];
+      let bn = [t[1] * r[2] - t[2] * r[1], t[2] * r[0] - t[0] * r[2], t[0] * r[1] - t[1] * r[0]];
+      const bl = Math.hypot(...bn) || 1; bn = bn.map((v) => v / bl);
+      const nn = [bn[1] * t[2] - bn[2] * t[1], bn[2] * t[0] - bn[0] * t[2], bn[0] * t[1] - bn[1] * t[0]];
+      for (let k = 0; k <= sides; k++) {
+        const ang = (k / sides) * Math.PI * 2, cx = Math.cos(ang), sy = Math.sin(ang);
+        acc.pos.push(p[0] + bn[0] * cx * halfW + nn[0] * sy * halfH, p[1] + bn[1] * cx * halfW + nn[1] * sy * halfH, p[2] + bn[2] * cx * halfW + nn[2] * sy * halfH);
+        let nx = bn[0] * cx / halfW + nn[0] * sy / halfH, ny = bn[1] * cx / halfW + nn[1] * sy / halfH, nz = bn[2] * cx / halfW + nn[2] * sy / halfH;
+        const nl = Math.hypot(nx, ny, nz) || 1;
+        acc.nor.push(nx / nl, ny / nl, nz / nl);
+        acc.uv.push(s / PITCH, k / sides);
+      }
+    }
+    for (let i = 0; i < n - 1; i++) for (let k = 0; k < sides; k++) {
+      const a = base + i * (sides + 1) + k, b = a + sides + 1;
+      acc.idx.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  }
+  function geometryOf(parts, halfW, halfH, sides) {
+    const acc = { pos: [], nor: [], uv: [], idx: [] };
+    for (const p of parts) tubeInto(p.pts, p.n, halfW, halfH, sides, acc);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(acc.pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(acc.nor, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(acc.uv, 2));
+    g.setIndex(acc.idx);
+    return g;
+  }
+  // thread meshes: one geometry per (pole,row,set), built once
+  const threadGeo = new Map();
+  for (const [k, parts] of GROUPS) threadGeo.set(k, geometryOf(parts, HALF_W, HALF_H, SIDES));
+  // marking: S8 — four meridian great circles and the equator
+  const marking = (() => {
+    const circles = [];
+    const ring = (f) => { const n = 240, pts = new Float32Array(n * 3 + 3); for (let i = 0; i <= n; i++) { const [x, y, z] = f((i / n) * Math.PI * 2); const r = 1 + 0.00262; pts.set([x * r, y * r, z * r], i * 3); } return { pts, n: n + 1 }; };
+    for (let m = 0; m < 4; m++) { const az = (m * Math.PI) / 4; circles.push(ring((t) => [Math.cos(t) * Math.cos(az), Math.sin(t), Math.cos(t) * Math.sin(az)])); }
+    circles.push(ring((t) => [Math.cos(t), 0, Math.sin(t)]));
+    const g = geometryOf(circles, 0.2 / R_MM, 0.1 / R_MM, 4);
+    return new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: new THREE.Color('#c9a86a'), roughness: 0.35, metalness: 0.55 }));
+  })();
+  ball.add(marking);
+
+  const meshes = new Map();
+  const matCache = new Map();
+  const matOf = (hex) => {
+    if (!matCache.has(hex)) matCache.set(hex, new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), map: perleMap, bumpMap: perleBump, bumpScale: 1.2, roughness: 0.46, metalness: 0 }));
+    return matCache.get(hex);
+  };
+
+  // orientation: tilt the working pole toward the eye, spin about it
+  const tilt = { cur: new THREE.Quaternion(), goal: new THREE.Quaternion() };
+  const eye = new THREE.Vector3(0, 0.42, 0.91).normalize();
+  const poleGoal = (pole) => new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, pole === 0 ? 1 : -1, 0), eye);
+  let pole = 0, spin = 0.35, dragging = false, lastX = 0, lastY = 0, pitch = 0, idleSpin = !reduced;
+  tilt.goal.copy(poleGoal(0)); tilt.cur.copy(tilt.goal);
+  const setPole = (p) => { pole = p; tilt.goal.copy(poleGoal(p)); $('pole-n').setAttribute('aria-pressed', String(p === 0)); $('pole-s').setAttribute('aria-pressed', String(p === 1)); };
+  $('pole-n').addEventListener('click', () => setPole(0));
+  $('pole-s').addEventListener('click', () => setPole(1));
+  canvas.addEventListener('pointerdown', (e) => { dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId); idleSpin = false; });
+  canvas.addEventListener('pointermove', (e) => { if (!dragging) return; spin += (e.clientX - lastX) * 0.008 * (pole === 0 ? 1 : -1); pitch = Math.max(-0.9, Math.min(0.9, pitch + (e.clientY - lastY) * 0.006)); lastX = e.clientX; lastY = e.clientY; });
+  const endDrag = () => { dragging = false; };
+  canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
+
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(canvas);
+  resize();
+
+  // sewing state
+  let run = null; // {i, t, onStep, onDone, speed}
+  let order = [];
+  function show(p, st) {
+    run = null;
+    for (const m of meshes.values()) ball.remove(m);
+    meshes.clear();
+    const tex = feltTexture(p.cw.wrap, cyrb53(p.key) % 4294967296);
+    if (mariMat.map) mariMat.map.dispose();
+    mariMat.map = tex; mariMat.needsUpdate = true;
+    order = st.map((s) => {
+      const geo = threadGeo.get(s.key);
+      const m = new THREE.Mesh(geo, matOf(s.color.hex));
+      geo.setDrawRange(0, geo.index.count);
+      ball.add(m);
+      meshes.set(s.key, m);
+      return { m, count: geo.index.count, pole: s.pole };
+    });
+    setPole(0);
+  }
+  function sew(speedRef, onStep, onDone) {
+    for (const o of order) o.m.geometry.setDrawRange(0, 0);
+    run = { i: -1, t: 0, onStep, onDone, speedRef };
+    idleSpin = !reduced;
+    next();
+  }
+  function next() {
+    run.i++;
+    if (run.i >= order.length) { const d = run.onDone; run = null; d(); return; }
+    run.t = 0;
+    if (order[run.i].pole !== pole) setPole(order[run.i].pole);
+    run.onStep(run.i);
+  }
+  function finish() {
+    if (!run) return;
+    for (const o of order) o.m.geometry.setDrawRange(0, o.count);
+    const d = run.onDone; run = null; d();
+  }
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (run && run.i >= 0) {
+      const o = order[run.i];
+      const dur = 1.25 / run.speedRef.v;
+      run.t += dt / dur;
+      const tri = Math.floor((Math.min(1, run.t) * o.count) / 3) * 3;
+      o.m.geometry.setDrawRange(0, tri);
+      if (run.t >= 1) next();
+    }
+    if (idleSpin && !dragging) spin += dt * 0.12 * (pole === 0 ? 1 : -1);
+    tilt.cur.slerp(tilt.goal, 1 - Math.pow(0.02, dt));
+    const qs = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), spin);
+    const qp = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch);
+    ball.quaternion.copy(qp).multiply(tilt.cur).multiply(qs);
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  return {
+    show, sew, finish,
+    get busy() { return !!run; },
+    snapshot() { renderer.render(scene, camera); return canvas; },
+  };
+}
+</script>
