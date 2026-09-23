@@ -228,29 +228,12 @@ export function arcPath(
     new THREE.Vector3(stitch.b[0], stitch.b[1], stitch.b[2]).normalize(),
   ];
   const pts: THREE.Vector3[] = [];
-  const tipSit = (sitAts ?? []).filter((a) => a.t < 0.28 || a.t > 0.72);
   const lift = (t: number, dir: THREE.Vector3) => {
     // Preserve the path's declared lift at every orientation. This legacy
     // stack estimate is not a contact solver; latitude cannot correct it.
-    let bump = Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts));
-    // Tip-near opposite-set kousa: clear the earlier leave crest with a *wide*
-    // soft hill (not STACK_LIFT·0.42 and not a short stackClear shelf).
-    let step = diameter * STACK_LIFT;
-    if (tipSit.length) {
-      const midW = 0.12;
-      let tipBump = 0;
-      for (const a of tipSit) {
-        const d = Math.abs(t - a.t) / midW;
-        if (d >= 1) continue;
-        const u = 1 - d;
-        tipBump = Math.max(tipBump, a.n * u * u * (3 - 2 * u));
-      }
-      if (tipBump > 0) {
-        bump = Math.min(3, Math.max(bump, tipBump));
-        step = diameter * (1.4 + 0.25);
-      }
-    }
-    const extra = uniform + bump * step;
+    // One STACK_LIFT pearl-step at sitAts only — tall tip-kousa hills
+    // (1.65·d) made the staircase elbows on row 4.
+    const extra = uniform + Math.min(3, stackBump(t, sitA, sitB, sitMid, sitMidT, sitAts)) * diameter * STACK_LIFT;
     return dir.clone().multiplyScalar(1 + half * STITCH_FLAT + extra);
   };
   if (via.length === 0) {
@@ -418,7 +401,11 @@ export function sewKagariLegs(
   // collides after snug pack (r0/inner↔r1/inner). Clear crest + pearl/under.
   // Dive still shares a ray with the previous tip's arrive near the ports —
   // surface witness remains; needs under-pile path / shove, not tip-gate.
-  const stackClear = stacked ? pearl * stackDepth + lift0 : 0;
+  // Clear crest + pearl/under. Cap the leave addend so stackClear is not
+  // lift0-on-lift0 with tip hills (row-4 staircases). Leave path still uses
+  // full lift0 below for same-stitch over.
+  const leaveCrest = Math.min(lift0, pearl);
+  const stackClear = stacked ? pearl * stackDepth + leaveCrest : 0;
   const dropFloor = Math.max(fromR - buriedR, toR - buriedR);
   // Keep the dive shorter than tip→port so the V crossing stays on the mari,
   // but not so short the tube folds (full-depth band overlapped stacked rows).
@@ -491,8 +478,8 @@ export function sewKagariLegs(
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     pickupDirection(fromDir, inC1, inC2, inn, t, _a);
-    // Stacked: reach full stackClear early so arrive rides over the previous leave.
-    const stackT = stacked ? Math.min(1, t / 0.35) : t;
+    // Stacked: longer ramp so arrive clears leave without a steep shelf.
+    const stackT = stacked ? Math.min(1, t / 0.55) : t;
     const stack = stackClear * smooth01(stackT);
     const surface = fromR + stack + fromSlope * t * (1 - t) ** 2;
     addLeg(inPts, _a.clone().multiplyScalar(pierceRadius(_a.distanceTo(inn), surface, buriedR)));
@@ -505,8 +492,8 @@ export function sewKagariLegs(
     // Leave does not keep stackClear: rising to an elevated shelf near the tip
     // puts the emerge in the next kai's arrive corridor. Tip-gate bury clears
     // the previous tip; arrive stackClear sits over this leave.
-    // Leave rides over arrive of the *same* tip (lift0). Opposite-set kousa
-    // clears this crest on the later path — not by lowering the leave.
+    // Leave rides over arrive of the *same* tip (full lift0 — pickup sections
+    // need this clearance). Opposite-set layering stays at STACK_LIFT only.
     const lift = lift0 * over * smooth01(_a.distanceTo(toDir) / unitFromMm(1.5));
     const surface = toR + toSlope * t * t * (t - 1) + lift;
     // Arrive: port distance. Stacked leave: require both distance from the
@@ -567,8 +554,8 @@ function clipAroundMark(
 
 /**
  * Soft radial sit on an already-built tip path. Tip join replaces arcPath and
- * would erase opposite-set sitAts; re-apply a wide gentle hill that clears the
- * earlier leave crest (lift0) without a short stackClear shelf.
+ * would erase opposite-set sitAts; re-apply one gentle STACK_LIFT step — not a
+ * leave-crest-tall hill (that made row-4 staircase elbows).
  *
  * `side`: arrive = end of the leg into this tip (sitAts near t=1); leave = start
  * of the outgoing leg (sitAts near t=0). Raising the wrong end built humps at
@@ -586,14 +573,11 @@ function raiseSitAtsNearTip(
   if (!relevant.length) return;
   const n = Math.min(2, Math.max(1, ...relevant.map((a) => a.n)));
   const pearl = unitFromMm(kindMm(kind));
-  // Match arcPath tip-kousa: clear leave crest + thin margin, spread ~10 mm.
-  const amount = pearl * (1.4 + 0.25) * n;
-  const falloff = unitFromMm(10);
+  const amount = pearl * STACK_LIFT * n;
+  const falloff = unitFromMm(REVERSE_HUG_MM);
   const tipU = tip.clone().normalize();
   for (const p of pts) {
     const r = p.length();
-    // Buried pierce stays under the wrap; raise near-surface cord (incl. the
-    // emerge just above the wrap where kousa often sits).
     if (r < 0.995) continue;
     const ang = p.clone().normalize().angleTo(tipU);
     if (ang >= falloff) continue;
