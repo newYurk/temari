@@ -790,7 +790,10 @@ export function stackedArcChainParts(
   }
   const parts: THREE.BufferGeometry[] = [];
   const pearl = unitFromMm(kindMm(kind));
-  const tube = (pts: THREE.Vector3[], buryStart: boolean, buryStop: boolean) => {
+  type Arc = Extract<Stitch, { kind: "arc" }>;
+  // `at` is the stitch the piece is drawn along: the pile stacks it at that
+  // stitch's time and paints it that stitch's colour.
+  const tube = (pts: THREE.Vector3[], buryStart: boolean, buryStop: boolean, at: Arc) => {
     if (pts.length < 2) return;
     let shaped = pts;
     // Parked round: start and stop on the same pin — take the inner U so the
@@ -803,7 +806,7 @@ export function stackedArcChainParts(
       shaped = bite.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
     }
     if (emit) {
-      emit(buryEnds(shaped, kind, buryStart, buryStop), current);
+      emit(buryEnds(shaped, kind, buryStart, buryStop), at);
       return;
     }
     const geo = cachedTube(
@@ -817,7 +820,9 @@ export function stackedArcChainParts(
     parts.push(geo);
   };
   let pts: THREE.Vector3[] = [];
-  let current = chain[0]!;
+  // Last stitch joined into `pts`, and the stitch the held first piece of a kai belongs to.
+  let prev: Arc = chain[0]!;
+  let pendingAt: Arc = chain[0]!;
   let kai0 = chain[0]?.kai;
   let prevBite: { enter: [number, number, number]; exit: [number, number, number] } | undefined;
   let prevTip: "inner" | "outer" | undefined;
@@ -854,19 +859,19 @@ export function stackedArcChainParts(
         const { head, tail } = joinAt(
           pending.slice(), prevStackDepth, prevSitAts, kaiFirst.sitAts,
         );
-        tube(head, false, false);
-        tube(tail, false, false);
+        tube(head, false, false, prev);
+        tube(tail, false, false, pendingAt);
         pending = null;
         pts = [];
         return;
       }
     }
     if (pending) {
-      tube(pending, emerge, false);
+      tube(pending, emerge, false, pendingAt);
       pending = null;
-      if (pts.length >= 2) tube(pts, false, true);
+      if (pts.length >= 2) tube(pts, false, true, prev);
     } else if (pts.length >= 2) {
-      tube(pts, emerge, true);
+      tube(pts, emerge, true, prev);
     }
     pts = [];
   };
@@ -885,15 +890,15 @@ export function stackedArcChainParts(
         const { head, tail } = splitJoinAroundMark(
           pts, piece, mark, kind, prevBite, prevStackDepth, prevSitAts, sitAts, flat,
         );
-        if (pending === null) pending = head;
-        else tube(head, false, false);
+        if (pending === null) [pending, pendingAt] = [head, prev];
+        else tube(head, false, false, prev);
         pts = tail;
         emerge = false;
         return;
       }
       const { head, tail } = joinAt(piece, 0, sitAts, sitAts);
-      if (pending === null) pending = head;
-      else tube(head, false, false);
+      if (pending === null) [pending, pendingAt] = [head, prev];
+      else tube(head, false, false, prev);
       pts = tail;
       emerge = false;
       return;
@@ -903,7 +908,6 @@ export function stackedArcChainParts(
   };
   for (let i = 0; i < chain.length; i++) {
     const s = chain[i]!;
-    current = s;
     const piece = arcPath(s, kind);
     if (s.kai !== kai0 && pts.length) {
       const next0 = piece[0];
@@ -911,7 +915,7 @@ export function stackedArcChainParts(
         && samePin(pts[pts.length - 1]!, next0));
       if (resume) {
         if (pending) {
-          tube(pending, emerge, false);
+          tube(pending, emerge, false, pendingAt);
           pending = null;
         }
         emerge = false;
@@ -930,6 +934,7 @@ export function stackedArcChainParts(
     if (piece.length < 2) continue;
     if (!kaiFirst) kaiFirst = s;
     joinPiece(piece, s.sitAts);
+    prev = s;
     prevBite = s.bite;
     prevTip = s.tip;
     prevStackDepth = stackDepthOf(s);
@@ -1174,9 +1179,19 @@ export function pileParts(stitches: Stitch[], kind: ThreadKind): PilePart[] {
     .map((s) => ({ ...s, sitA: 0, sitB: 0, sitMid: 0, sitMidT: undefined, sitAts: undefined }));
   const order = new Map<Extract<Stitch, { kind: "arc" }>, number>(arcs.map((s, i) => [s, i]));
   const emitted: { color: number; stitch: Extract<Stitch, { kind: "arc" }>; at: number; seq: number; pts: THREE.Vector3[] }[] = [];
-  for (const chain of groupWorkingThreads(arcs)) {
-    stackedArcChainParts(chain, kind, (pts, at) =>
-      emitted.push({ color: at.color, stitch: at, at: order.get(at) ?? 0, seq: emitted.length, pts }));
+  // A new colour is a new thread (spec/thread-identity.md): chain each colour
+  // on its own, as the old path does by drawing one colour at a time.
+  const byColor = new Map<number, Extract<Stitch, { kind: "arc" }>[]>();
+  for (const s of arcs) {
+    const list = byColor.get(s.color);
+    if (list) list.push(s);
+    else byColor.set(s.color, [s]);
+  }
+  for (const list of byColor.values()) {
+    for (const chain of groupWorkingThreads(list)) {
+      stackedArcChainParts(chain, kind, (pts, at) =>
+        emitted.push({ color: at.color, stitch: at, at: order.get(at) ?? 0, seq: emitted.length, pts }));
+    }
   }
   emitted.sort((a, b) => a.at - b.at || a.seq - b.seq);
   const half = unitFromMm(kindMm(kind)) * 0.5;
