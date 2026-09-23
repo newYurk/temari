@@ -136,4 +136,17 @@ describe('computed lower kagari: full-path and refinement acceptance', () => {
     assert.throws(() => computeLowerKagari({}, { controlCounts: [60, 257] }), RangeError);
     assert.throws(() => computeLowerKagari({}, { spansPerBendRadius: 0 }), RangeError);
   });
+
+  it('preserves a failed fixed-port diagnosis when no resolution returns a curve', {
+    todo: 'The ladder currently samples empty curves and throws; handle missing candidates before refinement comparison.',
+  }, () => {
+    // The .02 mm inflation reaches the fixed exit port. This is infeasible
+    // boundary data, so the public result must be rejected, not an exception
+    // from shapeDifferenceMm. Keep the actual solver failure for diagnosis.
+    const infeasible = computeLowerKagari({}, { numericalClearanceMm: .02 });
+    assert.equal(infeasible.status, 'rejected');
+    assert.ok(infeasible.checks.resolutions.every(check => check.result.status === 'failed'
+      && check.result.diagnostics.some(diagnostic => diagnostic.code === 'invalid-port')));
+    assert.ok(infeasible.checks.refinements.every(check => check.shapeDifferenceMm === Infinity));
+  });
 });
