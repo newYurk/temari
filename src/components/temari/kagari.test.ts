@@ -153,7 +153,6 @@ describe("kagari recipe atom", () => {
       byLine.set(k, slot);
     }
     for (const [k, slot] of byLine) {
-      assert.equal(slot.inner + slot.outer, slot.inner + slot.outer);
       assert.ok(slot.inner === 0 || slot.outer === 0, `one set uses a line as inner or outer, not mixed: ${k}`);
     }
   });
@@ -229,6 +228,8 @@ describe("kagari recipe atom", () => {
     assert.ok(dist(innerN.lay.to, innerN.mark.at) < 1e-9, "flanks still meet on the mark");
   });
 
+  // Legacy display regression, not a physical law for an actual needle pass.
+  // Replace this expectation with the renderer when that construction retires.
   it("working start/stop scoops under the wrap, ~2 mm, no chord", () => {
     const at: [number, number, number] = [0, Math.cos(0.4), -Math.sin(0.4)];
     const from: [number, number, number] = [0, Math.cos(0.55), -Math.sin(0.55)];

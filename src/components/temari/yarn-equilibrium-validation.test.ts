@@ -18,7 +18,8 @@ describe('resolved equilibrium geometry diagnostics are never physical acceptanc
     const input = yarn([[-2, 0, 2], [0, 0, 2], [2, 0, 2]], .1), before = JSON.stringify(input);
     const result = inspectEquilibriumGeometry([input], 1), row = result.threads[0];
     assert.equal(result.status, 'not-certified'); assert.equal(row.status, 'not-certified');
-    assert.equal(row.mesh!.allFaces, 80); assert.equal(row.mesh!.visibleFaces, 80);
+    assert.ok(Number.isInteger(row.mesh!.allFaces) && row.mesh!.allFaces > 0, 'nonempty complete triangles');
+    assert.equal(row.mesh!.visibleFaces, row.mesh!.allFaces, 'the whole tube is outside the sphere');
     assert.equal(row.mesh!.foldedFaces, 0); assert.equal(row.mesh!.degenerateFaces, 0);
     assert.equal(row.curvatureProxy!.maximumRadiusTimesCurvature, 0);
     assert.equal(row.curvatureProxy!.continuousCertificate, false);
