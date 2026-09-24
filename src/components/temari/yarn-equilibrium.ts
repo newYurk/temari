@@ -36,7 +36,16 @@ export type EquilibriumYarn = {
    * The remaining material reserve is in the ledger; the reservoir's spatial path
    * outside the observed rods is not represented. T is the applied reservoir
    * force, not a proven axial force everywhere. T and B are engineering values. */
-  feed?: { tensionN: number; availableLengthMm: number };
+  feed?: { tensionN: number; availableLengthMm: number;
+    /** Numerical mesh gauge, NOT a yarn constitutive law. Equal chord lengths
+     * between successive held spatial nodes prevent sampling-point collapse.
+     * At finite resolution this changes the polygon approximation, so mesh
+     * reactions and the ungauged physical residual are reported separately.
+     * Refinement remains necessary. End nodes must be held; default is free
+     * vertices. Bounds attached to nodes must describe the intended spatial
+     * region after redistribution, not stale material-coordinate permissions. */
+    discretization?: 'free-vertices' | 'equal-chord';
+  };
   /** Per finite segment, AXIS forbidden radius. Independent of node overrides. */
   segmentMinimumSphereRadiiMm?: readonly number[];
 };
@@ -46,6 +55,8 @@ export type YarnEquilibriumOptions = {
   gradientToleranceN?: number;
   penetrationToleranceMm?: number;
   complementarityToleranceNmm?: number;
+  /** Numerical equal-chord mesh constraint tolerance, independent of contacts. */
+  meshSpacingToleranceMm?: number;
   initialPenaltyNPerMm?: number;
   maxPenaltyNPerMm?: number;
   /** Exclude local pairs of material points closer along rest arclength
@@ -88,9 +99,21 @@ export type YarnMaterialLedger = {
   /** Fixed geometry nodes in this mode hold position, not a material coordinate. */
   heldNodesPermitSliding: true;
 };
+export type YarnMeshConstraint = {
+  id: string; kind: 'equal-chord'; threadId: string; nodeIndex: number;
+  /** Signed current left chord minus right chord. */
+  errorMm: number;
+  /** Signed numerical gauge reaction, NOT a yarn or contact force. */
+  multiplierN: number;
+};
 export type YarnEquilibriumResiduals = {
   maxPenetrationMm: number;
+  /** Stationarity of the chosen discrete problem, including mesh reactions. */
   freeGradientNormN: number;
+  /** Physical Lagrangian gradient before numerical mesh reactions. These
+   * reactions need not vanish at finite resolution; inspect mesh refinement. */
+  freePhysicalGradientNormN: number;
+  maxMeshSpacingErrorMm: number;
   maxComplementarityNmm: number;
   maxRelativeStretch: number;
   maxMaterialOverdrawMm: number;
@@ -112,6 +135,8 @@ export type YarnEquilibriumResult = {
   residuals: YarnEquilibriumResiduals;
   contacts: YarnContact[];
   contactMultipliersN: number[];
+  meshConstraints: YarnMeshConstraint[];
+  meshMultipliersN: number[];
   gradientN: PointMm[][];
   iterations: number;
   trace: YarnEquilibriumTrace[];
@@ -121,6 +146,7 @@ export type YarnEquilibriumResult = {
 export const YARN_EQUILIBRIUM_DEFAULTS = Object.freeze({
   maxOuterIterations: 12, maxIterationsPerOuter: 250,
   gradientToleranceN: 1e-7, penetrationToleranceMm: 1e-5,
+  meshSpacingToleranceMm: 1e-6,
   complementarityToleranceNmm: 1e-6, initialPenaltyNPerMm: 10,
   maxPenaltyNPerMm: 1e8, selfExclusionRadii: Math.PI, maxContactPairs: 50000,
 });
@@ -128,7 +154,9 @@ type Options = Required<YarnEquilibriumOptions>;
 type V = [number, number, number];
 type Segment = { a: number; b: number; thread: number; index: number; rest: number; offset: number; radius: number };
 type Pair = [number, number];
-type Constraint = { contact: Omit<YarnContact, 'multiplierN'>; derivatives: { node: number; value: V }[] };
+type Constraint = { contact: Omit<YarnContact, 'multiplierN' | 'kind'> & { kind: YarnContact['kind'] | 'mesh-equal-chord' };
+  mesh?: { thread: number; nodeIndex: number };
+  derivatives: { node: number; value: V }[] };
 const sub = (a: PointMm, b: PointMm): V => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a: readonly number[], b: readonly number[]) => a.reduce((s, x, i) => s + x * b[i], 0);
 const length = (a: readonly number[]) => Math.sqrt(dot(a, a));
@@ -152,6 +180,9 @@ function prepare(input: YarnEquilibriumInput) {
     if (!yarn.id || !positive(yarn.radiusMm) || !positive(yarn.axialStiffnessN) || !positive(yarn.bendingStiffnessNmm2)
       || yarn.nodes.length < 2 || yarn.restLengthsMm.length !== yarn.nodes.length - 1 || !yarn.restLengthsMm.every(positive)) throw new RangeError(`Invalid yarn ${yarn.id}`);
     if (yarn.feed && (!positive(yarn.feed.tensionN) || !positive(yarn.feed.availableLengthMm))) throw new RangeError('Feed needs positive finite tension and available material');
+    if (yarn.feed?.discretization !== undefined && !['free-vertices', 'equal-chord'].includes(yarn.feed.discretization)) throw new RangeError('Unknown feed discretization');
+    if (yarn.feed?.discretization === 'equal-chord' && (!yarn.nodes[0].fixed || !yarn.nodes.at(-1)!.fixed))
+      throw new RangeError('Equal-chord mesh needs held observation endpoints');
     if (yarn.segmentMinimumSphereRadiiMm && (yarn.segmentMinimumSphereRadiiMm.length !== yarn.restLengthsMm.length
       || yarn.segmentMinimumSphereRadiiMm.some(r => !Number.isFinite(r) || r < 0))) throw new RangeError('Invalid segment axis exclusion radii');
     const start = positions.length; starts.push(start);
@@ -316,6 +347,21 @@ function evaluate(prep: Prepared, points: V[]) {
       pointsMm: [points[prep.starts[ti]], points[prep.starts[ti] + yarn.nodes.length - 1]],
       immovable: yarn.nodes.every(n => n.fixed), normalDefined: true }, derivatives });
   }
+  // These are equality constraints on the DISCRETIZATION. They are appended
+  // after physical contacts for stable replay, and exposed in a separate list.
+  // No stretching energy, rest length reset, or material source is introduced.
+  for (const [ti, yarn] of prep.input.threads.entries()) if (yarn.feed?.discretization === 'equal-chord') {
+    for (let i = 1; i < yarn.nodes.length - 1; i++) {
+      if (yarn.nodes[i].fixed) continue; // Held ports split mesh intervals.
+      const node = prep.starts[ti] + i, left = sub(points[node], points[node - 1]), right = sub(points[node + 1], points[node]);
+      const Lleft = length(left), Lright = length(right), t0 = scale(left, 1 / Lleft), t1 = scale(right, 1 / Lright);
+      constraints.push({ mesh: { thread: ti, nodeIndex: i },
+        contact: { id: `mesh:${ti}:${i}`, kind: 'mesh-equal-chord', gapMm: Lleft - Lright,
+          pointsMm: [points[node - 1], points[node + 1]], immovable: false, normalDefined: Lleft > 1e-9 && Lright > 1e-9 },
+        derivatives: [{ node: node - 1, value: scale(t0, -1) }, { node, value: sub(t0, scale(t1, -1)) },
+          { node: node + 1, value: scale(t1, -1) }] });
+    }
+  }
   valid = valid && Number.isFinite(stretchNmm) && Number.isFinite(bendNmm) && Number.isFinite(tensionNmm) && Number.isFinite(stretchNmm + bendNmm + tensionNmm)
     && laidLengths.every(Number.isFinite)
     && Number.isFinite(maxRelativeStretch) && gradient.every(p => p.every(Number.isFinite))
@@ -330,7 +376,9 @@ function augmented(prep: Prepared, e: Evaluation, multipliers: readonly number[]
   let merit = e.energy.totalNmm;
   for (let i = 0; i < e.constraints.length; i++) {
     const c = e.constraints[i], lambda = multipliers[i] ?? 0;
-    const force = c.contact.excludedLocal ? 0 : penalty ? Math.max(0, lambda - penalty * c.contact.gapMm) : lambda; effective.push(force);
+    const force = c.contact.excludedLocal ? 0 : penalty
+      ? c.mesh ? lambda - penalty * c.contact.gapMm : Math.max(0, lambda - penalty * c.contact.gapMm) : lambda;
+    effective.push(force);
     if (penalty) merit += (force * force - lambda * lambda) / (2 * penalty);
     for (const d of c.derivatives) for (let k = 0; k < 3; k++) gradient[d.node][k] -= force * d.value[k];
   }
@@ -347,26 +395,42 @@ function residuals(prep: Prepared, e: Evaluation, lambda: readonly number[]): Ya
   // Infinity is an unavailable-residual sentinel on numerical failure, never
   // a claim of infinite physical penetration or a zero-residual equilibrium.
   if (!e.valid || !finiteAugmented(a)) return { maxPenetrationMm: Infinity, freeGradientNormN: Infinity,
+    freePhysicalGradientNormN: Infinity, maxMeshSpacingErrorMm: Infinity,
     maxComplementarityNmm: Infinity, maxRelativeStretch: e.maxRelativeStretch, maxMaterialOverdrawMm: Infinity };
-  return { maxPenetrationMm: Math.max(0, ...e.constraints.filter(c => c.contact.kind !== 'feed-length-budget').map(c => -c.contact.gapMm)),
+  const physical = augmented(prep, e, lambda.map((value, i) => e.constraints[i].mesh ? 0 : value));
+  return { maxPenetrationMm: Math.max(0, ...e.constraints.filter(c => !c.mesh && c.contact.kind !== 'feed-length-budget').map(c => -c.contact.gapMm)),
     maxMaterialOverdrawMm: Math.max(0, ...e.constraints.filter(c => c.contact.kind === 'feed-length-budget').map(c => -c.contact.gapMm)),
-    freeGradientNormN: length(a.flat), maxRelativeStretch: e.maxRelativeStretch,
-    maxComplementarityNmm: Math.max(0, ...e.constraints.map((c, i) => c.contact.excludedLocal ? 0 : Math.abs((lambda[i] ?? 0) * c.contact.gapMm))) };
+    maxMeshSpacingErrorMm: Math.max(0, ...e.constraints.filter(c => c.mesh).map(c => Math.abs(c.contact.gapMm))),
+    freeGradientNormN: length(a.flat), freePhysicalGradientNormN: length(physical.flat), maxRelativeStretch: e.maxRelativeStretch,
+    maxComplementarityNmm: Math.max(0, ...e.constraints.map((c, i) => c.mesh || c.contact.excludedLocal ? 0 : Math.abs((lambda[i] ?? 0) * c.contact.gapMm))) };
 }
 const passes = (r: YarnEquilibriumResiduals, o: Options) => Object.values(r).every(Number.isFinite)
   && r.maxPenetrationMm <= o.penetrationToleranceMm
   && r.maxMaterialOverdrawMm === 0
+  && r.maxMeshSpacingErrorMm <= o.meshSpacingToleranceMm
   && r.freeGradientNormN <= o.gradientToleranceN && r.maxComplementarityNmm <= o.complementarityToleranceNmm;
+
+function physicalContacts(e: Evaluation, lambda: readonly number[]): YarnContact[] {
+  return e.constraints.flatMap((c, i) => c.mesh ? [] : [{ ...c.contact, multiplierN: lambda[i] } as YarnContact]);
+}
+function meshConstraints(prep: Prepared, e: Evaluation, lambda: readonly number[]): YarnMeshConstraint[] {
+  return e.constraints.flatMap((c, i) => c.mesh ? [{ id: c.contact.id, kind: 'equal-chord' as const,
+    threadId: prep.input.threads[c.mesh.thread].id, nodeIndex: c.mesh.nodeIndex, errorMm: c.contact.gapMm, multiplierN: lambda[i] }] : []);
+}
 
 /** Evaluate the same physical energy and finite contacts without solving. The
  * optional multipliers reproduce a solver result's Lagrangian residual. */
-export function evaluateYarnEquilibrium(input: YarnEquilibriumInput, contactMultipliersN?: readonly number[]) {
-  const prep = prepare(input), e = evaluate(prep, prep.positions), lambda = contactMultipliersN ?? e.constraints.map(() => 0);
-  if (lambda.length !== e.constraints.length || lambda.some(x => !Number.isFinite(x) || x < 0)) throw new RangeError('Invalid contact multipliers');
+export function evaluateYarnEquilibrium(input: YarnEquilibriumInput, contactMultipliersN?: readonly number[], meshMultipliersN?: readonly number[]) {
+  const prep = prepare(input), e = evaluate(prep, prep.positions);
+  const physicalCount = e.constraints.filter(c => !c.mesh).length, meshCount = e.constraints.length - physicalCount;
+  const contactLambda = contactMultipliersN ?? Array(physicalCount).fill(0), meshLambda = meshMultipliersN ?? Array(meshCount).fill(0);
+  if (contactLambda.length !== physicalCount || contactLambda.some(x => !Number.isFinite(x) || x < 0)) throw new RangeError('Invalid contact multipliers');
+  if (meshLambda.length !== meshCount || meshLambda.some(x => !Number.isFinite(x))) throw new RangeError('Invalid mesh multipliers');
+  const lambda = [...contactLambda, ...meshLambda];
   const r = residuals(prep, e, lambda);
   return { numericallyValid: e.valid && finiteAugmented(augmented(prep, e, lambda)) && Object.values(r).every(Number.isFinite), energy: e.energy, residuals: r, materialLedger: e.materialLedger,
     gradientN: input.threads.map((t, i) => augmented(prep, e, lambda).gradient.slice(prep.starts[i], prep.starts[i] + t.nodes.length)),
-    contacts: e.constraints.map((c, i) => ({ ...c.contact, multiplierN: lambda[i] })) };
+    contacts: physicalContacts(e, lambda), meshConstraints: meshConstraints(prep, e, lambda) };
 }
 
 /** Positive, rotation-covariant numerical preconditioner. It changes SEARCH
@@ -381,7 +445,7 @@ function contactPreconditioner(prep: Prepared, points: V[], e: Evaluation, effec
     const bending = yarn.bendingStiffnessNmm2 / (L * L * L);
     return { a: s.a, b: s.b, k: (yarn.feed ? yarn.feed.tensionN / L : yarn.axialStiffnessN / s.rest) + 4 * bending };
   });
-  const active = e.constraints.filter((c, i) => effective[i] > 0 && !c.contact.excludedLocal);
+  const active = e.constraints.filter((c, i) => c.mesh || effective[i] > 0 && !c.contact.excludedLocal);
   const scaleNPerMm = Math.max(1e-12, ...edges.map(s => s.k));
   const regularization = scaleNPerMm * 1e-8;
   const diagonal = points.map(() => regularization);
@@ -436,7 +500,8 @@ export function solveYarnEquilibrium(input: YarnEquilibriumInput): YarnEquilibri
         ...(t.segmentMinimumSphereRadiiMm ? { segmentMinimumSphereRadiiMm: [...t.segmentMinimumSphereRadiiMm] } : {}),
         nodes: t.nodes.map((n, j) => ({ ...n, positionMm: [...points[prep.starts[i] + j]] as V })) })),
       energy: e.energy, residuals: r, materialLedger: e.materialLedger,
-      contacts: e.constraints.map((c, i) => ({ ...c.contact, multiplierN: lambda[i] })), contactMultipliersN: [...lambda],
+      contacts: physicalContacts(e, lambda), contactMultipliersN: lambda.filter((_, i) => !e.constraints[i].mesh),
+      meshConstraints: meshConstraints(prep, e, lambda), meshMultipliersN: lambda.filter((_, i) => !!e.constraints[i].mesh),
       gradientN: input.threads.map((t, i) => a.gradient.slice(prep.starts[i], prep.starts[i] + t.nodes.length)), iterations, trace, diagnostics };
   };
   const obstacles = () => {
@@ -445,9 +510,9 @@ export function solveYarnEquilibrium(input: YarnEquilibriumInput): YarnEquilibri
       const unavoidable = held.slice(1).reduce((sum, p, i) => sum + length(sub(p, held[i])), 0);
       if (unavoidable > yarn.feed.availableLengthMm) { status = 'rejected'; diagnostics.push(`Available material for ${yarn.id} is below the straight-distance lower bound between held spatial ports.`); return true; }
     }
-    const impossible = e.constraints.find(c => c.contact.immovable && c.contact.gapMm < -o.penetrationToleranceMm);
+    const impossible = e.constraints.find(c => !c.mesh && c.contact.immovable && c.contact.gapMm < -o.penetrationToleranceMm);
     if (impossible) { status = 'rejected'; diagnostics.push(`Fixed material violates ${impossible.contact.id}; moving free nodes cannot clear this witness.`); return true; }
-    const singular = e.constraints.find((c, i) => !c.contact.normalDefined
+    const singular = e.constraints.find((c, i) => !c.mesh && !c.contact.normalDefined
       && (c.contact.gapMm <= o.penetrationToleranceMm || (lambda[i] ?? 0) > 0));
     if (singular) { diagnostics.push(`Undefined contact normal at ${singular.contact.id}; supply a noncoincident, physically ordered seed.`); return true; }
     return false;
@@ -457,7 +522,8 @@ export function solveYarnEquilibrium(input: YarnEquilibriumInput): YarnEquilibri
   // An inexact AL forcing sequence, not a physical acceptance tolerance. Work
   // chunks that miss this target continue the SAME subproblem and multiplier.
   let innerTarget = Math.max(o.gradientToleranceN * .5, length(augmented(prep, e, lambda, penalty).flat) * .1);
-  let previousViolation = Math.max(residuals(prep, e, lambda).maxPenetrationMm, residuals(prep, e, lambda).maxMaterialOverdrawMm);
+  const violationSize = (r: YarnEquilibriumResiduals) => Math.max(r.maxPenetrationMm, r.maxMaterialOverdrawMm, r.maxMeshSpacingErrorMm);
+  let previousViolation = violationSize(residuals(prep, e, lambda));
   const history: { s: number[]; y: number[]; rho: number }[] = [];
   for (let outer = 0; outer < o.maxOuterIterations; outer++) {
     let a = augmented(prep, e, lambda, penalty);
@@ -502,10 +568,11 @@ export function solveYarnEquilibrium(input: YarnEquilibriumInput): YarnEquilibri
     if (e.valid && finiteAugmented(a) && passes(r, o)) { status = 'converged'; return finish(); }
     if (lineSearchFailed) { diagnostics.push('Inner line search failed after history reset and steepest-descent fallback; multipliers and penalty were not advanced.'); return finish(); }
     if (subproblemConverged) {
-      const violation = Math.max(r.maxPenetrationMm, r.maxMaterialOverdrawMm);
+      const violation = violationSize(r);
       // Escalate only if a sufficiently minimized subproblem fails to contract
       // its constraint violation. This is a numerical forcing rule, not physics.
-      if ((r.maxPenetrationMm > o.penetrationToleranceMm || r.maxMaterialOverdrawMm > 0) && violation > .25 * previousViolation)
+      if ((r.maxPenetrationMm > o.penetrationToleranceMm || r.maxMaterialOverdrawMm > 0 || r.maxMeshSpacingErrorMm > o.meshSpacingToleranceMm)
+        && violation > .25 * previousViolation)
         penalty = Math.min(o.maxPenaltyNPerMm, penalty * 5);
       previousViolation = violation;
       innerTarget = Math.max(o.gradientToleranceN * .5, innerTarget * .2);

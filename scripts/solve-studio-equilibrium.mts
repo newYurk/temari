@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { buildStudioEquilibriumInput } from '../src/components/temari/studio-equilibrium.ts';
 import { evaluateYarnEquilibrium, solveYarnEquilibrium, YARN_EQUILIBRIUM_DEFAULTS } from '../src/components/temari/yarn-equilibrium.ts';
+import { inspectEquilibriumGeometry } from '../src/components/temari/yarn-equilibrium-validation.ts';
 import { runtimeModelSource } from './lib/stitch-diagram-data.ts';
 
 const root = resolve(import.meta.dirname, '..');
@@ -10,6 +11,8 @@ const portArg = process.argv.find(a => a.startsWith('--ports='));
 if (portArg && portArg !== '--ports=render' && portArg !== '--ports=recipe') throw new RangeError('Use --ports=render or --ports=recipe.');
 if (process.argv.some(a => a.startsWith('--available=')) && !process.argv.some(a => a.startsWith('--feed=')))
   throw new RangeError('--available requires an explicit --feed tension.');
+if (process.argv.includes('--equal-chord') && !process.argv.some(a => a.startsWith('--feed=')))
+  throw new RangeError('--equal-chord is a numerical parametrization for the explicit sliding feed control.');
 const arg = (name: string, fallback: number) => Number(process.argv.find(a => a.startsWith(`--${name}=`))?.split('=')[1] ?? fallback);
 const readSource = () => runtimeModelSource(root, 'scripts/solve-studio-equilibrium.mts', 'package-lock.json');
 const source = readSource();
@@ -18,12 +21,16 @@ const fixture = buildStudioEquilibriumInput({ stepMm: arg('step', .45), radiusMm
   portSource: process.argv.includes('--ports=recipe') ? 'recipe' : 'render',
   ...(process.argv.some(a => a.startsWith('--feed=')) ? { feedTensionN: arg('feed', .05), availableLengthMm: arg('available', 40) } : {}),
 });
+if (process.argv.includes('--equal-chord')) {
+  for (const thread of fixture.input.threads) thread.feed!.discretization = 'equal-chord';
+}
 const before = evaluateYarnEquilibrium(fixture.input);
 const start = performance.now();
 const solverOptions = { ...YARN_EQUILIBRIUM_DEFAULTS, maxIterationsPerOuter: arg('iterations', 250),
   maxOuterIterations: arg('outer', 12), penetrationToleranceMm: 1e-4, gradientToleranceN: 1e-5 };
 const result = solveYarnEquilibrium({ ...fixture.input, options: solverOptions });
-const rechecked = evaluateYarnEquilibrium({ ...fixture.input, threads: result.threads }, result.contactMultipliersN);
+const rechecked = evaluateYarnEquilibrium({ ...fixture.input, threads: result.threads }, result.contactMultipliersN, result.meshMultipliersN);
+const geometryInspection = inspectEquilibriumGeometry(result.threads, fixture.bodyRadiusMm);
 const max = (values: number[]) => Math.max(0, ...values);
 const sameSource = readSource().digest === source.digest;
 if (!sameSource) throw new Error('Solver sources changed during execution. Repeat on an unchanged snapshot.');
@@ -39,7 +46,9 @@ const summary = {
   heightsAfterMm: result.threads.map(t => max(t.nodes.map(n => Math.hypot(...n.positionMm) - fixture.bodyRadiusMm))),
   diagnostics: result.diagnostics,
   materialLedger: result.materialLedger,
-  acceptance: 'Numerical local mechanics only. No capture, sewing history, section deformation, mesh refinement, or craft acceptance is implied.',
+  physicalAcceptance: geometryInspection.status === 'invalid' ? 'rejected-geometry' : 'not-certified',
+  geometryInspection,
+  acceptance: 'Status describes discrete stationarity, including the declared mesh gauge. Mesh reactions are not yarn forces. No physical, sewing-history, refinement, or craft acceptance is implied; zero folded faces alone is not a certificate.',
 };
 const out = resolve(root, process.argv.find(a => a.startsWith('--out='))?.slice(6) ?? 'screenshots/equilibrium/studio-equilibrium.json');
 mkdirSync(dirname(out), { recursive: true });
@@ -47,3 +56,6 @@ writeFileSync(out, JSON.stringify({ source: { ...source, nodeVersion: process.ve
   revision: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', cwd: root }).trim() }, solverOptions, fixture, result, summary }, null, 2));
 console.log(JSON.stringify({ artifact: out, sourceDigest: source.digest, ...summary }, null, 2));
 if (process.argv.includes('--assert-converged') && result.status !== 'converged') process.exitCode = 1;
+// These are independent gates. A discrete stationary point can still have an
+// invalid finite section; neither flag certifies physical or craft acceptance.
+if (process.argv.includes('--assert-geometry') && geometryInspection.status === 'invalid') process.exitCode = 1;

@@ -305,4 +305,86 @@ describe('quasistatic discrete circular yarn: explicit elastic/contact engineeri
     for (const feed of [{ tensionN: 0, availableLengthMm: 9 }, { tensionN: .1, availableLengthMm: Infinity }])
       assert.throws(() => solveYarnEquilibrium({ threads: [{ ...thread, feed }] }), /Feed needs/);
   });
+
+  it('redistributes collapsed feed sampling without physical springs or moving held ports', () => {
+    const thread = { ...yarn('clustered', [[0, 0, 0], [.001, 0, 0], [.1, 0, 0], [2, 0, 0], [2.001, 0, 0], [6, 0, 0]],
+      [9, .03, 4, 12, .07], [true, false, false, true, false, true]),
+      feed: { tensionN: .2, availableLengthMm: 8, discretization: 'equal-chord' as const } };
+    const input = { threads: [thread] }, before = evaluateYarnEquilibrium(input), result = solveYarnEquilibrium(input);
+    // A straight strand already has zero physical force at every interior
+    // point, however badly its sample points cluster. Mesh residual is separate.
+    near(before.residuals.freePhysicalGradientNormN, 0);
+    assert.ok(before.residuals.maxMeshSpacingErrorMm > 3.9);
+    assert.equal(result.status, 'converged', JSON.stringify(result.residuals));
+    const expected = [0, 2 / 3, 4 / 3, 2, 4, 6];
+    result.threads[0].nodes.forEach((node, i) => near(distance(node.positionMm, [expected[i], 0, 0]), 0, 1e-6));
+    near(result.energy.totalNmm, before.energy.totalNmm); near(result.energy.tensionNmm, 1.2);
+    near(result.energy.stretchNmm, 0); near(result.energy.bendNmm, 0);
+    near(result.residuals.freePhysicalGradientNormN, 0);
+    assert.ok(result.residuals.maxMeshSpacingErrorMm <= 1e-6);
+    for (const i of [0, 3, 5]) assert.deepEqual(result.threads[0].nodes[i], thread.nodes[i]);
+    assert.deepEqual(result.threads[0].restLengthsMm, thread.restLengthsMm);
+    assert.equal(result.meshConstraints.length, 3);
+    assert.equal(result.contacts.length, before.contacts.length);
+    assert.ok(result.contacts.every(c => !c.id.startsWith('mesh:')));
+    const replay = evaluateYarnEquilibrium({ threads: result.threads }, result.contactMultipliersN, result.meshMultipliersN);
+    assert.deepEqual(replay.residuals, result.residuals);
+    assert.deepEqual(replay.meshConstraints, result.meshConstraints);
+    if (result.materialLedger[0].mode !== 'sliding-inextensible-feed') assert.fail();
+    near(result.materialLedger[0].reserveLengthMm, 2);
+  });
+
+  it('differentiates signed mesh reactions separately from physical forces and keeps the same physical energy', () => {
+    const thread = { ...yarn('mesh-gradient', [[0, 0, 0], [.4, .3, .2], [1.3, .6, -.1], [2, 0, .4]], [7, .2, 3]),
+      feed: { tensionN: .12, availableLengthMm: 6, discretization: 'equal-chord' as const } };
+    const physical = evaluateYarnEquilibrium({ threads: [{ ...thread, feed: { ...thread.feed, discretization: 'free-vertices' } }] });
+    const input = { threads: [thread] }, plain = evaluateYarnEquilibrium(input), mu = [-.31, .42];
+    const e = evaluateYarnEquilibrium(input, undefined, mu), h = 1e-5;
+    assert.deepEqual(e.energy, physical.energy); assert.deepEqual(e.contacts, physical.contacts);
+    near(e.residuals.freePhysicalGradientNormN, physical.residuals.freeGradientNormN);
+    assert.ok(Math.abs(e.residuals.freeGradientNormN - e.residuals.freePhysicalGradientNormN) > .1);
+    near(plain.residuals.freeGradientNormN, physical.residuals.freeGradientNormN);
+    const lagrangian = (t: EquilibriumYarn) => {
+      const value = evaluateYarnEquilibrium({ threads: [t] });
+      return value.energy.totalNmm - value.meshConstraints.reduce((sum, c, i) => sum + mu[i] * c.errorMm, 0);
+    };
+    for (let i = 0; i < thread.nodes.length; i++) for (let d = 0; d < 3; d++) {
+      const shifted = (sign: number) => ({ ...thread, nodes: thread.nodes.map((n, j) => ({ ...n,
+        positionMm: n.positionMm.map((x, k) => x + (i === j && k === d ? sign * h : 0)) as unknown as PointMm })) });
+      near(e.gradientN[0][i][d], (lagrangian(shifted(1)) - lagrangian(shifted(-1))) / (2 * h), 3e-8);
+    }
+    assert.throws(() => evaluateYarnEquilibrium(input, undefined, [Infinity, 0]), /Invalid mesh multipliers/);
+    assert.throws(() => solveYarnEquilibrium({ threads: [{ ...thread, nodes: thread.nodes.map(n => ({ ...n, fixed: false })) }] }), /held observation endpoints/);
+  });
+
+  it('converges under feed contact with an explicit mesh gauge and independent physical residual', () => {
+    const base = crossed(), input = { ...base, threads: base.threads.map(t => ({ ...t,
+      feed: { tensionN: .08, availableLengthMm: 5, discretization: 'equal-chord' as const } })) };
+    const result = solveYarnEquilibrium(input);
+    assert.equal(result.status, 'converged', JSON.stringify({ residuals: result.residuals, diagnostics: result.diagnostics }));
+    assert.ok(result.residuals.maxPenetrationMm <= 1e-5);
+    assert.ok(result.residuals.freeGradientNormN <= 1e-7);
+    assert.ok(result.residuals.maxMeshSpacingErrorMm <= 1e-6);
+    near(result.residuals.maxMaterialOverdrawMm, 0);
+    // This symmetric case needs no appreciable tangential mesh reaction.
+    assert.ok(result.residuals.freePhysicalGradientNormN <= 1e-7);
+    const replay = evaluateYarnEquilibrium({ ...input, threads: result.threads }, result.contactMultipliersN, result.meshMultipliersN);
+    assert.deepEqual(replay.residuals, result.residuals);
+  });
+
+  it('exposes finite polygon error while regular arc refinement approaches the continuum bending integral', () => {
+    const R = 3, theta = 1.7, B = .4;
+    const expected = B * theta / (2 * R), errors: number[] = [];
+    for (const N of [8, 16, 32, 64]) {
+      const points: PointMm[] = Array.from({ length: N + 1 }, (_, i) => [R * Math.cos(theta * i / N), R * Math.sin(theta * i / N), 0]);
+      const thread = { ...yarn(`arc-${N}`, points, points.slice(1).map((p, i) => distance(p, points[i]))),
+        bendingStiffnessNmm2: B, feed: { tensionN: .1, availableLengthMm: 10, discretization: 'equal-chord' as const } };
+      const result = evaluateYarnEquilibrium({ threads: [thread] });
+      near(result.energy.bendNmm, B / R * (N - 1) * Math.sin(theta / (2 * N)), 1e-12);
+      assert.ok(result.residuals.maxMeshSpacingErrorMm < 1e-12);
+      errors.push(Math.abs(expected - result.energy.bendNmm));
+    }
+    assert.ok(errors[3] < expected * .016);
+    for (let i = 1; i < errors.length; i++) assert.ok(errors[i] < .51 * errors[i - 1]);
+  });
 });
