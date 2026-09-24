@@ -10,7 +10,10 @@ export default defineConfig(({ command }) => ({
   define: {
     __NEEDLE_CHANNEL_SOURCE__: JSON.stringify({
       mode: command === "build" ? "build" : "development-startup",
-      model: runtimeModelSource(fileURLToPath(new URL(".", import.meta.url)), "src/components/temari/single-needle-catch.ts"),
+      model: runtimeModelSource(fileURLToPath(new URL(".", import.meta.url)),
+        "src/components/temari/single-needle-catch.ts",
+        "src/components/temari/single-needle-equilibrium.ts",
+        "src/components/temari/single-needle-equilibrium.worker.ts"),
       renderer: runtimeModelSource(fileURLToPath(new URL(".", import.meta.url)), "src/components/temari/NeedleChannelControl.tsx"),
       dependencies: createHash("sha256").update(readFileSync(new URL("./package-lock.json", import.meta.url))).digest("hex"),
     }),

@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { Quaternion, Vector3 } from 'three';
 import { evaluateYarnEquilibrium, solveYarnEquilibrium, type EquilibriumYarn, type YarnEquilibriumInput } from './yarn-equilibrium';
 import type { PointMm } from './thread-path';
 
@@ -13,6 +14,11 @@ const crossed = (): YarnEquilibriumInput => ({ threads: [
   yarn('A', [[-2, 0, .08], [0, 0, .02], [2, 0, .08]], [1.98, 1.98]),
   yarn('B', [[0, -2, -.08], [0, 0, -.02], [0, 2, -.08]], [1.98, 1.98]),
 ] });
+const channelDomain = { sphereCenterMm: [0, 0, 0] as PointMm, bodyRadiusMm: 2,
+  entryMm: [0, 0, -2] as PointMm, exitMm: [0, 0, 2] as PointMm, channelRadiusMm: .5, threadRadiusMm: .25 };
+const inChannel = (thread: EquilibriumYarn): YarnEquilibriumInput => ({ threads: [{ ...thread, radiusMm: .25,
+  channelPassages: [{ id: 'assigned-pass', firstNode: 0, lastNode: thread.nodes.length - 1,
+    domain: channelDomain, toleranceMm: 1e-8 }] }], sphere: { centerMm: [0, 0, 0], radiusMm: 2 } });
 
 describe('quasistatic discrete circular yarn: explicit elastic/contact engineering control', () => {
   it('matches a stretched bar energy and fixed-end reactions analytically', () => {
@@ -105,6 +111,78 @@ describe('quasistatic discrete circular yarn: explicit elastic/contact engineeri
     assert.equal(permitted.status, 'converged');
     // Permitting nodes alone does not suppress an interior segment collision.
     assert.equal(solveYarnEquilibrium({ ...input, threads: [{ ...thread, nodes: thread.nodes.map(n => ({ ...n, minimumSphereRadiusMm: .9 })) }] }).status, 'rejected');
+  });
+
+  it('keeps an assigned needle channel fixed in space and checks complete segments, not only their endpoints', () => {
+    const thread = yarn('channel-chord', [[0, 0, 0], [3, 0, 0]], [3]);
+    const input = inChannel(thread), original = structuredClone(input);
+    const before = evaluateYarnEquilibrium(input);
+    assert.ok(before.contacts.filter(c => c.kind === 'needle-channel-node').every(c => c.gapMm > 0));
+    const segment = before.contacts.find(c => c.kind === 'needle-channel-segment')!;
+    assert.ok(segment.gapMm < -.99);
+    assert.equal(segment.channelClearance?.status, 'resolved');
+    assert.equal(segment.channelClearance?.clearance, 'outside-domain');
+    assert.ok(segment.channelClearance!.lowerBoundMm <= -1 && segment.channelClearance!.upperBoundMm >= -1);
+    const result = solveYarnEquilibrium(input);
+    assert.equal(result.status, 'rejected');
+    assert.ok(result.diagnostics.some(d => d.includes('needle-channel-segment')));
+    assert.deepEqual(input, original);
+  });
+
+  it('relaxes a free point through one fixed world-space channel without pinning channel mouths', () => {
+    const thread = yarn('channel-relax', [[0, 0, -3], [.4, 0, 0], [0, 0, 3]], [3, 3], [true, false, true]);
+    const input = inChannel(thread), result = solveYarnEquilibrium(input);
+    assert.equal(result.status, 'converged', JSON.stringify({ residuals: result.residuals, diagnostics: result.diagnostics }));
+    near(distance(result.threads[0].nodes[1].positionMm, [0, 0, 0]), 0, 1e-5);
+    assert.ok(result.contacts.some(c => c.kind === 'needle-channel-segment'));
+    assert.ok(result.contacts.every(c => !c.kind.startsWith('sphere-')),
+      'the assigned interval uses the spatial union instead of stale radial mouth bounds');
+    assert.equal(result.threads[0].nodes.filter(n => n.fixed).length, 2);
+    assert.deepEqual(result.threads[0].channelPassages, input.threads[0].channelPassages);
+  });
+
+  it('differentiates a smooth finite channel witness and transforms it covariantly', () => {
+    const thread = yarn('channel-gradient', [[.4, 0, -1], [.35, 0, 1]], [2.1], [false, false]);
+    const input = inChannel(thread), plain = evaluateYarnEquilibrium(input);
+    const segmentIndex = plain.contacts.findIndex(c => c.kind === 'needle-channel-segment');
+    assert.ok(segmentIndex >= 0);
+    const lambda = plain.contacts.map((_, i) => i === segmentIndex ? .4 : 0);
+    const evaluated = evaluateYarnEquilibrium(input, lambda), h = 1e-6;
+    const lagrangian = (value: YarnEquilibriumInput) => {
+      const e = evaluateYarnEquilibrium(value);
+      return e.energy.totalNmm - e.contacts.reduce((sum, c, i) => sum + lambda[i] * c.gapMm, 0);
+    };
+    for (let i = 0; i < thread.nodes.length; i++) for (let d = 0; d < 3; d++) {
+      const shifted = (sign: number): YarnEquilibriumInput => ({ ...input, threads: input.threads.map(t => ({ ...t,
+        nodes: t.nodes.map((n, j) => ({ ...n, positionMm: n.positionMm.map((x, k) =>
+          x + (i === j && k === d ? sign * h : 0)) as unknown as PointMm })) })) });
+      near(evaluated.gradientN[0][i][d], (lagrangian(shifted(1)) - lagrangian(shifted(-1))) / (2 * h), 2e-6);
+    }
+    const rotation = new Quaternion().setFromAxisAngle(new Vector3(1, 2, 3).normalize(), .63);
+    const shift = new Vector3(4, -3, 2);
+    const transform = (p: PointMm): PointMm => new Vector3(...p).applyQuaternion(rotation).add(shift).toArray();
+    const rotated: YarnEquilibriumInput = { ...input,
+      sphere: { ...input.sphere!, centerMm: transform(input.sphere!.centerMm) },
+      threads: input.threads.map(t => ({ ...t, nodes: t.nodes.map(n => ({ ...n, positionMm: transform(n.positionMm) })),
+        channelPassages: t.channelPassages!.map(p => ({ ...p, domain: { ...p.domain,
+          sphereCenterMm: transform(p.domain.sphereCenterMm), entryMm: transform(p.domain.entryMm),
+          exitMm: transform(p.domain.exitMm) } })) })) };
+    const transformed = evaluateYarnEquilibrium(rotated, lambda);
+    plain.contacts.forEach((c, i) => near(c.gapMm, transformed.contacts[i].gapMm, 1e-9));
+    evaluated.gradientN[0].forEach((g, i) => {
+      const expected = new Vector3(...g).applyQuaternion(rotation);
+      near(expected.distanceTo(new Vector3(...transformed.gradientN[0][i])), 0, 1e-8);
+    });
+  });
+
+  it('rejects ambiguous channel assignments and inconsistent physical radii', () => {
+    const base = inChannel(yarn('invalid-channel', [[0, 0, -3], [0, 0, 0], [0, 0, 3]], [3, 3]));
+    const passage = base.threads[0].channelPassages![0];
+    assert.throws(() => evaluateYarnEquilibrium({ ...base, threads: [{ ...base.threads[0],
+      channelPassages: [passage, { ...passage, id: 'overlap', firstNode: 1 }] }] }), /must not overlap/);
+    assert.throws(() => evaluateYarnEquilibrium({ ...base, threads: [{ ...base.threads[0],
+      channelPassages: [{ ...passage, domain: { ...passage.domain, threadRadiusMm: .2 } }] }] }), /yarn radius/);
+    assert.throws(() => evaluateYarnEquilibrium({ ...base, sphere: undefined }), /nominal sphere/);
   });
 
   it('uses finite contacts, reports immovable overlaps, and never silently invents a contact normal', () => {

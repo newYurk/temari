@@ -17,6 +17,7 @@ const out = resolve(root, args.find(arg => arg.startsWith('--out='))?.slice(6) ?
 const url = new URL(args.find(arg => arg.startsWith('--base='))?.slice(7) ?? 'http://127.0.0.1:4177/');
 url.searchParams.set('upper-bundle', '1');
 const base = url.href;
+const needleUrl = new URL(base); needleUrl.searchParams.set('control', 'needle');
 await mkdir(out, { recursive: true });
 const expected = buildUpperBundle();
 const report = { base, tests: [], failures: [] };
@@ -172,6 +173,55 @@ try {
       await page.getByRole('button', { name: 'Крупно', exact: true }).click();
       await rendered(page);
       if (width === 390) await page.screenshot({ path: `${out}/ui-solid-close-${width}.png`, animations: 'disabled' });
+
+      await page.goto(needleUrl.href, { waitUntil: 'load', timeout: 60000 });
+      await page.getByRole('region', { name: 'Контроль прямого игольного прохода' }).waitFor();
+      await page.locator('canvas').waitFor();
+      await page.getByRole('button', { name: 'Рассчитать прямой проход', exact: true }).click();
+      await page.waitForFunction(() => [...document.querySelectorAll('[role="status"]')]
+        .some(node => node.textContent?.includes('Прямой расчёт сошёлся; физическая приёмка не выдана.')), null, { timeout: 120000 });
+      assert.equal(await page.getByRole('button', { name: 'Результат расчёта', exact: true }).getAttribute('aria-pressed'), 'true');
+      assert.match(await page.getByRole('definition').allTextContents().then(values => values.join(' ')), /converged/);
+      const needleDownload = page.waitForEvent('download');
+      await page.getByRole('button', { name: 'Скачать данные', exact: true }).click();
+      const needleArtifactPath = `${out}/needle-export-${width}.json`;
+      await (await needleDownload).saveAs(needleArtifactPath);
+      const needleArtifact = JSON.parse(await readFile(needleArtifactPath, 'utf8'));
+      assert.equal(needleArtifact.version, 2);
+      assert.equal(needleArtifact.equilibrium.result.status, 'converged');
+      assert.equal(needleArtifact.equilibrium.passageAudit.status, 'passed');
+      assert.equal(needleArtifact.equilibrium.geometryInspection.threads[0].mesh.foldedFaces, 0);
+      assert.equal(needleArtifact.equilibrium.physicalAcceptance, 'not-certified');
+      assert.equal(needleArtifact.equilibrium.result.materialLedger.length, 1);
+      assert.equal(needleArtifact.equilibrium.result.materialLedger[0].threadId,
+        needleArtifact.equilibrium.route.threadId);
+      for (const scope of ['model', 'renderer']) {
+        assert.equal(needleArtifact.source[scope].digest, hash(JSON.stringify(needleArtifact.source[scope].files)));
+        for (const f of needleArtifact.source[scope].files)
+          if (hash(await readFile(`${root}/${f.path}`)) !== f.sha256) r.sourceDifferences.push(f.path);
+      }
+      await rendered(page);
+      r.needleScreenshot = `${out}/needle-resolved-${width}.png`;
+      await page.screenshot({ path: r.needleScreenshot, animations: 'disabled' });
+      await page.getByRole('button', { name: 'Узкий 2 мм', exact: true }).click();
+      await page.getByRole('button', { name: 'Результат расчёта', exact: true }).waitFor({ state: 'detached' });
+      await page.getByRole('button', { name: 'Рассчитать прямой проход', exact: true }).click();
+      await page.waitForFunction(() => [...document.querySelectorAll('[role="status"]')]
+        .some(node => node.textContent?.includes('Расчёт остановлен входной геометрией.')), null, { timeout: 120000 });
+      assert.match(await page.getByRole('region', { name: 'Контроль прямого игольного прохода' }).innerText(),
+        /отклонённая коллизия, красная/);
+      r.needleRejectedScreenshot = `${out}/needle-rejected-${width}.png`;
+      await page.screenshot({ path: r.needleRejectedScreenshot, animations: 'disabled' });
+      r.needleControl = {
+        acceptedControl: needleArtifact.equilibrium.physicalAcceptance,
+        narrowControl: 'rejected-preflight',
+      };
+      r.needleLayout = await page.evaluate(() => ({ width: innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        overflow: document.documentElement.scrollWidth > innerWidth,
+        canvasHeight: document.querySelector('canvas').getBoundingClientRect().height }));
+      assert.equal(r.needleLayout.overflow, false);
+      assert.ok(r.needleLayout.canvasHeight > 150);
     } catch (e) { r.failure = String(e); report.failures.push({ width, error: String(e) }); }
     if (r.errors.length || r.consoleErrors.length) report.failures.push({ width, errors: r.errors, consoleErrors: r.consoleErrors });
     await page.close(); console.log(JSON.stringify(r));

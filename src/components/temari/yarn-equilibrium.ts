@@ -1,4 +1,6 @@
 import { closestSegmentApproach } from './thread-geometry';
+import { pointNeedleChannelClearance, segmentNeedleChannelClearance,
+  type NeedleChannelDomain } from './needle-channel-clearance';
 import type { PointMm } from './thread-path';
 
 /** Engineering controls, not calibrated pearl-cotton properties. All lengths are mm.
@@ -19,6 +21,20 @@ export type YarnNode = {
   /** Optional upper radius for the AXIS. Together with the lower bound, this
    * describes a permitted shell, not an equilibrium law for the foundation. */
   maximumSphereRadiusMm?: number;
+};
+export type YarnChannelPassage = {
+  id: string;
+  /** Inclusive mesh interval whose complete polygonal segments must remain in
+   * the fixed world-space union of the exterior and this assigned channel.
+   * In sliding mode these indices are not fixed material coordinates; assigning
+   * several channels needs explicit topological boundaries. */
+  firstNode: number;
+  lastNode: number;
+  domain: NeedleChannelDomain;
+  /** Numerical witness tolerance for the finite-segment minimum, not a
+   * physical clearance or permission to penetrate the channel boundary. */
+  toleranceMm?: number;
+  maxEvaluations?: number;
 };
 export type EquilibriumYarn = {
   id: string;
@@ -48,6 +64,9 @@ export type EquilibriumYarn = {
   };
   /** Per finite segment, AXIS forbidden radius. Independent of node overrides. */
   segmentMinimumSphereRadiiMm?: readonly number[];
+  /** Fixed spatial passages assigned to explicit mesh intervals. Unlike the legacy
+   * per-node mouth taper, their clearance is recomputed after every move. */
+  channelPassages?: readonly YarnChannelPassage[];
 };
 export type YarnEquilibriumOptions = {
   maxOuterIterations?: number;
@@ -79,7 +98,8 @@ export type YarnEquilibriumInput = {
 };
 export type YarnContact = {
   id: string;
-  kind: 'yarn-yarn' | 'sphere-node' | 'sphere-node-ceiling' | 'sphere-segment' | 'feed-length-budget';
+  kind: 'yarn-yarn' | 'sphere-node' | 'sphere-node-ceiling' | 'sphere-segment'
+    | 'needle-channel-node' | 'needle-channel-segment' | 'feed-length-budget';
   gapMm: number;
   /** Budget constraints use the two boundary points as identifiers, not a
    * distance witness; their gap is availableLength - laidLength. */
@@ -87,6 +107,13 @@ export type YarnContact = {
   multiplierN: number;
   immovable: boolean;
   normalDefined: boolean;
+  channelClearance?: {
+    status: 'resolved' | 'unresolved';
+    clearance: 'clear' | 'outside-domain' | 'unresolved';
+    lowerBoundMm: number;
+    upperBoundMm: number;
+    accuracyMm: number;
+  };
   /** No remote material points remain in this local self-pair's clipped domain.
    * Its multiplier is zero; the zero gap is a placeholder, not physical contact. */
   excludedLocal?: boolean;
@@ -164,6 +191,28 @@ const scale = (a: PointMm, k: number): V => [a[0] * k, a[1] * k, a[2] * k];
 const mix = (a: PointMm, b: PointMm, t: number): V => [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), a[2] + t * (b[2] - a[2])];
 const positive = (n: number) => Number.isFinite(n) && n > 0;
 const pointValid = (p: PointMm) => p.length === 3 && p.every(Number.isFinite);
+const samePoint = (a: PointMm, b: PointMm, tolerance = 1e-10) =>
+  length(sub(a, b)) <= tolerance * Math.max(1, length(a), length(b));
+
+function channelBoundaryWitness(point: PointMm, domain: NeedleChannelDomain,
+  result: ReturnType<typeof pointNeedleChannelClearance>): V {
+  if (!result.gradient) return [...point];
+  if (result.branch === 'exterior') {
+    const radial = sub(point, domain.sphereCenterMm), radialLength = length(radial);
+    const radius = domain.bodyRadiusMm + domain.threadRadiusMm;
+    return radialLength > 0
+      ? domain.sphereCenterMm.map((x, i) => x + radial[i] * radius / radialLength) as V
+      : [...point];
+  }
+  const axisDelta = sub(domain.exitMm, domain.entryMm), axisLength = length(axisDelta);
+  const axis = scale(axisDelta, 1 / axisLength), fromEntry = sub(point, domain.entryMm);
+  const projection = domain.entryMm.map((x, i) => x + axis[i] * dot(fromEntry, axis)) as V;
+  const perpendicular = sub(point, projection), perpendicularLength = length(perpendicular);
+  const radius = domain.channelRadiusMm - domain.threadRadiusMm;
+  return perpendicularLength > 0
+    ? projection.map((x, i) => x + perpendicular[i] * radius / perpendicularLength) as V
+    : [...point];
+}
 
 function prepare(input: YarnEquilibriumInput) {
   const options = { ...YARN_EQUILIBRIUM_DEFAULTS, ...input.options };
@@ -185,6 +234,33 @@ function prepare(input: YarnEquilibriumInput) {
       throw new RangeError('Equal-chord mesh needs held observation endpoints');
     if (yarn.segmentMinimumSphereRadiiMm && (yarn.segmentMinimumSphereRadiiMm.length !== yarn.restLengthsMm.length
       || yarn.segmentMinimumSphereRadiiMm.some(r => !Number.isFinite(r) || r < 0))) throw new RangeError('Invalid segment axis exclusion radii');
+    const channelNodes = new Set<number>(), channelSegments = new Set<number>(), passageIds = new Set<string>();
+    for (const passage of yarn.channelPassages ?? []) {
+      if (!passage.id?.trim() || passageIds.has(passage.id)
+        || !Number.isSafeInteger(passage.firstNode) || !Number.isSafeInteger(passage.lastNode)
+        || passage.firstNode < 0 || passage.lastNode >= yarn.nodes.length || passage.firstNode >= passage.lastNode
+        || passage.toleranceMm !== undefined && !positive(passage.toleranceMm)
+        || passage.maxEvaluations !== undefined && (!Number.isSafeInteger(passage.maxEvaluations) || passage.maxEvaluations < 2)) {
+        throw new RangeError('Invalid assigned needle-channel passage');
+      }
+      passageIds.add(passage.id);
+      // This validates all dimensions and the channel axis without silently
+      // projecting either mouth or changing the declared yarn radius.
+      pointNeedleChannelClearance(yarn.nodes[passage.firstNode].positionMm, passage.domain);
+      if (Math.abs(passage.domain.threadRadiusMm - yarn.radiusMm) > 1e-12
+        || !input.sphere || !samePoint(passage.domain.sphereCenterMm, input.sphere.centerMm)
+        || Math.abs(passage.domain.bodyRadiusMm - input.sphere.radiusMm) > 1e-10 * Math.max(1, input.sphere.radiusMm)) {
+        throw new RangeError('Assigned channel must use the equilibrium yarn radius and nominal sphere');
+      }
+      for (let i = passage.firstNode; i <= passage.lastNode; i++) {
+        if (channelNodes.has(i)) throw new RangeError('Assigned needle-channel node intervals must not overlap');
+        channelNodes.add(i);
+      }
+      for (let i = passage.firstNode; i < passage.lastNode; i++) {
+        if (channelSegments.has(i)) throw new RangeError('Assigned needle-channel segment intervals must not overlap');
+        channelSegments.add(i);
+      }
+    }
     const start = positions.length; starts.push(start);
     for (const node of yarn.nodes) {
       if (!pointValid(node.positionMm) || typeof node.fixed !== 'boolean'
@@ -318,15 +394,46 @@ function evaluate(prep: Prepared, points: V[]) {
       value.contact.immovable = threadSegments[a.thread].slice(a.index, b.index + 1).every(s => prep.fixed[s.a] && prep.fixed[s.b]);
     }
   }
+  for (const [ti, thread] of prep.input.threads.entries()) for (const passage of thread.channelPassages ?? []) {
+    for (let i = passage.firstNode; i <= passage.lastNode; i++) {
+      const node = prep.starts[ti] + i, point = points[node];
+      const clearance = pointNeedleChannelClearance(point, passage.domain);
+      const witness = channelBoundaryWitness(point, passage.domain, clearance);
+      constraints.push({ contact: { id: `needle-channel-node:${ti}:${passage.id}:${i}`, kind: 'needle-channel-node',
+        gapMm: clearance.gapMm, pointsMm: [point, witness], immovable: prep.fixed[node],
+        normalDefined: clearance.gradientStatus === 'smooth' && clearance.gradient !== null },
+      derivatives: clearance.gradient ? [{ node, value: [...clearance.gradient] as V }] : [] });
+    }
+    for (let i = passage.firstNode; i < passage.lastNode; i++) {
+      const segment = threadSegments[ti][i]!;
+      const clearance = segmentNeedleChannelClearance(points[segment.a], points[segment.b], passage.domain,
+        { toleranceMm: passage.toleranceMm, maxEvaluations: passage.maxEvaluations });
+      const point = [...clearance.witness.pointMm] as V, evaluation = clearance.witness.evaluation;
+      const witness = channelBoundaryWitness(point, passage.domain, evaluation);
+      constraints.push({ contact: { id: `needle-channel-segment:${ti}:${passage.id}:${i}`, kind: 'needle-channel-segment',
+        gapMm: clearance.gapMm, pointsMm: [point, witness],
+        immovable: prep.fixed[segment.a] && prep.fixed[segment.b],
+        normalDefined: clearance.status === 'resolved' && clearance.clearance !== 'unresolved'
+          && evaluation.gradientStatus === 'smooth' && evaluation.gradient !== null,
+        channelClearance: { status: clearance.status, clearance: clearance.clearance,
+          lowerBoundMm: clearance.lowerBoundMm, upperBoundMm: clearance.upperBoundMm, accuracyMm: clearance.accuracyMm } },
+      derivatives: evaluation.gradient ? [
+        { node: segment.a, value: scale(evaluation.gradient, 1 - clearance.witness.t) },
+        { node: segment.b, value: scale(evaluation.gradient, clearance.witness.t) },
+      ] : [] });
+    }
+  }
   if (prep.input.sphere) {
     const sphere = prep.input.sphere;
     for (const [ti, thread] of prep.input.threads.entries()) thread.nodes.forEach((node, i) => {
+      if (thread.channelPassages?.some(p => i >= p.firstNode && i <= p.lastNode)) return;
       const r = node.minimumSphereRadiusMm ?? sphere.radiusMm + thread.radiusMm, index = prep.starts[ti] + i;
       if (r > 0) constraint(`sphere-node:${ti}:${i}`, 'sphere-node', points[index], sphere.centerMm, r, [{ node: index, weight: 1 }]);
       if (node.maximumSphereRadiusMm !== undefined) constraint(`sphere-node-ceiling:${ti}:${i}`, 'sphere-node-ceiling', points[index], sphere.centerMm,
         node.maximumSphereRadiusMm, [{ node: index, weight: 1 }], -1);
     });
     for (const s of prep.segments) {
+      if (prep.input.threads[s.thread].channelPassages?.some(p => s.index >= p.firstNode && s.index < p.lastNode)) continue;
       const r = prep.input.threads[s.thread].segmentMinimumSphereRadiiMm?.[s.index] ?? sphere.radiusMm + s.radius;
       if (r <= 0) continue;
       const c = closestSegmentApproach(points[s.a], points[s.b], sphere.centerMm, sphere.centerMm);
