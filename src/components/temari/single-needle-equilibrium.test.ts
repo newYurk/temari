@@ -2,6 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { auditAssignedPassage, buildSingleNeedleEquilibriumInput,
   solveSingleNeedleEquilibrium } from './single-needle-equilibrium';
+import type { EquilibriumYarn } from './yarn-equilibrium';
+import type { NeedleChannelDomain } from './needle-channel-clearance';
+import type { PointMm } from './thread-path';
 
 const near = (a: number, b: number, tolerance = 1e-9) =>
   assert.ok(Math.abs(a - b) <= tolerance, `${a} != ${b}`);
@@ -67,6 +70,56 @@ describe('one renderer-independent working thread through an assigned foundation
     for (const options of [{ stepMm: 0 }, { channelMarginMm: 0 }, { feedTensionN: NaN },
       { caseId: 'unknown' as 'narrow' }]) {
       assert.throws(() => buildSingleNeedleEquilibriumInput(options), /known case and finite positive/);
+    }
+  });
+
+  it('rejects a same-mouth U-turn even with two valid sphere crossings and full segment clearance', () => {
+    const y = Math.sqrt(99);
+    const domain: NeedleChannelDomain = { sphereCenterMm: [0, 0, 0], bodyRadiusMm: 10,
+      entryMm: [-1, y, 0], exitMm: [1, y, 0], threadRadiusMm: .1, channelRadiusMm: .5 };
+    const points: PointMm[] = [[-1.5, y, 0], [-.9, y, 0], [-1.5, y, .1]];
+    const thread: EquilibriumYarn = { id: 'u-turn', radiusMm: .1, axialStiffnessN: 1, bendingStiffnessNmm2: .01,
+      nodes: points.map(positionMm => ({ positionMm, fixed: false })), restLengthsMm: [.6, Math.sqrt(.37)] };
+    const audit = auditAssignedPassage(thread, domain);
+    assert.equal(audit.crossings.length, 2); assert.equal(audit.portsInsideChannel, true);
+    assert.equal(audit.hasBuriedAxis, true); assert.deepEqual(audit.outsideSegmentIndices, []);
+    assert.equal(audit.status, 'rejected'); assert.equal(audit.pairing.status, 'rejected');
+    assert.deepEqual(audit.pairing.crossings.map(c => c.mouth), ['entry', 'entry']);
+  });
+
+  it('uses the declared channel direction and permits the reverse route only with reversed entry/exit', () => {
+    const fixture = buildSingleNeedleEquilibriumInput(), original = fixture.input.threads[0], domain = fixture.route.assignedPassage.domain;
+    const forward = auditAssignedPassage(original, domain);
+    assert.equal(forward.status, 'passed');
+    assert.deepEqual(forward.pairing.crossings.map(c => c.mouth), ['entry', 'exit']);
+    near(forward.pairing.crossings[0].axisParameter, 0, 1e-8);
+    near(forward.pairing.crossings[1].axisParameter, 1, 1e-8);
+    const reversed = { ...original, nodes: [...original.nodes].reverse(), restLengthsMm: [...original.restLengthsMm].reverse() };
+    const wrongDirection = auditAssignedPassage(reversed, domain);
+    assert.equal(wrongDirection.status, 'rejected');
+    assert.deepEqual(wrongDirection.pairing.crossings.map(c => c.mouth), ['exit', 'entry']);
+    const matchingDirection = auditAssignedPassage(reversed, { ...domain, entryMm: domain.exitMm, exitMm: domain.entryMm });
+    assert.equal(matchingDirection.status, 'passed');
+    // Returning through the same two spatial holes is another passage, not two
+    // duplicate events to be erased from the audit.
+    const twice = { ...original, nodes: [...original.nodes, ...reversed.nodes.slice(1)] };
+    const duplicatePass = auditAssignedPassage(twice, domain);
+    assert.equal(duplicatePass.crossings.length, 4); assert.equal(duplicatePass.status, 'rejected');
+  });
+
+  it('returns structured rejection for degenerate nodes or channel axes without throwing', () => {
+    const fixture = buildSingleNeedleEquilibriumInput(), thread = fixture.input.threads[0], domain = fixture.route.assignedPassage.domain;
+    const badNodes = [
+      [thread.nodes[0], thread.nodes[0]],
+      [{ ...thread.nodes[0], positionMm: [NaN, 0, 0] as PointMm }, thread.nodes[1]],
+    ];
+    for (const nodes of badNodes) {
+      const audit = auditAssignedPassage({ ...thread, nodes }, domain);
+      assert.equal(audit.status, 'rejected'); assert.ok(audit.diagnostics.length > 0);
+    }
+    for (const exitMm of [domain.entryMm, [Infinity, 0, 0] as PointMm]) {
+      const audit = auditAssignedPassage(thread, { ...domain, exitMm });
+      assert.equal(audit.status, 'rejected'); assert.ok(audit.diagnostics.length > 0);
     }
   });
 });
