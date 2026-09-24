@@ -941,12 +941,13 @@ function kikuPetal(
 }
 
 /**
- * Uwagake wedge (F7). The later top stitch takes the needle under every earlier
- * round at this tip and pulls their legs in: at its level each leg lies inside
- * the bite, a thread radius clear. Between the earlier stitch and this one the
- * limit grows with the bite, so the legs lie in a narrow woven wedge on the
- * line; below this stitch they ease back into their packed bands. Only stitches
- * actually taken pull, so the wedge is as long as the rounds sewn so far.
+ * Engineering lateral constraint for the intended uwagake wedge (F7).
+ * Craft requires the later catch to encompass the earlier rounds. This moves
+ * recipe via points toward that intent; the radius margin is NOT proof that
+ * finite threads fit inside the catch. The renderer can replace these points
+ * in a join, and an oblique thread section is wider than this axis-only cap.
+ * Only executed catches contribute, but actual mesh contact, fixed punctures
+ * and curvature still need a joint check (check:upper-section, issue #105).
  */
 function gatherUnderBite(
   ops: KagariOp[],
