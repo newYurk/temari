@@ -4,7 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TemariScene, type InspectionView } from './scene';
 import { createThreadSpanMesh } from './thread-path-mesh';
 import { buildSingleNeedleCatch, type NeedleCatchCase, type SingleNeedleCatch } from './single-needle-catch';
-import { buildFirstVisitRoute } from './first-visit-route';
+import FirstVisitControl from './FirstVisitControl';
 import { createResolvedThreadGeometry } from './stitches';
 import type { SingleNeedleEquilibrium } from './single-needle-equilibrium';
 import type { SingleNeedleEquilibriumMessage } from './single-needle-equilibrium.worker';
@@ -65,33 +65,6 @@ function CatchGeometry({ model, needle, transparent, resolved }: {
   </>;
 }
 
-function VisitGeometry() {
-  const route = useMemo(() => buildFirstVisitRoute(), []);
-  const mesh = useMemo(() => {
-    const curves = [route.approach, route.channels[0].spans[0].curve, ...route.bridges.slice(0, 3),
-      route.channels[1].spans[0].curve, ...route.bridges.slice(3), route.channels[2].spans[0].curve, route.departure];
-    const spans: ThreadSpan[] = curves.map((curve, i) => ({
-      id: `first-visit/${i}`, threadId: 'first-visit/physical-thread-1', opId: 'first-visit', step: i, zone: 'surface', curve,
-    }));
-    const parts = spans.map(span => createThreadSpanMesh(span, route.threadRadiusMm, route.R));
-    try {
-      const geometry = mergeGeometries(parts.map(part => part.geometry), false);
-      if (!geometry) throw new Error('Не удалось собрать первый визит.');
-      return geometry;
-    } finally { parts.forEach(part => part.geometry.dispose()); }
-  }, [route]);
-  useEffect(() => () => mesh.dispose(), [mesh]);
-  return <>
-    <mesh><sphereGeometry args={[1, 192, 96]} />
-      <meshStandardMaterial color="#d9c9af" roughness={.94} transparent opacity={.13} depthWrite={false} />
-    </mesh>
-    <mesh><sphereGeometry args={[(route.R - route.layerMm) / route.R, 96, 48]} />
-      <meshStandardMaterial color="#c4b59f" roughness={.95} />
-    </mesh>
-    <mesh geometry={mesh} dispose={null}><meshStandardMaterial color={gold} roughness={.67} /></mesh>
-  </>;
-}
-
 /** Exact planar section containing the straight channel and the sphere centre. */
 function ChannelSection({ model, needle, resolved }: { model: SingleNeedleCatch; needle: boolean; resolved: boolean }) {
   const { R, layerThickness, widthMm, rNeedle, rThread } = model.parameters;
@@ -120,6 +93,12 @@ function ChannelSection({ model, needle, resolved }: { model: SingleNeedleCatch;
 }
 
 export default function NeedleChannelControl() {
+  const [visit, setVisit] = useState(true);
+  return visit ? <FirstVisitControl onStraight={() => setVisit(false)} />
+    : <StraightNeedleControl onFirstVisit={() => setVisit(true)} />;
+}
+
+function StraightNeedleControl({ onFirstVisit }: { onFirstVisit: () => void }) {
   const [caseId, setCaseId] = useState<NeedleCatchCase>('clearance-control');
   const [feed, setFeed] = useState(60);
   const model = useMemo(() => buildSingleNeedleCatch(caseId, feed), [caseId, feed]);
@@ -127,7 +106,6 @@ export default function NeedleChannelControl() {
   const [mode, setMode] = useState<'solid' | 'transparent' | 'section'>('transparent');
   const [needle, setNeedle] = useState(false);
   const [view, setView] = useState<InspectionView>('close');
-  const [visit, setVisit] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [equilibrium, setEquilibrium] = useState<SingleNeedleEquilibrium | null>(null);
   const [showResolved, setShowResolved] = useState(false);
@@ -138,12 +116,7 @@ export default function NeedleChannelControl() {
     worker.current?.terminate(); worker.current = null;
     setRunning(false); setEquilibrium(null); setShowResolved(false); setError(null);
   };
-  const visitFocus = useMemo(() => {
-    const port = buildFirstVisitRoute().channels[1].ports.entry.positionMm;
-    const scale = Math.hypot(...port);
-    return port.map(value => value / scale) as [number, number, number];
-  }, []);
-  const focus = visit ? visitFocus : model.placement.normal;
+  const focus = model.placement.normal;
   const resolved = showResolved && equilibrium?.result ? equilibrium.result.threads[0] : null;
   const solve = () => {
     if (running) {
@@ -178,15 +151,13 @@ export default function NeedleChannelControl() {
       <strong>Один прямой проход</strong><nav className="flex gap-3"><a className="underline" href="?upper-bundle=1">Три визита</a><a className="underline" href="./">К мастерской</a></nav>
     </header>
     <div className="relative min-h-0 flex-1">
-      {visit ? <TemariScene inspection={{ view, focus }} onError={setError}><VisitGeometry /></TemariScene>
-        : mode === 'section' ? <ChannelSection model={model} needle={needle} resolved={!!resolved} /> :
+      {mode === 'section' ? <ChannelSection model={model} needle={needle} resolved={!!resolved} /> :
         <TemariScene inspection={{ view, focus }} onError={setError}><CatchGeometry model={model} needle={needle}
           transparent={mode === 'transparent'} resolved={resolved ?? null} /></TemariScene>}
       <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[calc(100%-1.5rem)] rounded-lg bg-ink/85 px-3 py-2 text-xs text-linen" aria-label="Легенда контроля">
         <div className="flex items-center gap-2"><span className="h-3 w-3"
           style={{ backgroundColor: needle ? '#777e88' : resolved ? '#46a47a' : sourceColour }} />
-          {visit ? 'Первый визит · рецепт, золотой, механика не принята'
-            : needle ? 'Игла · только участок канала'
+          {needle ? 'Игла · только участок канала'
             : resolved ? 'Одна нить · рассчитанный прямой срез, зелёный'
             : model.geometryStatus === 'rejected' ? 'Одна нить · отклонённая коллизия, красная'
             : 'Одна нить · заданный полный контекст, золотой'}</div>
@@ -212,8 +183,8 @@ export default function NeedleChannelControl() {
       </p>}
       {error && <p role="alert" className="mb-2 text-red-800">{error}</p>}
       <div className="flex flex-wrap gap-2">
-        <button className={button} aria-pressed={visit} onClick={() => setVisit(v => !v)}>Первый визит</button>
-        {(['clearance-control', 'narrow'] as const).map((id, i) => <button className={button} key={id} aria-pressed={caseId === id && !visit}
+        <button className={button} onClick={onFirstVisit}>Первый визит</button>
+        {(['clearance-control', 'narrow'] as const).map((id, i) => <button className={button} key={id} aria-pressed={caseId === id}
           onClick={() => { resetEquilibrium(); setCaseId(id); }}>{['Контроль 11 мм', 'Узкий 2 мм'][i]}</button>)}
         <label className="flex items-center gap-1">Подача <select aria-label="Подача материала" className="rounded border border-ink/25 bg-linen p-2" value={feed}
           onChange={e => { resetEquilibrium(); setFeed(Number(e.target.value)); }}>

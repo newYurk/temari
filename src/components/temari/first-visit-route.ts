@@ -13,8 +13,6 @@ const LAYER_MM = 1.2;
 const THREAD_RADIUS_MM = 0.355;
 const NEEDLE_RADIUS_MM = 0.2;
 const EXTERIOR_MM = 6;
-/** Long enough that the exterior cubic stays outside the declared hard core. */
-const BRIDGE_MM = 40;
 
 const add = (a: PointMm, b: PointMm): PointMm => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const sub = (a: PointMm, b: PointMm): PointMm => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -97,7 +95,8 @@ export function buildFirstVisitRoute() {
     portSource: FIRST_VISIT_PORT_SOURCE,
     mechanics: 'not-solved' as const,
     status: 'not-certified' as const,
-    R, layerMm: LAYER_MM, threadRadiusMm: THREAD_RADIUS_MM, bridgeMm: BRIDGE_MM,
+    R, layerMm: LAYER_MM, threadRadiusMm: THREAD_RADIUS_MM,
+    bridgePolicy: 'axis-to-exterior-then-cubic' as const,
     marks: [...MARKS],
     channels, approach, bridges, departure, joints,
   };

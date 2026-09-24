@@ -8,6 +8,14 @@ import { runtimeModelSource } from "./scripts/lib/stitch-diagram-data.ts";
 
 export default defineConfig(({ command }) => ({
   define: {
+    __FIRST_VISIT_SOURCE__: JSON.stringify({
+      mode: command === "build" ? "build" : "development-startup",
+      model: runtimeModelSource(fileURLToPath(new URL(".", import.meta.url)),
+        "src/components/temari/first-visit-snapshot.ts",
+        "src/components/temari/first-visit-snapshot.worker.ts"),
+      renderer: runtimeModelSource(fileURLToPath(new URL(".", import.meta.url)), "src/components/temari/FirstVisitControl.tsx"),
+      dependencies: createHash("sha256").update(readFileSync(new URL("./package-lock.json", import.meta.url))).digest("hex"),
+    }),
     __NEEDLE_CHANNEL_SOURCE__: JSON.stringify({
       mode: command === "build" ? "build" : "development-startup",
       model: runtimeModelSource(fileURLToPath(new URL(".", import.meta.url)),
