@@ -76,10 +76,10 @@ describe('one renderer-independent working thread through an assigned foundation
   it('rejects a same-mouth U-turn even with two valid sphere crossings and full segment clearance', () => {
     const y = Math.sqrt(99);
     const domain: NeedleChannelDomain = { sphereCenterMm: [0, 0, 0], bodyRadiusMm: 10,
-      entryMm: [-1, y, 0], exitMm: [1, y, 0], threadRadiusMm: .1, channelRadiusMm: .5 };
-    const points: PointMm[] = [[-1.5, y, 0], [-.9, y, 0], [-1.5, y, .1]];
+      entryMm: [-1, y, 0], exitMm: [1, y, 0], threadRadiusMm: .1, channelRadiusMm: .2 };
+    const points: PointMm[] = [[-2, y, 0], [-1, y, 0], [-2, y, .03]];
     const thread: EquilibriumYarn = { id: 'u-turn', radiusMm: .1, axialStiffnessN: 1, bendingStiffnessNmm2: .01,
-      nodes: points.map(positionMm => ({ positionMm, fixed: false })), restLengthsMm: [.6, Math.sqrt(.37)] };
+      nodes: points.map(positionMm => ({ positionMm, fixed: false })), restLengthsMm: [1, Math.sqrt(1.0009)] };
     const audit = auditAssignedPassage(thread, domain);
     assert.equal(audit.crossings.length, 2); assert.equal(audit.portsInsideChannel, true);
     assert.equal(audit.hasBuriedAxis, true); assert.deepEqual(audit.outsideSegmentIndices, []);
@@ -92,8 +92,13 @@ describe('one renderer-independent working thread through an assigned foundation
     const forward = auditAssignedPassage(original, domain);
     assert.equal(forward.status, 'passed');
     assert.deepEqual(forward.pairing.crossings.map(c => c.mouth), ['entry', 'exit']);
-    near(forward.pairing.crossings[0].axisParameter, 0, 1e-8);
-    near(forward.pairing.crossings[1].axisParameter, 1, 1e-8);
+    // On the axis, the exclusion envelope has a longer chord than nominal R.
+    const L = Math.hypot(...domain.exitMm.map((x, i) => x - domain.entryMm[i]));
+    const halfEnvelopeChord = Math.sqrt((L / 2) ** 2
+      + 2 * domain.bodyRadiusMm * domain.threadRadiusMm + domain.threadRadiusMm ** 2);
+    near(forward.pairing.crossings[0].axisParameter, .5 - halfEnvelopeChord / L, 1e-8);
+    near(forward.pairing.crossings[1].axisParameter, .5 + halfEnvelopeChord / L, 1e-8);
+    assert.equal(forward.nominalSurface.crossings.length, 2);
     const reversed = { ...original, nodes: [...original.nodes].reverse(), restLengthsMm: [...original.restLengthsMm].reverse() };
     const wrongDirection = auditAssignedPassage(reversed, domain);
     assert.equal(wrongDirection.status, 'rejected');
@@ -105,6 +110,45 @@ describe('one renderer-independent working thread through an assigned foundation
     const twice = { ...original, nodes: [...original.nodes, ...reversed.nodes.slice(1)] };
     const duplicatePass = auditAssignedPassage(twice, domain);
     assert.equal(duplicatePass.crossings.length, 4); assert.equal(duplicatePass.status, 'rejected');
+  });
+
+  it('admits a shallow channel route above nominal R without relaxing the exclusion envelope or clearance', () => {
+    const y = Math.sqrt(100 - .1 ** 2), shiftedY = y + .025;
+    assert.ok(shiftedY > 10); // No point on this horizontal route can enter nominal R.
+    const domain: NeedleChannelDomain = { sphereCenterMm: [0, 0, 0], bodyRadiusMm: 10,
+      entryMm: [-.1, y, 0], exitMm: [.1, y, 0], threadRadiusMm: .1, channelRadiusMm: .15 };
+    const thread: EquilibriumYarn = { id: 'shallow-offset', radiusMm: .1, axialStiffnessN: 1, bendingStiffnessNmm2: .01,
+      nodes: Array.from({ length: 17 }, (_, i) => ({ positionMm: [-2 + i / 4, shiftedY, 0] as PointMm,
+        fixed: i === 0 || i === 16 })), restLengthsMm: Array(16).fill(.25) };
+    const audit = auditAssignedPassage(thread, domain);
+    assert.equal(audit.status, 'passed'); assert.deepEqual(audit.outsideSegmentIndices, []);
+    assert.deepEqual(audit.crossingSurface, { kind: 'thread-axis-exclusion-envelope', radiusMm: 10.1 });
+    assert.equal(audit.crossings.length, 2); assert.equal(audit.hasBuriedAxis, true);
+    assert.deepEqual(audit.pairing.crossings.map(c => c.mouth), ['entry', 'exit']);
+    assert.deepEqual(audit.nominalSurface, { radiusMm: 10, crossings: [], hasBuriedAxis: false });
+    const halfChord = Math.sqrt(10.1 ** 2 - shiftedY ** 2);
+    near(audit.crossings[0].pointMm[0], -halfChord);
+    near(audit.crossings[1].pointMm[0], halfChord);
+    // The same directed crossings do not excuse leaving the assigned channel.
+    const outside = { ...thread, nodes: thread.nodes.map(n => ({ ...n,
+      positionMm: [n.positionMm[0], shiftedY, .2] as PointMm })) };
+    const rejected = auditAssignedPassage(outside, domain);
+    assert.equal(rejected.crossings.length, 2);
+    assert.equal(rejected.pairing.status, 'passed');
+    assert.ok(rejected.outsideSegmentIndices.length > 0); assert.equal(rejected.status, 'rejected');
+  });
+
+  it('does not certify separate mouths when the middle channel disk reaches the exterior domain', () => {
+    const y = Math.sqrt(99);
+    const domain: NeedleChannelDomain = { sphereCenterMm: [0, 0, 0], bodyRadiusMm: 10,
+      entryMm: [-1, y, 0], exitMm: [1, y, 0], threadRadiusMm: .1, channelRadiusMm: .5 };
+    const thread: EquilibriumYarn = { id: 'unseparated', radiusMm: .1, axialStiffnessN: 1, bendingStiffnessNmm2: .01,
+      nodes: [-2, 2].map(x => ({ positionMm: [x, y, 0] as PointMm, fixed: false })), restLengthsMm: [4] };
+    const audit = auditAssignedPassage(thread, domain);
+    assert.equal(audit.crossings.length, 2); assert.deepEqual(audit.outsideSegmentIndices, []);
+    assert.ok(audit.pairing.midplaneClearanceMm! < 0);
+    assert.equal(audit.pairing.status, 'unresolved'); assert.equal(audit.status, 'unresolved');
+    assert.match(audit.diagnostics.join(' '), /middle channel disk/);
   });
 
   it('returns structured rejection for degenerate nodes or channel axes without throwing', () => {

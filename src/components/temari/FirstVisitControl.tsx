@@ -165,6 +165,21 @@ function FirstVisitSnapshotView({ prepared, onStraight }: { prepared: FirstVisit
       </label>
       <p className="mt-1 text-xs">Ползунок меняет только видимость готового пути. Это не движение иглы, шитьё или затягивание.
         Проверка и экспорт относятся ко всему выбранному снимку.</p>
+      <details className="mt-3 text-xs" open={snapshot.phase === 'solved'}>
+        <summary className="cursor-pointer">Где нарушен проход</summary>
+        <p className="mt-2">Для оси круглой нити граница непроникновения проходит на один её радиус выше поверхности мари.
+          У каждого канала проверяем один вход и один выход через эту границу, направление и весь путь между ними.
+          Пересечения самой поверхности мари считаем отдельно: это не измеренные проколы.</p>
+        <ol className="mt-2 space-y-2" aria-label="Проверка трёх каналов">
+          {snapshot.passages.map(({ id, audit }, i) => <li key={id}>
+            <b>{['Нижний вход', 'Верхний проход', 'Нижний выход'][i]}: {audit.status === 'passed' ? 'проверен'
+              : audit.status === 'rejected' ? 'отклонён' : 'не определён'}.</b>{' '}
+            Пересечений границы для оси: {audit.crossings.length} (нужно 2).
+            Отрезков вне допуска: {audit.outsideSegmentIndices.length}; непроверенных: {audit.unresolvedSegmentIndices.length}.
+            {' '}Пересечений поверхности мари: {audit.nominalSurface.crossings.length}.
+          </li>)}
+        </ol>
+      </details>
       <dl className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-xs" aria-label="Проверка показанного снимка">
         <dt>Узлов оси</dt><dd>{snapshot.thread.nodes.length}</dd>
         <dt>Прохождение каналов</dt><dd>{snapshot.channelStatus === 'passed' ? 'проверено' : snapshot.channelStatus === 'rejected' ? 'отклонено' : 'не установлено'}</dd>

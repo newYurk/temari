@@ -8,6 +8,9 @@ import { solveYarnEquilibrium, type EquilibriumYarn, type YarnEquilibriumInput,
   type YarnEquilibriumOptions } from './yarn-equilibrium';
 
 const STEP_MM = 2;
+/** Assigned working length, independent of the sampled seed or mesh resolution.
+ * An engineering control, not a measured consumption for this recipe. */
+const AVAILABLE_LENGTH_MM = 230;
 const MARGIN_MM = 0.05;
 const TOLERANCE_MM = 0.002;
 const distance = (a: PointMm, b: PointMm) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
@@ -30,7 +33,12 @@ const clearSegment = (a: PointMm, b: PointMm, domain: NeedleChannelDomain) => {
 };
 
 /** One sliding thread through the three recipe channels. Ports stay unfixed. */
-export function buildFirstVisitEquilibriumInput() {
+export function buildFirstVisitEquilibriumInput(options: { stepMm?: number; availableLengthMm?: number } = {}) {
+  const stepMm = options.stepMm ?? STEP_MM;
+  const availableLengthMm = options.availableLengthMm ?? AVAILABLE_LENGTH_MM;
+  if (![stepMm, availableLengthMm].every(value => Number.isFinite(value) && value > 0)) {
+    throw new RangeError('A finite positive mesh step and assigned working length are required.');
+  }
   const route = buildFirstVisitRoute();
   const domains = [0, 1, 2].map(i => domainOf(route, i));
   const pieces: { curve: ThreadCurve; domain: number }[] = [
@@ -49,7 +57,10 @@ export function buildFirstVisitEquilibriumInput() {
   const points: PointMm[] = [];
   const ranges: { domain: number; start: number; end: number }[] = [];
   for (const piece of pieces) {
-    const count = Math.max(1, Math.ceil(curvesLength([piece.curve]) / STEP_MM));
+    const count = Math.max(1, Math.ceil(curvesLength([piece.curve]) / stepMm));
+    if (!Number.isSafeInteger(count) || points.length + count + 1 > 4096) {
+      throw new RangeError('First-visit sampling budget exceeded; choose a coarser mesh.');
+    }
     const start = points.length;
     for (let i = 0; i <= count; i++) {
       const point = evaluateCurve(piece.curve, i / count);
@@ -85,11 +96,11 @@ export function buildFirstVisitEquilibriumInput() {
     id: threadId, radiusMm: route.threadRadiusMm, axialStiffnessN: 10, bendingStiffnessNmm2: 0.001,
     nodes: points.map((positionMm, i) => ({ positionMm, fixed: i === 0 || i === points.length - 1 })),
     restLengthsMm: Array(points.length - 1).fill(laid / (points.length - 1)),
-    feed: { tensionN: 0.05, availableLengthMm: laid + 80, discretization: 'equal-chord' },
+    feed: { tensionN: 0.05, availableLengthMm, discretization: 'equal-chord' },
     channelPassages: passages,
   };
   const input: YarnEquilibriumInput = { threads: [thread], sphere: { centerMm: [0, 0, 0], radiusMm: route.R } };
-  return { model: 'first-visit-equilibrium-v1' as const, route, input, threadId, laidLengthMm: laid,
+  return { model: 'first-visit-equilibrium-v1' as const, route, input, threadId, stepMm, laidLengthMm: laid,
     initialSegmentsOutside, mechanics: 'prepared' as const, status: 'not-certified' as const };
 }
 

@@ -15,7 +15,8 @@ describe('one first-visit coordinate state for display and checks', () => {
     assert.equal(source.channelStatus, 'passed');
     assert.deepEqual(source.passages.map(p => p.audit.crossings.length), [2, 2, 2]);
     assert.equal(source.inspection.threads[0].mesh?.foldedFaces, 0);
-    assert.equal(source.material.reserveLengthMm, 80);
+    assert.equal(source.material.availableLengthMm, 230);
+    assert.ok(Math.abs(source.material.reserveLengthMm + source.material.laidLengthMm - 230) < 1e-10);
     assert.equal(source.thread.nodes.filter(n => n.fixed).length, 2);
     assert.deepEqual(JSON.parse(JSON.stringify(source)), source, 'the displayed snapshot must survive export without another solve');
   });

@@ -114,33 +114,47 @@ export function buildSingleNeedleEquilibriumInput(options: SingleNeedleEquilibri
   };
 }
 
+type PassageCrossing = { segmentIndex: number; t: number; pointMm: PointMm; channelGapMm: number };
+
 export type AssignedPassageAudit = {
   status: 'passed' | 'rejected' | 'unresolved';
   toleranceMm: number;
   segments: ReturnType<typeof segmentNeedleChannelClearance>[];
   outsideSegmentIndices: number[];
   unresolvedSegmentIndices: number[];
-  crossings: { segmentIndex: number; t: number; pointMm: PointMm; channelGapMm: number }[];
+  /** The contact domain excludes the thread axis from R+r, not the nominal R. */
+  crossingSurface: { kind: 'thread-axis-exclusion-envelope'; radiusMm: number | null };
+  crossings: PassageCrossing[];
   hasBuriedAxis: boolean;
   portsInsideChannel: boolean;
+  /** Descriptive only: a partly exposed thread may never cross nominal R. */
+  nominalSurface: { radiusMm: number | null; crossings: PassageCrossing[]; hasBuriedAxis: boolean };
   pairing: {
     status: 'passed' | 'rejected' | 'unresolved';
     expectedDirection: 'entry-to-exit';
     axisLengthMm: number | null;
+    /** S-(b+q): the entire middle channel disk must lie inside the excluded sphere. */
+    midplaneClearanceMm: number | null;
     crossings: { crossingIndex: number; axisParameter: number; mouth: 'entry' | 'exit' | 'ambiguous' }[];
   };
   diagnostics: string[];
 };
 
-/** Independent post-solve gate for the complete polygonal axis. Two sphere
+/** Independent post-solve gate for the complete polygonal axis. Two R+r sphere
  * crossings alone permit a U-turn through the same mouth. The channel's entry
  * and exit define the intended direction; their perpendicular bisector splits
- * the two mouths without pinning either crossing to the nominal port. */
+ * the two mouths, provided the entire middle disk is inside that sphere.
+ * Nominal R crossings are recorded without imposing extra physical constraints. */
 export function auditAssignedPassage(thread: EquilibriumYarn, domain: NeedleChannelDomain, toleranceMm = .0005): AssignedPassageAudit {
   const invalid = (status: 'rejected' | 'unresolved', message: string): AssignedPassageAudit => ({
     status, toleranceMm, segments: [], outsideSegmentIndices: [], unresolvedSegmentIndices: [], crossings: [],
+    crossingSurface: { kind: 'thread-axis-exclusion-envelope',
+      radiusMm: finitePositive(domain.bodyRadiusMm + domain.threadRadiusMm) ? domain.bodyRadiusMm + domain.threadRadiusMm : null },
     hasBuriedAxis: false, portsInsideChannel: false,
-    pairing: { status: 'unresolved', expectedDirection: 'entry-to-exit', axisLengthMm: null, crossings: [] },
+    nominalSurface: { radiusMm: finitePositive(domain.bodyRadiusMm) ? domain.bodyRadiusMm : null,
+      crossings: [], hasBuriedAxis: false },
+    pairing: { status: 'unresolved', expectedDirection: 'entry-to-exit', axisLengthMm: null,
+      midplaneClearanceMm: null, crossings: [] },
     diagnostics: [message],
   });
   if (!(toleranceMm > 0) || !Number.isFinite(toleranceMm) || thread.nodes.length < 2
@@ -169,15 +183,9 @@ export function auditAssignedPassage(thread: EquilibriumYarn, domain: NeedleChan
   }
 }
 
-function auditFiniteAssignedPassage(thread: EquilibriumYarn, domain: NeedleChannelDomain, toleranceMm: number): AssignedPassageAudit {
-  const segments = thread.nodes.slice(1).map((node, i) =>
-    segmentNeedleChannelClearance(thread.nodes[i]!.positionMm, node.positionMm, domain,
-      { toleranceMm, maxEvaluations: 2049 }));
-  const outside = segments.filter(s => s.clearance === 'outside-domain');
-  const unresolved = segments.filter(s => s.clearance === 'unresolved' || s.status === 'unresolved');
-  const center = domain.sphereCenterMm, R = domain.bodyRadiusMm;
-  const crossings: { segmentIndex: number; t: number; pointMm: PointMm;
-    channelGapMm: number }[] = [];
+function auditSphereCrossings(thread: EquilibriumYarn, domain: NeedleChannelDomain, R: number, toleranceMm: number) {
+  const center = domain.sphereCenterMm;
+  const crossings: PassageCrossing[] = [];
   for (let i = 0; i + 1 < thread.nodes.length; i++) {
     const a = thread.nodes[i]!.positionMm, b = thread.nodes[i + 1]!.positionMm;
     const d = b.map((x, k) => x - a[k]!) as unknown as PointMm;
@@ -211,28 +219,51 @@ function auditFiniteAssignedPassage(thread: EquilibriumYarn, domain: NeedleChann
       const t = Math.max(0, Math.min(1, -d.reduce((sum, x, k) => sum + x * m[k]!, 0) / dd));
       return distance(a.map((x, k) => x + t * d[k]!) as unknown as PointMm, center) < R - toleranceMm;
     });
+  return { radiusMm: R, crossings, hasBuriedAxis };
+}
+
+function auditFiniteAssignedPassage(thread: EquilibriumYarn, domain: NeedleChannelDomain, toleranceMm: number): AssignedPassageAudit {
+  const segments = thread.nodes.slice(1).map((node, i) =>
+    segmentNeedleChannelClearance(thread.nodes[i]!.positionMm, node.positionMm, domain,
+      { toleranceMm, maxEvaluations: 2049 }));
+  const outside = segments.filter(s => s.clearance === 'outside-domain');
+  const unresolved = segments.filter(s => s.clearance === 'unresolved' || s.status === 'unresolved');
+  const S = domain.bodyRadiusMm + domain.threadRadiusMm;
+  const { crossings, hasBuriedAxis } = auditSphereCrossings(thread, domain, S, toleranceMm);
+  const nominalSurface = auditSphereCrossings(thread, domain, domain.bodyRadiusMm, toleranceMm);
   const portsInsideChannel = crossings.length === 2 && crossings.every(c => c.channelGapMm >= -toleranceMm);
   const axisLengthMm = distance(domain.entryMm, domain.exitMm);
   const axis = domain.exitMm.map((x, k) => (x - domain.entryMm[k]) / axisLengthMm);
+  // Nominal surface endpoints make the axis midpoint the closest axis point
+  // to the sphere centre. If b+q >= S, a path can go around the middle disk
+  // while remaining in the domain: mouth pairing is not established here.
+  const middle = domain.entryMm.map((x, k) => x / 2 + domain.exitMm[k] / 2) as unknown as PointMm;
+  const b = distance(middle, domain.sphereCenterMm);
+  const q = domain.channelRadiusMm - domain.threadRadiusMm;
+  const midplaneClearanceMm = S - (b + q);
+  const separatedMouths = midplaneClearanceMm > toleranceMm;
   const paired: AssignedPassageAudit['pairing']['crossings'] = crossings.map((c, crossingIndex) => {
     const along = c.pointMm.reduce((sum, x, k) => sum + (x - domain.entryMm[k]) * axis[k], 0);
     const fromMiddle = along - axisLengthMm / 2;
     return { crossingIndex, axisParameter: along / axisLengthMm,
       mouth: Math.abs(fromMiddle) <= toleranceMm ? 'ambiguous' : fromMiddle < 0 ? 'entry' : 'exit' };
   });
-  const pairingStatus = paired.length !== 2 ? 'rejected'
+  const pairingStatus = !separatedMouths ? 'unresolved' : paired.length !== 2 ? 'rejected'
     : paired.some(c => c.mouth === 'ambiguous') ? 'unresolved'
     : paired[0].mouth === 'entry' && paired[1].mouth === 'exit' ? 'passed' : 'rejected';
   const pairing: AssignedPassageAudit['pairing'] = {
-    status: pairingStatus, expectedDirection: 'entry-to-exit', axisLengthMm, crossings: paired,
+    status: pairingStatus, expectedDirection: 'entry-to-exit', axisLengthMm, midplaneClearanceMm, crossings: paired,
   };
   const status = outside.length || crossings.length !== 2 || !hasBuriedAxis || !portsInsideChannel || pairingStatus === 'rejected' ? 'rejected'
     : unresolved.length || pairingStatus === 'unresolved' ? 'unresolved' : 'passed';
   return { status, toleranceMm, segments, outsideSegmentIndices: segments.flatMap((s, i) =>
     s.clearance === 'outside-domain' ? [i] : []), unresolvedSegmentIndices: segments.flatMap((s, i) =>
     s.clearance === 'unresolved' || s.status === 'unresolved' ? [i] : []),
-  crossings, hasBuriedAxis, portsInsideChannel, pairing,
-  diagnostics: pairingStatus === 'passed' ? [] : [pairingStatus === 'unresolved'
+  crossingSurface: { kind: 'thread-axis-exclusion-envelope', radiusMm: S },
+  crossings, hasBuriedAxis, portsInsideChannel, nominalSurface, pairing,
+  diagnostics: !separatedMouths
+    ? ['The middle channel disk is not strictly inside the thread-axis exclusion envelope; two separated mouths are not established.']
+    : pairingStatus === 'passed' ? [] : [pairingStatus === 'unresolved'
     ? 'A surface crossing cannot be assigned to a channel mouth within tolerance.'
     : 'The path must enter through the entry mouth and leave through the exit mouth exactly once.'] };
 }

@@ -24,4 +24,21 @@ describe('first visit handed to the one-thread solver', () => {
     assert.notEqual(solved.physicalAcceptance, 'certified');
     assert.ok(['not-certified', 'unresolved', 'rejected-mechanics'].includes(solved.physicalAcceptance));
   });
+
+  it('retains the assigned material and observation cuts when the mesh is refined', () => {
+    const coarse = buildFirstVisitEquilibriumInput({ stepMm: 2 });
+    const fine = buildFirstVisitEquilibriumInput({ stepMm: 1 });
+    const a = coarse.input.threads[0], b = fine.input.threads[0];
+    assert.ok(b.nodes.length > a.nodes.length);
+    assert.notEqual(coarse.laidLengthMm, fine.laidLengthMm);
+    assert.equal(a.feed!.availableLengthMm, 230);
+    assert.equal(b.feed!.availableLengthMm, a.feed!.availableLengthMm,
+      'refinement must not create material by adding a constant reserve to a different seed length');
+    assert.deepEqual(b.nodes.filter(n => n.fixed), a.nodes.filter(n => n.fixed));
+    assert.deepEqual(b.channelPassages!.map(p => p.domain), a.channelPassages!.map(p => p.domain));
+    assert.equal(buildFirstVisitEquilibriumInput({ availableLengthMm: 240 }).input.threads[0].feed!.availableLengthMm, 240);
+    assert.throws(() => buildFirstVisitEquilibriumInput({ stepMm: 0 }), /positive/);
+    assert.throws(() => buildFirstVisitEquilibriumInput({ stepMm: 1e-6 }), /sampling budget/);
+    assert.throws(() => buildFirstVisitEquilibriumInput({ availableLengthMm: Infinity }), /positive/);
+  });
 });
