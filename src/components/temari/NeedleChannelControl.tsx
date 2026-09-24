@@ -92,11 +92,14 @@ export default function NeedleChannelControl() {
     <div className="relative min-h-0 flex-1">
       {mode === 'section' ? <ChannelSection model={model} needle={needle} /> :
         <TemariScene inspection={{ view, focus }} onError={setError}><CatchGeometry model={model} needle={needle} transparent={mode === 'transparent'} /></TemariScene>}
-      <div className="pointer-events-none absolute left-3 top-3 z-10 rounded-lg bg-ink/85 px-3 py-2 text-xs text-linen" aria-label="Легенда контроля">
+      <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[calc(100%-1.5rem)] rounded-lg bg-ink/85 px-3 py-2 text-xs text-linen" aria-label="Легенда контроля">
         <div className="flex items-center gap-2"><span className="h-3 w-3" style={{ backgroundColor: needle ? '#777e88' : gold }} />
           {needle ? 'Игла · только участок канала' : 'Одна нить · визит 1, золотой'}</div>
         <div className="mt-1">Коричневая — разметка</div>
-        {mode === 'section' && <div className="mt-1">Светлый слой — намотка; тёмный — ядро</div>}
+        {mode !== 'solid' && <>
+          <div className="mt-1">Светлый — условный слой {mm(model.parameters.layerThickness)} мм</div>
+          <div className="mt-1">Тёмный — запретная область контроля</div>
+        </>}
       </div>
     </div>
     <div className="z-10 max-h-[48dvh] overflow-y-auto border-t border-ink/15 bg-linen px-4 py-3 text-sm">
@@ -119,7 +122,10 @@ export default function NeedleChannelControl() {
           onClick={() => setView(v)}>{['Полюс', 'Крупно', 'Сбоку'][i]}</button>)}
         <button className={button} onClick={download}>Скачать данные</button>
       </div>
-      <p className="mt-2 text-xs">Глубина оси: {mm(model.channel.chordDepthMm)} мм. Сечение нити Ø0,71 мм, иглы Ø0,4 мм.
+      <p className="mt-2 text-xs">Основа условная: шар Ø{mm(2 * model.parameters.R)} мм, доступный слой {mm(model.parameters.layerThickness)} мм.
+        Это не измеренная мари. <a className="underline" href="design.html#mari-shell">Толщина реальной основы</a>.</p>
+      <p className="mt-2 text-xs">Расчётная глубина оси: {mm(model.channel.chordDepthMm)} мм — из ширины прохода {mm(model.parameters.widthMm)} мм на недеформированной сфере.
+        Сечение нити Ø{mm(2 * model.parameters.rThread)} мм, иглы Ø{mm(2 * model.parameters.rNeedle)} мм.
         Чёрная точка — вход оси, белая — выход на номинальной сфере. Это не измеренные проколы волокон.</p>
       <dl className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-xs" aria-label="Баланс материала">
         <dt>Назначено одной нити</dt><dd>120 мм</dd>
@@ -131,7 +137,9 @@ export default function NeedleChannelControl() {
       <details className="mt-2"><summary>Что здесь задано, а что ещё не решено</summary>
         <p className="my-2">Прямой канал соответствует одному проходу иглы без поворота. Показана только часть иглы между входом и выходом;
           ушко и движение всего стержня не рассчитаны. Вид нити — отдельная заданная конфигурация после удаления иглы, а не результат затягивания.</p>
-        <p className="my-2">Наружные ветви удерживаются в заданной форме. Слой 1,2 мм разрешает геометрический проход, но его податливость и трение не рассчитаны.
+        <p className="my-2">Наружные ветви удерживаются в заданной форме. Толщина разрешённого слоя назначена для теста;
+          это не типичная толщина намотки. Его податливость и трение не рассчитаны.
+          Более толстая оболочка сама по себе не углубляет прямую хорду между теми же точками сферы.
           Нить толще иглы: расширение отверстия ещё предстоит обосновать. Маленький реальный стежок не объявляется невозможным из-за отказа этой жёсткой модели.</p>
         <p className="my-2">Подача задана заранее; она перемещает свободный конец. Это учёт длины, не симуляция протягивания. Запас снаружи не имеет восстановленной формы.
           Сечение показывает канал и номинальную сферу, без наружных ветвей. Торцы нити здесь — срезы наблюдения; они не концы материала.

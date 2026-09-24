@@ -98,7 +98,7 @@ export function buildSingleNeedleCatch(caseId: NeedleCatchCase = 'clearance-cont
     checks: { validation, curvature, outsideMinimumRadiusMm, additionalEntry },
     assumptions: [
       'A single straight fixed-axis needle pass is prescribed. Keeping the central yarn path on the same line is an engineering condition, not a prediction after tightening.',
-      'The 1.2 mm layer is a declared penetrable region, not a solved indentation, measured softness or proof of holding.',
+      'The 1.2 mm layer and impermeable inner body are engineering test boundaries, not measured mari construction or a typical wrapping thickness. Foundation deformation and holding are unsolved; see spec/material-scale.md.',
       'Round yarn radius 0.355 mm and needle radius 0.2 mm are separate assigned dimensions, not a measured pair.',
       'The 11 mm positive control is deliberately wide. It is NOT a replacement for the small GT14 stitch; the 2 mm case must retain its conflicts.',
       'Both external branches are held as prescribed. Their shape and the fixed marking segment are boundary data, not an equilibrium solution.',
