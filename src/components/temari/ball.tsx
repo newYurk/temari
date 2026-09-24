@@ -26,6 +26,7 @@ import { pinPosition, useTemari } from "./store";
 import * as feel from "./feel";
 import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
 import { C8_EXTRA, jiwariMarkColor, jiwariStitches, jiwariVisibleStitches, vRulerLegs } from "./jiwari";
+import { kikuRow, useRowColors } from "./row-colors";
 
 /**
  * Heights by sewing order (spec/pile-render.md). `?pile=0` shows the old
@@ -105,6 +106,7 @@ function ThreadLayer({
   const cord = kind !== "metallic";
   const yarn = useMemo(() => (cord ? getPerleTexture() : getYarnTexture()), [cord]);
   const bump = useMemo(() => (cord ? getPerleBump() : null), [cord]);
+  const rowColors = useRowColors();
 
   useEffect(() => {
     return () => {
@@ -116,25 +118,29 @@ function ThreadLayer({
   return (
     <group>
       {geos.flatMap((list, i) =>
-        list.map((geo, j) => (
-          <mesh key={`${i}-${j}`} geometry={geo} renderOrder={order}>
-            <meshStandardMaterial
-              map={yarn}
-              bumpMap={bump ?? undefined}
-              bumpScale={bump ? 0.42 : undefined}
-              color={colors[i]}
-              roughness={threadRoughness(kind)}
-              metalness={threadMetalness(kind)}
-              transparent={opacity < 1}
-              opacity={opacity}
-              depthWrite={opacity >= 1}
-              side={THREE.FrontSide}
-              polygonOffset
-              polygonOffsetFactor={-1}
-              polygonOffsetUnits={-1}
-            />
-          </mesh>
-        )),
+        list.map((geo, j) => {
+          const row = rowColors ? kikuRow(geo.userData.operationId) : null;
+          return (
+            <mesh key={`${i}-${j}`} geometry={geo} renderOrder={order}>
+              <meshStandardMaterial
+                key={row ? "row" : "thread"}
+                map={row ? null : yarn}
+                bumpMap={bump ?? undefined}
+                bumpScale={bump ? 0.42 : undefined}
+                color={row ? new THREE.Color(row.color).multiplyScalar(row.group === 1 ? 0.55 : 1) : colors[i]}
+                roughness={threadRoughness(kind)}
+                metalness={threadMetalness(kind)}
+                transparent={opacity < 1}
+                opacity={opacity}
+                depthWrite={opacity >= 1}
+                side={THREE.FrontSide}
+                polygonOffset
+                polygonOffsetFactor={-1}
+                polygonOffsetUnits={-1}
+              />
+            </mesh>
+          );
+        }),
       )}
     </group>
   );

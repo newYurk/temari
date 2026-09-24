@@ -6,6 +6,7 @@ import { fillsMatch, polePositions } from "./division";
 import { useTemari } from "./store";
 import { ActionBar } from "./ActionBar";
 import { IconPoles } from "./icons";
+import { kikuRow, ROW_COLORS, useRowColors } from "./row-colors";
 
 function useChromeVar(
   name: "--temari-chrome-top" | "--temari-chrome-bottom",
@@ -77,6 +78,14 @@ function RecenterButton({ className }: { className?: string }) {
 
 function Workbench() {
   const mode = useTemari((s) => s.mode);
+  const rowColors = useRowColors();
+  const kept = useTemari((s) => s.kagariKept);
+  const plan = useTemari((s) => s.kagariPlan);
+  const laid = useTemari((s) => s.kagariLaid);
+  const rows = rowColors ? [...new Set([...kept, ...plan.slice(0, laid)].flatMap((s) => {
+    const row = s.kind === "arc" ? kikuRow(s.operation?.operationId) : null;
+    return row ? [row.row] : [];
+  }))].sort((a, b) => a - b) : [];
   const puzzleIndex = useTemari((s) => s.puzzleIndex);
   const solved = useTemari((s) => s.solved);
   const fills = useTemari((s) => s.fills);
@@ -94,7 +103,7 @@ function Workbench() {
     <>
       <header
         ref={headerRef}
-        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 px-4 pt-4 md:px-8 md:pt-8"
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-wrap items-start justify-between gap-x-4 gap-y-2 px-4 pt-4 md:px-8 md:pt-8"
       >
         <div className="pt-[env(safe-area-inset-top)]">
           <p className="font-display text-xl font-medium tracking-tight text-ink">Темари</p>
@@ -110,6 +119,19 @@ function Workbench() {
           ) : null}
           <RecenterButton />
         </div>
+        {mode === "studio" && <p className="pointer-events-auto basis-full rounded-lg bg-ink/5 px-3 py-2 text-xs leading-relaxed" aria-label="Состояние модели мастерской">
+          <b>Модель в работе.</b> Ширина подхвата, укладка и проколы ещё не исправлены.{" "}
+          <a className="underline underline-offset-2" href="?upper-bundle=1&control=needle">Проверка одного прохода</a>
+        </p>}
+        {rowColors && rows.length > 0 && <div className="basis-full rounded-lg bg-linen/95 px-3 py-2 text-xs" aria-label="Цвета рядов">
+          <p>Цвета рядов · группа A светлее, B темнее. Форма нити та же.</p>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+            {rows.map((row) => <span className="inline-flex items-center gap-1" key={row}>
+              <span className="inline-block size-3 rounded-sm" style={{ background: `#${ROW_COLORS[row % ROW_COLORS.length]!.toString(16).padStart(6, "0")}` }} />
+              {row + 1}
+            </span>)}
+          </div>
+        </div>}
       </header>
       {mode === "kata" ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-28 z-20 px-3 md:px-8">

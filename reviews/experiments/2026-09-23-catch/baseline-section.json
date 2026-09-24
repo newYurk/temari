@@ -1,0 +1,378 @@
+{
+  "status": "rendered-mesh-intersection-witness",
+  "source": {
+    "files": [
+      {
+        "path": "src/components/temari/craft.ts",
+        "sha256": "cfeac3d6ef40fa642d55a51be8ee17a2f66fc5c45e3b6c84e7fcb3c932075b63"
+      },
+      {
+        "path": "src/components/temari/division.ts",
+        "sha256": "047ae13cee5b520c42abfb61b45d1af6a4a8e5814814838d70fdad549c7d7146"
+      },
+      {
+        "path": "src/components/temari/kagari-topology.ts",
+        "sha256": "96401eb208cf0cccc6edea4a5b0b0a87e49487f697df7e44ca585a5c935e3341"
+      },
+      {
+        "path": "src/components/temari/kagari.ts",
+        "sha256": "7854555179c52d8b8ab5d7c97173cf8784e7badda531b2face73c9c566084925"
+      },
+      {
+        "path": "src/components/temari/measure.ts",
+        "sha256": "902418da692356c5c98ef77c503d3a4f653cd81cb8196e14d7754c1e800f32f5"
+      },
+      {
+        "path": "src/components/temari/palettes.ts",
+        "sha256": "a05d4c3a6b8c3c541a995b6b2771bf709936b6fc84feffdfe0ab29c24d5f7d52"
+      },
+      {
+        "path": "src/components/temari/patterns.ts",
+        "sha256": "64bd5333904dd37bc46124908e6261d32dd1fd285225c55302b490aade1bd52f"
+      },
+      {
+        "path": "src/components/temari/pile-heights.ts",
+        "sha256": "6ae921b0a15bd6836fb0fca6737e84919b25e7b8c895a6085edb93bb1fff0821"
+      },
+      {
+        "path": "src/components/temari/stitches.ts",
+        "sha256": "a766c13409c05768b828d8ad2aa1ce0ac2b0bb9340d72dee81d92e422dc917f0"
+      },
+      {
+        "path": "src/components/temari/thread-crossings.ts",
+        "sha256": "0e984bb9c37653a6d11458cd8ddaeac5e023c6a7721b435a703be53cf2aa5592"
+      },
+      {
+        "path": "src/components/temari/thread-geometry.ts",
+        "sha256": "763a02202bebb0e9cd94e884efdb446d8e90916f6f406a0e1b341f31e811fd95"
+      },
+      {
+        "path": "src/components/temari/thread.ts",
+        "sha256": "8f916c6ea92230f7d9bf21e1ec89b608c42cd1968fdd7b4203bd1c7173cfed3d"
+      },
+      {
+        "path": "src/components/temari/upper-studio-baseline.ts",
+        "sha256": "c9a5686f1ba5588874882e87274a63e0c24a0cde35236abbf6972f0ffe7031f8"
+      }
+    ],
+    "digest": "d6344ca33bea667e0204159c118d4ef92d1d68c315b9beb81080eacfa29c28f2",
+    "revision": "fe572dd61a9809b6b5530d33e7d007ba1f4a2165"
+  },
+  "config": {
+    "division": "simple",
+    "pole": 0,
+    "set": "A",
+    "rows": 3,
+    "renderer": "pileParts",
+    "thread": "pearl5",
+    "circumferenceMm": 240,
+    "bodyRadiusMm": 38.197186342054884,
+    "roundEnvelopeRadiusMm": 0.355,
+    "selectedMarks": [
+      "outer-1",
+      "inner-2",
+      "outer-3"
+    ]
+  },
+  "section": {
+    "normal": [
+      0.9860457599203198,
+      0.166474493428262,
+      0.00004879510782506718
+    ],
+    "radial": [
+      -0.16647449367014142,
+      0.9860457610863924,
+      9.095755042900073e-7
+    ],
+    "across": [
+      -0.00004796278811134952,
+      -0.000009020023938090564,
+      0.9999999988091052
+    ],
+    "actualPortAngularMm": [
+      1.2499766091949691,
+      -1.2499766091949684
+    ],
+    "meaning": "Plane through sphere centre and both actual third-catch surface crossings."
+  },
+  "declaredCaptures": [
+    "kiku-8-point/p0/s0/r0/inner-2",
+    "kiku-8-point/p0/s0/r1/inner-2"
+  ],
+  "priorAxisSections": [
+    {
+      "operationId": "kiku-8-point/p0/s0/r0/inner-2",
+      "intersections": [
+        {
+          "segment": 411,
+          "t": 0.6356693409081021,
+          "angularMm": -1.1537143925417357,
+          "heightMm": 0.18135845487756797
+        }
+      ]
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r0/outer-3",
+      "intersections": [
+        {
+          "segment": 60,
+          "t": 0.36914327589440105,
+          "angularMm": 1.1537980678243263,
+          "heightMm": 0.17894693762771396
+        }
+      ]
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r1/inner-2",
+      "intersections": [
+        {
+          "segment": 532,
+          "t": 0.14363196254297,
+          "angularMm": 0.03987713867755007,
+          "heightMm": 0.5860159571674473
+        }
+      ]
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r1/outer-3",
+      "intersections": [
+        {
+          "segment": 33,
+          "t": 0.9278015598373746,
+          "angularMm": -0.036091211014339764,
+          "heightMm": 1.0650921810835783
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "priorIds": [
+      "kiku-8-point/p0/s0/r0/inner-2",
+      "kiku-8-point/p0/s0/r0/outer-3",
+      "kiku-8-point/p0/s0/r1/inner-2",
+      "kiku-8-point/p0/s0/r1/outer-3"
+    ],
+    "currentIds": [
+      "kiku-8-point/p0/s0/r2/inner-2",
+      "kiku-8-point/p0/s0/r2/outer-3"
+    ],
+    "checkedPairs": [
+      {
+        "priorOperation": "kiku-8-point/p0/s0/r0/inner-2",
+        "currentOperation": "kiku-8-point/p0/s0/r2/inner-2",
+        "intersectionWitness": false
+      },
+      {
+        "priorOperation": "kiku-8-point/p0/s0/r0/inner-2",
+        "currentOperation": "kiku-8-point/p0/s0/r2/outer-3",
+        "intersectionWitness": true
+      },
+      {
+        "priorOperation": "kiku-8-point/p0/s0/r0/outer-3",
+        "currentOperation": "kiku-8-point/p0/s0/r2/inner-2",
+        "intersectionWitness": true
+      },
+      {
+        "priorOperation": "kiku-8-point/p0/s0/r0/outer-3",
+        "currentOperation": "kiku-8-point/p0/s0/r2/outer-3",
+        "intersectionWitness": false
+      },
+      {
+        "priorOperation": "kiku-8-point/p0/s0/r1/inner-2",
+        "currentOperation": "kiku-8-point/p0/s0/r2/inner-2",
+        "intersectionWitness": false
+      },
+      {
+        "priorOperation": "kiku-8-point/p0/s0/r1/inner-2",
+        "currentOperation": "kiku-8-point/p0/s0/r2/outer-3",
+        "intersectionWitness": false
+      },
+      {
+        "priorOperation": "kiku-8-point/p0/s0/r1/outer-3",
+        "currentOperation": "kiku-8-point/p0/s0/r2/inner-2",
+        "intersectionWitness": false
+      },
+      {
+        "priorOperation": "kiku-8-point/p0/s0/r1/outer-3",
+        "currentOperation": "kiku-8-point/p0/s0/r2/outer-3",
+        "intersectionWitness": false
+      }
+    ],
+    "missingOrEmptySections": []
+  },
+  "meshSections": [
+    {
+      "operationId": "kiku-8-point/p0/s0/r0/inner-2",
+      "angularExtentMm": [
+        -1.7497996705456678,
+        -0.5572515056920491
+      ],
+      "cutSegments": 78
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r0/outer-3",
+      "angularExtentMm": [
+        0.5572276858880478,
+        1.7500106124397488
+      ],
+      "cutSegments": 78
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r1/inner-2",
+      "angularExtentMm": [
+        -0.5504739630123789,
+        0.6179236111807179
+      ],
+      "cutSegments": 96
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r1/outer-3",
+      "angularExtentMm": [
+        -0.6147458100937074,
+        0.5442137887205094
+      ],
+      "cutSegments": 78
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r2/inner-2",
+      "angularExtentMm": [
+        0.6863133617655498,
+        1.6649542461792517
+      ],
+      "cutSegments": 157
+    },
+    {
+      "operationId": "kiku-8-point/p0/s0/r2/outer-3",
+      "angularExtentMm": [
+        -1.6649670201733286,
+        -0.6730819235337205
+      ],
+      "cutSegments": 127
+    }
+  ],
+  "witnesses": [
+    {
+      "priorOperation": "kiku-8-point/p0/s0/r0/inner-2",
+      "currentOperation": "kiku-8-point/p0/s0/r2/outer-3",
+      "priorTriangle": 20623,
+      "currentTriangle": 563,
+      "pointMm": [
+        -6.359346483825576,
+        37.66749809500448,
+        -1.4556343587819391
+      ],
+      "heightMm": 0.03108293377000848,
+      "residualMm": 0,
+      "priorBarycentric": [
+        0.30439662550127966,
+        0.024643904807718404,
+        0.670959469691002
+      ],
+      "currentBarycentric": [
+        0.841113607142357,
+        0.13742557947793982,
+        0.021460813379703316
+      ],
+      "priorVerticesMm": [
+        [
+          -6.410258325374182,
+          37.64242699401783,
+          -1.4128695952291734
+        ],
+        [
+          -6.37660655251596,
+          37.66977279472484,
+          -1.5292602875544221
+        ],
+        [
+          -6.335615172212128,
+          37.678788644429254,
+          -1.4723313723004043
+        ]
+      ],
+      "currentVerticesMm": [
+        [
+          -6.346541767336856,
+          37.679712996696935,
+          -1.449211751142342
+        ],
+        [
+          -6.425349628345325,
+          37.59361846220892,
+          -1.4896124623785751
+        ],
+        [
+          -6.438546692186651,
+          37.661852052017345,
+          -1.4897748216669706
+        ]
+      ]
+    },
+    {
+      "priorOperation": "kiku-8-point/p0/s0/r0/outer-3",
+      "currentOperation": "kiku-8-point/p0/s0/r2/inner-2",
+      "priorTriangle": 2001,
+      "currentTriangle": 25222,
+      "pointMm": [
+        -6.414925726653071,
+        37.995969105067296,
+        1.0370688850066208
+      ],
+      "heightMm": 0.3504523947595004,
+      "residualMm": 9.155133597044475e-16,
+      "priorBarycentric": [
+        0.31321927314446646,
+        0.6663889271777943,
+        0.020391799677739235
+      ],
+      "currentBarycentric": [
+        0.2973305834577194,
+        0.28022005411489037,
+        0.42244936242739023
+      ],
+      "priorVerticesMm": [
+        [
+          -6.383385515267197,
+          38.00495977478377,
+          1.120082295103568
+        ],
+        [
+          -6.428082273195761,
+          37.992121295873865,
+          0.9975049454941688
+        ],
+        [
+          -6.469439068620188,
+          37.98361543362748,
+          1.0548981713161396
+        ]
+      ],
+      "currentVerticesMm": [
+        [
+          -6.446231224185346,
+          38.01948075695922,
+          1.0484875407454557
+        ],
+        [
+          -6.354337859091995,
+          38.03767410417841,
+          1.0078197406535536
+        ],
+        [
+          -6.433081402485779,
+          37.95175715460881,
+          1.048433753005742
+        ]
+      ]
+    }
+  ],
+  "limitations": [
+    "Finite rendered triangles after mesh smoothing; no circular or rounded proxy is used for the witnesses.",
+    "Transverse interior section intersections witness common points of the two rendered surfaces outside the mari.",
+    "Absence of a witness on one plane is not a full collision clearance or a capture certificate.",
+    "Angular extents are section measurements; aperture containment alone cannot prove capture or link topology.",
+    "Only the named first/second-row incoming/outgoing flanks and third catch, within 4 mm angular distance of the aperture middle, are tested.",
+    "Tangencies, coplanar degeneracies and section endpoint contacts are not accepted as transverse witnesses; no equilibrium or craft acceptance."
+  ]
+}

@@ -1,0 +1,281 @@
+{
+  "total": 32,
+  "inadmissible": 16,
+  "max": 1.2735584964089077,
+  "reference": [
+    {
+      "part": "kiku-8-point/p0/s0/r2/inner-2",
+      "owner": "kiku-8-point/p0/s0/r2/inner-2",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 1.2735584964086195,
+      "at": 0.078,
+      "minSpeed": 0.013864055313260532
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r2/outer-3",
+      "owner": "kiku-8-point/p0/s0/r2/inner-2",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 1.271827352827416,
+      "at": 0.078,
+      "minSpeed": 0.013907974443171612
+    }
+  ],
+  "records": [
+    {
+      "part": "kiku-8-point/p0/s0/r1/outer-1",
+      "owner": "kiku-8-point/p0/s0/r1/inner-0",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 0.6893701468515584,
+      "at": 0.044,
+      "minSpeed": 0.018403764110742404
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r1/inner-2",
+      "owner": "kiku-8-point/p0/s0/r1/inner-2",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 0.6898221068148479,
+      "at": 0.044,
+      "minSpeed": 0.01839329508139032
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r1/outer-3",
+      "owner": "kiku-8-point/p0/s0/r1/inner-2",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 0.8102977339378417,
+      "at": 0,
+      "minSpeed": 0.012819784366409074
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r1/inner-4",
+      "owner": "kiku-8-point/p0/s0/r1/inner-4",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 0.689822106814841,
+      "at": 0.044,
+      "minSpeed": 0.01839329508139032
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r1/outer-5",
+      "owner": "kiku-8-point/p0/s0/r1/inner-4",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 0.8102977339378453,
+      "at": 0,
+      "minSpeed": 0.012819784366408408
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r1/inner-6",
+      "owner": "kiku-8-point/p0/s0/r1/inner-6",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 0.68982210681484,
+      "at": 0.044,
+      "minSpeed": 0.01839329508139032
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r1/outer-7",
+      "owner": "kiku-8-point/p0/s0/r1/inner-6",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 0.8102977339378435,
+      "at": 0,
+      "minSpeed": 0.012819784366409074
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r1/inner-0",
+      "owner": "kiku-8-point/p0/s0/r1/inner-0",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 0.8369429339656578,
+      "at": 0,
+      "minSpeed": 0.012850248873225613
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r1/outer-2",
+      "owner": "kiku-8-point/p0/s1/r1/inner-1",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 0.6893701468515605,
+      "at": 0.044,
+      "minSpeed": 0.018403764110742408
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r1/inner-3",
+      "owner": "kiku-8-point/p0/s1/r1/inner-3",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 0.689822106814656,
+      "at": 0.044,
+      "minSpeed": 0.01839329508139032
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r1/outer-4",
+      "owner": "kiku-8-point/p0/s1/r1/inner-3",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 0.8102977339373658,
+      "at": 0,
+      "minSpeed": 0.012819784366408408
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r1/inner-5",
+      "owner": "kiku-8-point/p0/s1/r1/inner-5",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 0.6898221068146507,
+      "at": 0.044,
+      "minSpeed": 0.01839329508139032
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r1/outer-6",
+      "owner": "kiku-8-point/p0/s1/r1/inner-5",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 0.810297733937354,
+      "at": 0,
+      "minSpeed": 0.012819784366408408
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r1/inner-7",
+      "owner": "kiku-8-point/p0/s1/r1/inner-7",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 0.6898221068148462,
+      "at": 0.044,
+      "minSpeed": 0.01839329508139032
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r1/outer-0",
+      "owner": "kiku-8-point/p0/s1/r1/inner-7",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 0.8102977339375973,
+      "at": 0,
+      "minSpeed": 0.012819784366409074
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r1/inner-1",
+      "owner": "kiku-8-point/p0/s1/r1/inner-1",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 0.8369429339646864,
+      "at": 0,
+      "minSpeed": 0.012850248873225613
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r2/outer-1",
+      "owner": "kiku-8-point/p0/s0/r2/inner-0",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 1.2718273528274169,
+      "at": 0.078,
+      "minSpeed": 0.01390797444317161
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r2/inner-2",
+      "owner": "kiku-8-point/p0/s0/r2/inner-2",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 1.2735584964086195,
+      "at": 0.078,
+      "minSpeed": 0.013864055313260532
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r2/outer-3",
+      "owner": "kiku-8-point/p0/s0/r2/inner-2",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 1.271827352827416,
+      "at": 0.078,
+      "minSpeed": 0.013907974443171612
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r2/inner-4",
+      "owner": "kiku-8-point/p0/s0/r2/inner-4",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 1.273558496408776,
+      "at": 0.078,
+      "minSpeed": 0.013864055313260315
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r2/outer-5",
+      "owner": "kiku-8-point/p0/s0/r2/inner-4",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 1.2718273528274116,
+      "at": 0.078,
+      "minSpeed": 0.01390797444317164
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r2/inner-6",
+      "owner": "kiku-8-point/p0/s0/r2/inner-6",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 1.2735584964087725,
+      "at": 0.078,
+      "minSpeed": 0.013864055313260164
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r2/outer-7",
+      "owner": "kiku-8-point/p0/s0/r2/inner-6",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 1.2718273528277617,
+      "at": 0.078,
+      "minSpeed": 0.0139079744431707
+    },
+    {
+      "part": "kiku-8-point/p0/s0/r2/inner-0",
+      "owner": "kiku-8-point/p0/s0/r2/inner-0",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 1.2703193518394866,
+      "at": 0.079,
+      "minSpeed": 0.013950805804701587
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r2/outer-2",
+      "owner": "kiku-8-point/p0/s1/r2/inner-1",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 1.2718273528272614,
+      "at": 0.078,
+      "minSpeed": 0.013907974443171826
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r2/inner-3",
+      "owner": "kiku-8-point/p0/s1/r2/inner-3",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 1.273558496408764,
+      "at": 0.078,
+      "minSpeed": 0.013864055313260392
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r2/outer-4",
+      "owner": "kiku-8-point/p0/s1/r2/inner-3",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 1.2718273528272586,
+      "at": 0.078,
+      "minSpeed": 0.013907974443171836
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r2/inner-5",
+      "owner": "kiku-8-point/p0/s1/r2/inner-5",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 1.2735584964089077,
+      "at": 0.078,
+      "minSpeed": 0.013864055313260074
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r2/outer-6",
+      "owner": "kiku-8-point/p0/s1/r2/inner-5",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 1.2718273528272603,
+      "at": 0.078,
+      "minSpeed": 0.01390797444317183
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r2/inner-7",
+      "owner": "kiku-8-point/p0/s1/r2/inner-7",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 1.2735584964087936,
+      "at": 0.078,
+      "minSpeed": 0.013864055313260227
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r2/outer-0",
+      "owner": "kiku-8-point/p0/s1/r2/inner-7",
+      "side": "start",
+      "maxMinimumSectionCurvatureRatio": 1.2718273528272586,
+      "at": 0.078,
+      "minSpeed": 0.01390797444317184
+    },
+    {
+      "part": "kiku-8-point/p0/s1/r2/inner-1",
+      "owner": "kiku-8-point/p0/s1/r2/inner-1",
+      "side": "end",
+      "maxMinimumSectionCurvatureRatio": 1.270319351839488,
+      "at": 0.079,
+      "minSpeed": 0.01395080580470141
+    }
+  ]
+}

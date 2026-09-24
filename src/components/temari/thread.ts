@@ -56,7 +56,7 @@ export const THREAD_KIND_META: Record<
     role: "mark",
     thickness: 0.14,
     sheen: 0.86,
-    hint: "дзивари и акценты; не тоньше вышивки",
+    hint: "дзивари и акценты; ширина зависит от выбранного материала",
   },
 };
 
@@ -105,6 +105,7 @@ export const WRAP_FORBIDDEN = [
   "шёлк и «особенные» волокна на базу — плохо формуют",
 ] as const;
 
+/** Assigned model widths; gauge/usage notes do not establish measured cross-sections. */
 export const STITCH_THREADS = {
   pearl5: { label: "перле №5", mm: 0.71, note: "2-ply, блеск, не делится. Новичкам это." },
   pearl8: { label: "перле №8", mm: 0.5, note: "тоньше; часто дзивари, если не металлик" },
@@ -112,14 +113,14 @@ export const STITCH_THREADS = {
   hana: { label: "хана", mm: 0.6, note: "полиэстер, мат, 5 прядей. В Японии новичкам: не скользит." },
   miyako: { label: "мияко", mm: 0.45, note: "Fujix, 30 м, замена kyo. Не мешать с kyo в одном шаре." },
   bunka: { label: "бунка", mm: 0.55, note: "цепочка, распускают; традиция после шёлка" },
-  metallic: { label: "металлик", mm: 0.2, note: "дзивари; DMC Art 282 или не эластичный lame" },
+  metallic: { label: "металлик", mm: 0.2, note: "дзивари; 0,2 мм заданы в модели, это не измерение DMC Art 282" },
 } as const;
 
 export function isThreadKind(value: unknown): value is ThreadKind {
   return THREAD_KINDS.includes(value as ThreadKind);
 }
 
-/** Ribbon half-width on the unit sphere — metallic jiwari and belts. */
+/** Full assigned ribbon width on the unit sphere — metallic jiwari and belts. */
 export function ribbonWidth(kind: ThreadKind) {
   const mm =
     kind === "pearl8"
@@ -127,10 +128,10 @@ export function ribbonWidth(kind: ThreadKind) {
       : kind === "metallic"
         ? STITCH_THREAD_MM.mark
         : STITCH_THREAD_MM.pearl5;
-  return unitFromMm(mm) * (kind === "metallic" ? 0.55 : 0.5);
+  return unitFromMm(mm);
 }
 
-/** Round pearl on the mari. Half a millimetre: cords nestle at one-pearl pitch. */
+/** Transverse semiaxis of the assigned studio section; its height is set by the renderer. */
 export function stitchRadius(kind: ThreadKind) {
   const mm =
     kind === "pearl8"

@@ -1,0 +1,529 @@
+diff --git a/src/components/temari/stitches.ts b/src/components/temari/stitches.ts
+index bf41e44..44025a0 100644
+--- a/src/components/temari/stitches.ts
++++ b/src/components/temari/stitches.ts
+@@ -1,5 +1,5 @@
+ import * as THREE from "three";
+-import { pileHeights, type Pile } from "./pile-heights.ts";
++import { pileHeights, type Pile, type PileLine } from "./pile-heights.ts";
+ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+ import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
+ import type { Stitch } from "./patterns.ts";
+@@ -7,6 +7,7 @@ import { annotateSetCrossings, groupWorkingThreads } from "./patterns.ts";
+ import { DEFAULT_KIND, ribbonWidth, stitchRadius, type ThreadKind } from "./thread.ts";
+ import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
+ import { WRAP_LAYERS } from "./craft.ts";
++import { fixedPortApproach } from "./fixed-port-approach.ts";
+ import {
+   stackBump, scoopAway, scoopRadius, KAGARI_SCOOP_MM, clampNotPastPole, appendParkBite,
+ } from "./kagari.ts";
+@@ -705,6 +706,8 @@ function buryEnds(
+  */
+ const TUBE_CACHE_MAX = 600;
+ const tubeCache = new Map<string, THREE.BufferGeometry>();
++/** Mandatory interpolation knots: smoothing may refine, but may not relocate these mouths. */
++const fixedPortPaths = new WeakMap<THREE.Vector3[], FixedSurfacePort[]>();
+ 
+ function tubeKey(
+   pts: THREE.Vector3[],
+@@ -730,7 +733,8 @@ function cachedTube(
+   uPerUnit = 0,
+   heightScale = STITCH_FLAT,
+ ) {
+-  const key = tubeKey(pts, radius, taperEnds, closed, uPerUnit, heightScale);
++  const fixed = fixedPortPaths.get(pts) ?? [];
++  const key = tubeKey(pts, radius, taperEnds, closed, uPerUnit, heightScale) + `|ports:${fixed.map(p => `${p.side}:${p.index}:${p.approachIndex}:${p.point.toArray().join(",")}`).join(",")}`;
+   const hit = tubeCache.get(key);
+   if (hit) {
+     // Touch: the oldest entry is the first to go when the cache is full.
+@@ -738,7 +742,7 @@ function cachedTube(
+     tubeCache.set(key, hit);
+     return hit;
+   }
+-  const geo = tubeOnSphere(pts, radius, taperEnds, closed, uPerUnit, heightScale, true);
++  const geo = tubeOnSphere(pts, radius, taperEnds, closed, uPerUnit, heightScale, true, fixed);
+   geo.userData.cached = true;
+   tubeCache.set(key, geo);
+   while (tubeCache.size > TUBE_CACHE_MAX) {
+@@ -772,12 +776,15 @@ function stackedArcChain(
+   return mergeGeometries(ok, false) ?? ok[0]!;
+ }
+ 
++type ArcStitch = Extract<Stitch, { kind: "arc" }>;
++type JoinedCatches = { start?: ArcStitch; end?: ArcStitch };
++
+ /** The kept tubes a working thread is made of, one per kai it lies in. */
+ export function stackedArcChainParts(
+   chain: Extract<Stitch, { kind: "arc" }>[],
+   kind: ThreadKind,
+   /** Pile render: hand each shaped centerline out instead of building a tube. */
+-  emit?: (pts: THREE.Vector3[], at: Extract<Stitch, { kind: "arc" }>) => void,
++  emit?: (pts: THREE.Vector3[], at: ArcStitch, catches?: JoinedCatches) => void,
+ ): THREE.BufferGeometry[] {
+   const flat = !!emit;
+   if (chain.length === 1) {
+@@ -795,7 +802,7 @@ export function stackedArcChainParts(
+   type Arc = Extract<Stitch, { kind: "arc" }>;
+   // `at` is the stitch the piece is drawn along: the pile stacks it at that
+   // stitch's time and paints it that stitch's colour.
+-  const tube = (pts: THREE.Vector3[], buryStart: boolean, buryStop: boolean, at: Arc) => {
++  const tube = (pts: THREE.Vector3[], buryStart: boolean, buryStop: boolean, at: Arc, catches: JoinedCatches = {}) => {
+     if (pts.length < 2) return;
+     let shaped = pts;
+     // Parked round: start and stop on the same pin — take the inner U so the
+@@ -808,7 +815,7 @@ export function stackedArcChainParts(
+       shaped = bite.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+     }
+     if (emit) {
+-      emit(buryEnds(shaped, kind, buryStart, buryStop), at);
++      emit(buryEnds(shaped, kind, buryStart, buryStop), at, catches);
+       return;
+     }
+     const geo = cachedTube(
+@@ -833,6 +840,8 @@ export function stackedArcChainParts(
+   let prevSitAts: readonly { t: number; n: number }[] | undefined;
+   let emerge = true;
+   let pending: THREE.Vector3[] | null = null;
++  let ptsStartCatch: Arc | undefined;
++  let pendingCatches: JoinedCatches = {};
+   let kaiFirst: Extract<Stitch, { kind: "arc" }> | undefined;
+   const stackDepthOf = (s: Extract<Stitch, { kind: "arc" }>) => {
+     if (s.tip !== "inner") return 0;
+@@ -862,21 +871,23 @@ export function stackedArcChainParts(
+         const { head, tail } = joinAt(
+           pending.slice(), prevStackDepth, prevSitAts, kaiFirst.sitAts,
+         );
+-        tube(head, false, false, prev);
+-        tube(tail, false, false, pendingAt);
++        tube(head, false, false, prev, { start: ptsStartCatch, end: prev });
++        tube(tail, false, false, pendingAt, { start: prev, end: pendingCatches.end });
+         pending = null;
+         pts = [];
++        ptsStartCatch = undefined;
+         return;
+       }
+     }
+     if (pending) {
+-      tube(pending, emerge, false, pendingAt);
++      tube(pending, emerge, false, pendingAt, pendingCatches);
+       pending = null;
+-      if (pts.length >= 2) tube(pts, false, true, prev);
++      if (pts.length >= 2) tube(pts, false, true, prev, { start: ptsStartCatch });
+     } else if (pts.length >= 2) {
+-      tube(pts, emerge, true, prev);
++      tube(pts, emerge, true, prev, { start: ptsStartCatch });
+     }
+     pts = [];
++    ptsStartCatch = undefined;
+   };
+   const joinPiece = (
+     piece: THREE.Vector3[],
+@@ -893,16 +904,22 @@ export function stackedArcChainParts(
+         const { head, tail } = splitJoinAroundMark(
+           pts, piece, mark, kind, prevBite, prevStackDepth, prevSitAts, sitAts, flat,
+         );
+-        if (pending === null) [pending, pendingAt] = [head, prev];
+-        else tube(head, false, false, prev);
++        if (pending === null) {
++          [pending, pendingAt] = [head, prev];
++          pendingCatches = { start: ptsStartCatch, end: prev };
++        } else tube(head, false, false, prev, { start: ptsStartCatch, end: prev });
+         pts = tail;
++        ptsStartCatch = prev;
+         emerge = false;
+         return;
+       }
+       const { head, tail } = joinAt(piece, 0, sitAts, sitAts);
+-      if (pending === null) [pending, pendingAt] = [head, prev];
+-      else tube(head, false, false, prev);
++      if (pending === null) {
++        [pending, pendingAt] = [head, prev];
++        pendingCatches = { start: ptsStartCatch };
++      } else tube(head, false, false, prev, { start: ptsStartCatch });
+       pts = tail;
++      ptsStartCatch = undefined;
+       emerge = false;
+       return;
+     }
+@@ -918,7 +935,7 @@ export function stackedArcChainParts(
+         && samePin(pts[pts.length - 1]!, next0));
+       if (resume) {
+         if (pending) {
+-          tube(pending, emerge, false, pendingAt);
++          tube(pending, emerge, false, pendingAt, pendingCatches);
+           pending = null;
+         }
+         emerge = false;
+@@ -1158,7 +1175,73 @@ function geodesicRibbon(points: THREE.Vector3[], width: number) {
+  * stitches that copy alone was 0.2 s, one long frame per stitch. Drawing the
+  * pieces as they are keeps the kept tubes untouched.
+  */
+-export type PilePart = { color: number; at: Extract<Stitch, { kind: "arc" }>; pts: THREE.Vector3[]; lift: number[] };
++export type FixedSurfacePort = {
++  operationId: string; side: "start" | "end"; point: THREE.Vector3; index: number;
++  /** Retained flank sample where the new exterior interpolation starts. */
++  approachIndex: number;
++  /** Existing buried endpoint depth, not a newly inferred needle channel. */
++  buriedRadius: number;
++};
++export type PilePart = {
++  color: number; at: ArcStitch; pts: THREE.Vector3[]; lift: number[];
++  fixedPorts?: FixedSurfacePort[];
++};
++
++function stackedCatch(s: ArcStitch | undefined): s is ArcStitch & { bite: NonNullable<ArcStitch["bite"]> } {
++  return !!s && s.tip === "inner" && !!s.bite && (s.operation?.overOperations.length ?? 0) > 0;
++}
++
++/**
++ * After the flank rests on its supports, connect it to an explicit surface
++ * mouth. The old renderer lifted the complete dive, then abruptly stopped
++ * lifting below its depth gate. This construction does not run that lift
++ * on the approach or buried continuation. It is not a contact solution.
++ */
++function finishFixedApproach(part: PilePart, raw: THREE.Vector3[], owner: ArcStitch, side: "start" | "end", kind: ThreadKind): PilePart {
++  if (!stackedCatch(owner)) return part;
++  const reverse = side === "start";
++  const source = reverse ? raw.slice().reverse() : raw;
++  const points = reverse ? part.pts.slice().reverse() : part.pts;
++  const lift = reverse ? part.lift.slice().reverse() : part.lift;
++  const mark = new THREE.Vector3(...owner.b).normalize();
++  const ports = reversePorts(mark, new THREE.Vector3(...owner.a), owner.bite.enter, owner.bite.exit, true, unitFromMm(kindMm(kind)));
++  const port = reverse ? ports.out : ports.inn;
++  // Candidate: retain the solved flank up to its last actual support.
++  // Replacing the full six-mm join discarded supported crossings. This
++  // local boundary is determined by the current, already laid pile only.
++  const oppositeChanged = part.fixedPorts?.some(p => p.side !== side) ?? false;
++  const oppositeDelta = oppositeChanged ? points.length - source.length : 0;
++  let sourceClip = source.length - 2;
++  while (sourceClip > 1 && (points[sourceClip + oppositeDelta]!.length() <= 1
++    || lift[sourceClip + oppositeDelta]! <= 0)) sourceClip--;
++  if (sourceClip <= 1) {
++    sourceClip = source.length - 2;
++    while (sourceClip > 1 && points[sourceClip + oppositeDelta]!.length() <= 1) sourceClip--;
++  }
++  const clip = sourceClip + oppositeDelta;
++  if (clip < 1 || points[clip]!.length() <= 1) throw new RangeError("No exterior flank for a fixed upper approach.");
++  const step = unitFromMm(kindMm(kind)) / 3;
++  const approach = fixedPortApproach(points[clip]!, points[clip]!.clone().sub(points[clip - 1]!), port, step);
++  const buriedRadius = source.at(-1)!.length();
++  if (buriedRadius >= 1) throw new RangeError("A completed upper catch must have a buried endpoint.");
++  const next = [...points.slice(0, clip + 1), ...approach.points.slice(1)];
++  const portIndex = next.length - 1;
++  const hiddenSteps = Math.max(2, Math.ceil((1 - buriedRadius) / step));
++  for (let j = 1; j <= hiddenSteps; j++) next.push(port.clone().multiplyScalar(1 + (buriedRadius - 1) * j / hiddenSteps));
++  // New approach samples already have their final radii; retained flank
++  // lift remains available for diagnostics. No inverse pre-pile path is
++  // claimed for these newly constructed samples.
++  const nextLift = [...lift.slice(0, clip + 1), ...next.slice(clip + 1).map(() => 0)];
++  if (reverse) { next.reverse(); nextLift.reverse(); }
++  const delta = next.length - part.pts.length;
++  const priorPorts = (part.fixedPorts ?? []).map(p => ({ ...p, index: p.index + (reverse ? delta : 0),
++    approachIndex: p.approachIndex + (reverse ? delta : 0) }));
++  const fixedPorts = [...priorPorts, { operationId: owner.operation!.operationId, side, point: port.clone(),
++    index: reverse ? next.length - 1 - portIndex : portIndex,
++    approachIndex: reverse ? next.length - 1 - clip : clip, buriedRadius }];
++  fixedPortPaths.set(next, fixedPorts);
++  return { ...part, pts: next, lift: nextLift, fixedPorts };
++}
+ const pileCache = new WeakMap<Stitch[], Map<ThreadKind, PilePart[]>>();
+ /** The last pile per thread: the next stitch lays only what changed. */
+ const lastPile = new Map<ThreadKind, Pile>();
+@@ -1181,7 +1264,7 @@ export function pileParts(stitches: Stitch[], kind: ThreadKind): PilePart[] {
+     .filter((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc")
+     .map((s) => ({ ...s, sitA: 0, sitB: 0, sitMid: 0, sitMidT: undefined, sitAts: undefined }));
+   const order = new Map<Extract<Stitch, { kind: "arc" }>, number>(arcs.map((s, i) => [s, i]));
+-  const emitted: { color: number; stitch: Extract<Stitch, { kind: "arc" }>; at: number; seq: number; pts: THREE.Vector3[] }[] = [];
++  const emitted: { color: number; stitch: Extract<Stitch, { kind: "arc" }>; at: number; seq: number; pts: THREE.Vector3[]; catches: JoinedCatches }[] = [];
+   // A new colour is a new thread (spec/thread-identity.md): chain each colour
+   // on its own, as the old path does by drawing one colour at a time.
+   const byColor = new Map<number, Extract<Stitch, { kind: "arc" }>[]>();
+@@ -1192,8 +1275,8 @@ export function pileParts(stitches: Stitch[], kind: ThreadKind): PilePart[] {
+   }
+   for (const list of byColor.values()) {
+     for (const chain of groupWorkingThreads(list)) {
+-      stackedArcChainParts(chain, kind, (pts, at) =>
+-        emitted.push({ color: at.color, stitch: at, at: order.get(at) ?? 0, seq: emitted.length, pts }));
++      stackedArcChainParts(chain, kind, (pts, at, catches = {}) =>
++        emitted.push({ color: at.color, stitch: at, at: order.get(at) ?? 0, seq: emitted.length, pts, catches }));
+     }
+   }
+   emitted.sort((a, b) => a.at - b.at || a.seq - b.seq);
+@@ -1216,28 +1299,39 @@ export function pileParts(stitches: Stitch[], kind: ThreadKind): PilePart[] {
+     }
+     e.pts = dense;
+   }
+-  const lines = emitted.map((e) => ({
+-    points: e.pts.map((p) => {
+-      const u = p.clone().normalize();
+-      return [u.x, u.y, u.z] as [number, number, number];
+-    }),
+-    // Inside the wrap only once the whole section is under the mari surface;
+-    // a sample just starting down its port is still on the pile.
+-    dive: e.pts.map((p) => p.length() < base - height),
+-    // Signed: a sample the path already lays a little above the base lends
+-    // support from where it is, not from the base.
+-    offset: e.pts.map((p) => p.length() - base),
+-  }));
+-  const lifts = pileHeights(lines, { width: half * 2, height, portRadius: 0 }, lastPile.get(kind));
+-  lastPile.set(kind, { lines, lifts });
+-  const out = emitted.map((e, i) => ({
+-    color: e.color,
+-    at: e.stitch,
+-    lift: lifts[i]!,
+-    pts: e.pts.map((p, j) => (lines[i]!.dive[j]
+-      ? p.clone()
+-      : p.clone().normalize().multiplyScalar(p.length() + lifts[i]![j]!))),
+-  }));
++  const asLine = (pts: THREE.Vector3[], fixed = false): PileLine => ({
++    points: pts.map(p => p.clone().normalize().toArray()),
++    dive: pts.map(p => fixed || p.length() < base - height),
++    offset: pts.map(p => p.length() - base),
++  });
++  const lines = emitted.map(e => asLine(e.pts));
++  const applyLift = (e: typeof emitted[number], line: PileLine, lifts: number[]): PilePart => ({
++    color: e.color, at: e.stitch, lift: lifts,
++    pts: e.pts.map((p, j) => line.dive![j] ? p.clone() : p.clone().normalize().multiplyScalar(p.length() + lifts[j]!)),
++  });
++  const opts = { width: half * 2, height, portRadius: 0 };
++  let out: PilePart[];
++  if (!emitted.some(e => stackedCatch(e.catches.start) || stackedCatch(e.catches.end))) {
++    const lifts = pileHeights(lines, opts, lastPile.get(kind));
++    lastPile.set(kind, { lines, lifts });
++    out = emitted.map((e, i) => applyLift(e, lines[i]!, lifts[i]!));
++  } else {
++    // Later flanks must rest on FINAL earlier approaches, not on discarded
++    // dives. Settled paths enter the same height algorithm as fixed supports
++    // with their actual radius offsets. This is chronological, not relaxation.
++    const settled: PileLine[] = [], zeroLifts: number[][] = [];
++    out = [];
++    for (let i = 0; i < emitted.length; i++) {
++      const e = emitted[i]!;
++      const lifts = pileHeights([...settled, lines[i]!], opts, { lines: settled, lifts: zeroLifts });
++      let part = applyLift(e, lines[i]!, lifts[i]!);
++      if (stackedCatch(e.catches.start)) part = finishFixedApproach(part, e.pts, e.catches.start, "start", kind);
++      if (stackedCatch(e.catches.end)) part = finishFixedApproach(part, e.pts, e.catches.end, "end", kind);
++      out.push(part);
++      settled.push(asLine(part.pts, true));
++      zeroLifts.push(part.pts.map(() => 0));
++    }
++  }
+   byKind.set(kind, out);
+   return out;
+ }
+@@ -1268,6 +1362,7 @@ export function createMotifGeometryParts(
+       const geo = cachedTube(part.pts, stitchRadius(kind), false, false, twistPerUnit(kind));
+       geo.userData.centerline = part.pts.map((p) => p.clone());
+       geo.userData.operationId = part.at.operation?.operationId;
++      geo.userData.fixedPorts = part.fixedPorts;
+       parts.push(geo);
+     }
+   } else if (cord) {
+@@ -1368,7 +1463,9 @@ function smoothStitchPath(
+   pts: THREE.Vector3[],
+   radius: number,
+   closed: boolean,
++  fixed: FixedSurfacePort[] = [],
+ ) {
++  const knots = fixed.map(p => p.index);
+   const path: THREE.Vector3[] = [];
+   const segs = closed ? pts.length : pts.length - 1;
+   const directions = new THREE.CatmullRomCurve3(pts.map(p => p.clone().normalize()), closed, "centripetal");
+@@ -1384,12 +1481,17 @@ function smoothStitchPath(
+     const a = radii[i]!, b = radii[next]!;
+     const ma = radiusSlope(i), mb = radiusSlope(next);
+     const steps = 4;
++    const resolved = fixed.some(p => p.side === "start" ? i < p.approachIndex : i >= p.approachIndex);
+     for (let s = 0; s < steps; s++) {
+       const t = s / steps;
+       const t2 = t * t, t3 = t2 * t;
+       const radiusAt = (2 * t3 - 3 * t2 + 1) * a + (t3 - 2 * t2 + t) * ma
+         + (-2 * t3 + 3 * t2) * b + (t3 - t2) * mb;
+-      directions.getPoint((i + t) / segs, _a).normalize().multiplyScalar(radiusAt);
++      // A constructed mouth approach already carries its endpoint tangents.
++      // Global CatmullRom across its repeated radial directions bends the
++      // hidden continuation sideways. Refine its own segments instead.
++      if (resolved) slerpUnit(pts[i]!, pts[next]!, t, _a).multiplyScalar(radiusAt);
++      else directions.getPoint((i + t) / segs, _a).normalize().multiplyScalar(radiusAt);
+       path.push(_a.clone());
+     }
+   }
+@@ -1402,9 +1504,14 @@ function smoothStitchPath(
+   const length = distances.at(-1)!;
+   const count = Math.max(2, Math.ceil(length / (radius * .2)));
+   const uniform: THREE.Vector3[] = [];
+-  let segment = 1;
+-  for (let i = 0; i <= count - (closed ? 1 : 0); i++) {
+-    const distance = length * i / count;
++  const stations = Array.from({ length: count + (closed ? 0 : 1) }, (_, i) => ({ distance: length * i / count, point: undefined as THREE.Vector3 | undefined }));
++  for (const i of knots) stations.push({ distance: distances[4 * i]!, point: pts[i] });
++  stations.sort((a, b) => a.distance - b.distance || Number(!!b.point) - Number(!!a.point));
++  let segment = 1, lastDistance = -Infinity;
++  for (const { distance, point } of stations) {
++    if (distance - lastDistance < 1e-12) continue;
++    lastDistance = distance;
++    if (point) { uniform.push(point.clone()); continue; }
+     while (segment < dense.length - 1 && distances[segment]! < distance) segment++;
+     const span = distances[segment]! - distances[segment - 1]!;
+     const t = span > 1e-12 ? (distance - distances[segment - 1]!) / span : 0;
+@@ -1435,9 +1542,10 @@ function tubeOnSphere(
+   heightScale = 1,
+   /** Needle passages need smooth joins; preserve wrap sampling and its budget. */
+   smoothJoins = false,
++  fixedPorts: FixedSurfacePort[] = [],
+ ) {
+   if (pts.length < 2) return new THREE.BufferGeometry();
+-  const path: THREE.Vector3[] = smoothJoins ? smoothStitchPath(pts, radius, closed) : [];
++  const path: THREE.Vector3[] = smoothJoins ? smoothStitchPath(pts, radius, closed, fixedPorts) : [];
+   if (!smoothJoins) {
+     const segs = closed ? pts.length : pts.length - 1;
+     for (let i = 0; i < segs; i++) {
+@@ -1531,6 +1639,7 @@ function tubeOnSphere(
+   // No end caps. A disk on a kagari join faces the pin and sits on it
+   // as a coin; working ends have already dived under the wrap.
+   const geo = new THREE.BufferGeometry();
++  geo.userData.sampledCenterline = path.map(p => p.clone());
+   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+   geo.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
+   geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+diff --git a/src/components/temari/fixed-port-approach.ts b/src/components/temari/fixed-port-approach.ts
+new file mode 100644
+index 0000000..31604ab
+--- /dev/null
++++ b/src/components/temari/fixed-port-approach.ts
+@@ -0,0 +1,31 @@
++import { Vector3 } from "three";
++
++/** Kinematic interpolation to a fixed surface mouth, not a contact/needle solver. */
++export function fixedPortApproach(from: Vector3, tangent: Vector3, port: Vector3, step: number) {
++  const R = port.length(), r0 = from.length(), height = r0 - R;
++  if (![R, r0, step, ...tangent.toArray(), ...port.toArray()].every(Number.isFinite)
++    || R <= 0 || step <= 0 || height <= 0 || tangent.lengthSq() === 0) {
++    throw new RangeError("A finite exterior endpoint, tangent, surface port and positive step are required.");
++  }
++  const n0 = from.clone().normalize(), n1 = port.clone().normalize(), direction = tangent.clone().normalize();
++  const radialSlope = direction.dot(n0);
++  // Limit the first handle by the positive radial control hull. Its direction
++  // stays the measured flank tangent; no radius/section is reduced to fit.
++  const handle = Math.min(from.distanceTo(port), radialSlope < 0 ? 3 * height / -radialSlope : Infinity);
++  const q1 = n0.clone().addScaledVector(direction.clone().addScaledVector(n0, -radialSlope), handle / (3 * r0));
++  const r1 = Math.max(R, r0 + radialSlope * handle / 3), r2 = R + height / 3;
++  const count = Math.max(32, Math.ceil((from.distanceTo(port) + height) / step) * 3);
++  const points: Vector3[] = [];
++  for (let i = 0; i <= count; i++) {
++    const t = i / count, u = 1 - t;
++    const radius = r0 * u ** 3 + 3 * r1 * u * u * t + 3 * r2 * u * t * t + R * t ** 3;
++    const q = n0.clone().multiplyScalar(u ** 3).addScaledVector(q1, 3 * u * u * t)
++      .addScaledVector(n1, 3 * u * t * t + t ** 3);
++    if (q.lengthSq() < 1e-20) throw new RangeError("The local direction interpolation crosses its origin.");
++    points.push(q.normalize().multiplyScalar(radius));
++  }
++  points[0] = from.clone(); points[count] = port.clone();
++  return { points, radiusControls: [r0, r1, r2, R] as const,
++    startTangent: direction, endTangent: n1.negate(),
++    model: "positive-radial-cubic-to-fixed-mouth" as const };
++}
+diff --git a/src/components/temari/fixed-port-approach.test.ts b/src/components/temari/fixed-port-approach.test.ts
+new file mode 100644
+index 0000000..fd17bba
+--- /dev/null
++++ b/src/components/temari/fixed-port-approach.test.ts
+@@ -0,0 +1,98 @@
++import { describe, it } from "node:test";
++import assert from "node:assert/strict";
++import { Vector3 } from "three";
++import { fixedPortApproach } from "./fixed-port-approach.ts";
++import { compileKiku, stitchesFromOps } from "./patterns.ts";
++import { createMotifGeometryParts, pileParts, type FixedSurfacePort } from "./stitches.ts";
++
++// Exact minimum distance of a finite straight segment from the origin.
++function segmentRadius(a: Vector3, b: Vector3) {
++  const d = b.clone().sub(a);
++  const t = Math.max(0, Math.min(1, -a.dot(d) / d.lengthSq()));
++  return a.clone().addScaledVector(d, t).length();
++}
++
++describe("fixed upper approach interpolation (not a contact certificate)", () => {
++  it("retains both endpoints and approaches the surface from outside with the specified tangents", () => {
++    const from = new Vector3(4, 42, 0), port = new Vector3(0, 40, 0), tangent = new Vector3(-1, .1, .2);
++    const before = [from.toArray(), port.toArray(), tangent.toArray()];
++    const { points } = fixedPortApproach(from, tangent, port, .01);
++    assert.deepEqual(points[0], from);
++    assert.deepEqual(points.at(-1), port);
++    assert.deepEqual([from.toArray(), port.toArray(), tangent.toArray()], before);
++    for (let i = 1; i < points.length; i++) assert.ok(segmentRadius(points[i - 1]!, points[i]!) >= 40 - 1e-12);
++    const start = points[1]!.clone().sub(points[0]!).normalize();
++    const end = points.at(-1)!.clone().sub(points.at(-2)!).normalize();
++    assert.ok(start.dot(tangent.clone().normalize()) > .9999);
++    assert.ok(end.dot(port.clone().normalize().negate()) > .9999);
++  });
++
++  it("does not push the path into the sphere to honour a steep downward flank tangent", () => {
++    const port = new Vector3(0, 1, 0);
++    const { points } = fixedPortApproach(new Vector3(.06, 1.002, 0), new Vector3(-.01, -1, 0), port, .0001);
++    for (let i = 1; i < points.length; i++) assert.ok(segmentRadius(points[i - 1]!, points[i]!) >= 1 - 1e-12);
++    assert.ok(points.slice(0, -1).every(p => p.length() > 1));
++  });
++
++  it("rejects absent exterior clearance and invalid inputs", () => {
++    for (const from of [new Vector3(0, 1, 0), new Vector3(0, .9, 0), new Vector3(NaN, 2, 0)]) {
++      assert.throws(() => fixedPortApproach(from, new Vector3(1, 0, 0), new Vector3(0, 1, 0), .01), RangeError);
++    }
++    assert.throws(() => fixedPortApproach(new Vector3(0, 2, 0), new Vector3(), new Vector3(0, 1, 0), .01), RangeError);
++    assert.throws(() => fixedPortApproach(new Vector3(0, 2, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0), 0), RangeError);
++  });
++
++  for (const set of [0, 1, "all"] as const) it(`keeps actual stacked mouths at recipe R after pile and mesh smoothing, set ${set}`, () => {
++    const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, 3, set));
++    const parts = pileParts(stitches, "pearl5");
++    const byId = new Map(stitches.filter(s => s.kind === "arc").map(s => [s.operation!.operationId, s]));
++    const meshes = createMotifGeometryParts(stitches, 0, "pearl5", { pile: true });
++    let mouths = 0;
++    for (const part of parts) {
++      const mesh = meshes.find(g => g.userData.operationId === part.at.operation!.operationId)!;
++      const smoothed = mesh.userData.sampledCenterline as Vector3[];
++      for (const fixed of part.fixedPorts ?? []) {
++        mouths++;
++        const owner = byId.get(fixed.operationId)!;
++        assert.equal(owner.tip, "inner");
++        assert.ok(owner.operation!.overOperations.length > 0);
++        assert.ok([owner.bite!.enter, owner.bite!.exit].some(v => new Vector3(...v).normalize().distanceTo(fixed.point) < 1e-12));
++        assert.ok(Math.abs(fixed.point.length() - 1) < 1e-12);
++        assert.equal(part.pts[fixed.index]!.distanceTo(fixed.point), 0);
++        assert.equal(Math.min(...smoothed.map(p => p.distanceTo(fixed.point))), 0, "smoothing must retain the explicit R knot");
++        checkPortNeighbourhood(part.pts, fixed);
++        const lo = Math.min(fixed.approachIndex, fixed.index), hi = Math.max(fixed.approachIndex, fixed.index);
++        for (let j = lo + 1; j <= hi; j++) assert.ok(segmentRadius(part.pts[j - 1]!, part.pts[j]!) >= 1 - 1e-12,
++          "the entire finite exterior polyline must stay outside R");
++        checkPortNeighbourhood(smoothed, { ...fixed, index: smoothed.findIndex(p => p.distanceTo(fixed.point) === 0) });
++        // A real mesh ring is centred at the fixed port (Float32 mesh tolerance).
++        const ring = smoothed.findIndex(p => p.distanceTo(fixed.point) === 0);
++        const position = mesh.getAttribute("position"), stride = position.count / smoothed.length;
++        const center = new Vector3();
++        for (let j = 0; j < stride - 1; j++) center.add(new Vector3().fromBufferAttribute(position, ring * stride + j));
++        center.divideScalar(stride - 1);
++        assert.ok(center.distanceTo(fixed.point) < 1e-7);
++      }
++    }
++    assert.equal(mouths, set === "all" ? 32 : 16);
++  });
++
++  it("assigns fixed mouths only to executed catches and leaves first-row paths without new constraints", () => {
++    for (const count of [8, 9, 10, 11, 12, 16, 17, 18, 19, 24]) {
++      const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, 3, 0, count));
++      const executed = new Set(stitches.filter(s => s.kind === "arc").map(s => s.operation!.operationId));
++      const parts = pileParts(stitches, "pearl5");
++      for (const part of parts) for (const port of part.fixedPorts ?? []) assert.ok(executed.has(port.operationId));
++      if (count === 8) assert.equal(parts.flatMap(p => p.fixedPorts ?? []).length, 0);
++    }
++  });
++});
++
++function checkPortNeighbourhood(points: Vector3[], fixed: FixedSurfacePort) {
++  const outward = fixed.side === "start" ? 1 : -1;
++  const exterior = points[fixed.index + outward]!, interior = points[fixed.index - outward]!;
++  assert.ok(exterior.length() > 1, "last exterior segment approaches R from outside");
++  assert.ok(segmentRadius(points[fixed.index]!, exterior) >= 1 - 1e-12, "finite approach segment must not enter early");
++  assert.ok(interior.length() < 1, "hidden continuation begins at this same mouth");
++  assert.ok(interior.clone().normalize().distanceTo(fixed.point) < 1e-4, "legacy radial hidden endpoint tangent");
++}

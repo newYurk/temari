@@ -941,12 +941,13 @@ function kikuPetal(
 }
 
 /**
- * Uwagake wedge (F7). The later top stitch takes the needle under every earlier
- * round at this tip and pulls their legs in: at its level each leg lies inside
- * the bite, a thread radius clear. Between the earlier stitch and this one the
- * limit grows with the bite, so the legs lie in a narrow woven wedge on the
- * line; below this stitch they ease back into their packed bands. Only stitches
- * actually taken pull, so the wedge is as long as the rounds sewn so far.
+ * Engineering lateral constraint for the intended uwagake wedge (F7).
+ * Craft requires the later catch to encompass the earlier rounds. This moves
+ * recipe via points toward that intent; the radius margin is NOT proof that
+ * finite threads fit inside the catch. The renderer can replace these points
+ * in a join, and an oblique thread section is wider than this axis-only cap.
+ * Only executed catches contribute, but actual mesh contact, fixed punctures
+ * and curvature still need a joint check (check:upper-section, issue #105).
  */
 function gatherUnderBite(
   ops: KagariOp[],
@@ -1051,8 +1052,14 @@ export function compileKiku(
   color = 0,
   wanted: number | "fit" = 3,
   onlySet: 0 | 1 | "all" = "all",
+  /** Execute only this chronological prefix; later catches must not reshape it. */
+  maxOperations?: number,
 ): KagariOp[] {
   requireMotifSupport(division, "kiku");
+  if (maxOperations !== undefined && (!Number.isSafeInteger(maxOperations) || maxOperations < 0)) {
+    throw new RangeError("The completed operation count must be a non-negative safe integer.");
+  }
+  const operationLimit = maxOperations ?? Infinity;
   const n = petalCount(division);
   const spec = kikuSpec(division, spacing, wanted);
   const skip = spec.sets;
@@ -1082,6 +1089,7 @@ export function compileKiku(
         let first = true;
         for (let sector = 0; sector < n; sector++) {
           if (sector % skip !== pass) continue;
+          if (ops.length >= operationLimit) return ops;
           const phi0 = step * sector;
           const phi1 = step * (sector + 1);
           const phi2 = step * (sector + 2);
@@ -1106,6 +1114,7 @@ export function compileKiku(
             ops[ops.length - 1]!.resume = { at: parked[set] };
           }
           first = false;
+          if (ops.length >= operationLimit) return ops;
           const over = stackOver(innerOver[line2] ?? [], crossing);
           // GT14: needle "about 1 thread width wider and below previous
           // stitch" — one thread wider in total, half a thread each side. The
@@ -1480,6 +1489,8 @@ export function kagariPhaseHint(
   /** Rows lying at this pole and how many the thread leaves room for. */
   rows = 0,
   rowsFit = 0,
+  /** The real operation being sewn; batches may alternate groups and start after row one. */
+  activeStitch?: Stitch,
 ): string {
   const support = motifSupport(division, motif);
   if (!support.supported) return support.reason;
@@ -1502,9 +1513,10 @@ export function kagariPhaseHint(
   const spec = kikuSpec(division);
   const perRound = (n / spec.sets) * 2;
   const at = Math.max(0, laid - 1);
-  const kai = Math.floor(at / perRound) + 1;
+  const active = activeStitch?.kind === "arc" ? activeStitch : undefined;
+  const kai = active?.kai !== undefined ? active.kai + 1 : Math.floor(at / perRound) + 1;
   const where = poleIndex === 0 ? "север" : poleIndex === 1 ? "юг" : `полюс ${poleIndex + 1}`;
-  const petals = kagariSet === 0 ? "первые 4" : "вторые 4";
+  const petals = (active?.set ?? kagariSet) === 0 ? "первые 4" : "вторые 4";
   return `Кику · ${where} · ${petals} · круг ${kai} · от полюса`;
 }
 

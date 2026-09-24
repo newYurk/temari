@@ -129,6 +129,7 @@ function vec(p: [number, number, number], lift = 0, kind: ThreadKind = DEFAULT_K
   return new THREE.Vector3(p[0], p[1], p[2]).normalize().multiplyScalar(r);
 }
 
+/** `width` is the full transverse width before projection back onto the sphere. */
 export function ribbonFromPoints(pts: THREE.Vector3[], width: number, closed: boolean) {
   const n = pts.length;
   if (n < 2) return new THREE.BufferGeometry();
@@ -786,6 +787,7 @@ export function stackedArcChainParts(
       return [];
     }
     const one = stackedArcCord(chain[0]!, kind);
+    one.userData.operationId = chain[0]!.operation?.operationId;
     return (one.getAttribute("position")?.count ?? 0) > 0 ? [one] : [];
   }
   const parts: THREE.BufferGeometry[] = [];
@@ -816,6 +818,7 @@ export function stackedArcChainParts(
       false,
       twistPerUnit(kind),
     );
+    geo.userData.operationId = at.operation?.operationId;
     geo.userData.centerline = shaped.map((p) => p.clone());
     parts.push(geo);
   };
@@ -1256,7 +1259,7 @@ export function createMotifGeometryParts(
     if (stitch.kind === "arc") {
       arcs.push(stitch);
     } else {
-      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, stitch.lift ?? 0, kind)), width * 1.08, true));
+      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, stitch.lift ?? 0, kind)), width, true));
     }
   }
   if (cord && opts.pile) {
@@ -1264,6 +1267,7 @@ export function createMotifGeometryParts(
       if (part.color !== colorIndex) continue;
       const geo = cachedTube(part.pts, stitchRadius(kind), false, false, twistPerUnit(kind));
       geo.userData.centerline = part.pts.map((p) => p.clone());
+      geo.userData.operationId = part.at.operation?.operationId;
       parts.push(geo);
     }
   } else if (cord) {
@@ -1293,7 +1297,7 @@ export function createMotifGeometry(
     if (stitch.kind === "arc") {
       arcs.push(stitch);
     } else {
-      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, stitch.lift ?? 0, kind)), width * 1.08, true));
+      parts.push(ribbonFromPoints(stitch.points.map((p) => vec(p, stitch.lift ?? 0, kind)), width, true));
     }
   }
   if (cord) {
