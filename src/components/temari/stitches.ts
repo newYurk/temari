@@ -264,6 +264,121 @@ export function arcPath(
   return pts;
 }
 
+/** Prefix of one laid leg. `t` 0 is the start, 1 is the finished leg. */
+export function clipArc(
+  stitch: Extract<Stitch, { kind: "arc" }>,
+  t: number,
+): Extract<Stitch, { kind: "arc" }> {
+  const via = stitch.via ?? [];
+  const anchors: [number, number, number][] = [stitch.a, ...via, stitch.b];
+  const steps = Math.max(1, anchors.length - 1);
+  const pos = Math.min(1, Math.max(0, t)) * steps;
+  const seg = Math.min(steps - 1, Math.floor(pos));
+  const local = pos >= steps ? 1 : pos - seg;
+  const from = anchors[seg]!;
+  const to = anchors[seg + 1]!;
+  slerpUnit(
+    new THREE.Vector3(from[0], from[1], from[2]),
+    new THREE.Vector3(to[0], to[1], to[2]),
+    local,
+    _a,
+  );
+  const end: [number, number, number] = [_a.x, _a.y, _a.z];
+  const head = anchors.slice(0, seg + 1);
+  const points = local < 1e-6 ? [head[0]!, head[0]!] : [...head, end];
+  return {
+    ...stitch,
+    a: points[0]!,
+    b: points[points.length - 1]!,
+    via: points.slice(1, -1),
+  };
+}
+
+/**
+ * Opening-frame picture. Each round is one cord on the mari. At every recipe
+ * tip the cord enters one bite mouth, crosses inside the mari, and leaves by
+ * the other mouth. A later round rises by one thread diameter only where it
+ * actually crosses an earlier surface thread.
+ */
+export function lyingPetalParts(stitches: Stitch[], kind: ThreadKind = DEFAULT_KIND.stitch) {
+  const arcs = stitches.filter((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc");
+  const half = stitchRadius(kind);
+  const touch = half * 2;
+  const inside = 1 - touch;
+  const groups: Extract<Stitch, { kind: "arc" }>[][] = [];
+  for (const stitch of arcs) {
+    const key = `${stitch.pole}:${stitch.set}:${stitch.kai}`;
+    const last = groups[groups.length - 1];
+    const prev = last?.[0];
+    if (!last || !prev || `${prev.pole}:${prev.set}:${prev.kai}` !== key) groups.push([stitch]);
+    else last.push(stitch);
+  }
+  const lines = groups.map((group) => {
+    const units: THREE.Vector3[] = [];
+    const buried: boolean[] = [];
+    const push = (u: THREE.Vector3, under: boolean) => {
+      const prev = units[units.length - 1];
+      if (prev && prev.distanceToSquared(u) < 1e-8 && buried[buried.length - 1] === under) return;
+      units.push(u);
+      buried.push(under);
+    };
+    let carried = false;
+    for (const stitch of group) {
+      const bare = { ...stitch, sitA: 0, sitB: 0, sitMid: 0, sitAts: undefined, lift: 0 };
+      const surf = arcPath(bare, kind).map((p) => p.clone().normalize());
+      const bite = stitch.bite;
+      if (!bite || surf.length < 2) {
+        for (const u of surf) push(u, false);
+        carried = false;
+        continue;
+      }
+      const enter = new THREE.Vector3(...bite.enter).normalize();
+      const exit = new THREE.Vector3(...bite.exit).normalize();
+      const from = surf[0]!;
+      const mouthIn = from.distanceToSquared(enter) <= from.distanceToSquared(exit) ? enter : exit;
+      const mouthOut = mouthIn === enter ? exit : enter;
+      const mark = surf[surf.length - 1]!;
+      const gate = mouthIn.distanceTo(mark);
+      let left = !carried;
+      for (const u of surf) {
+        if (!left) {
+          if (u.distanceToSquared(from) <= gate * gate) continue;
+          left = true;
+        }
+        if (u.distanceTo(mark) <= gate) break;
+        push(u, false);
+      }
+      push(mouthIn, false);
+      for (let i = 1; i < 5; i++) push(mouthIn.clone().lerp(mouthOut, i / 5).normalize(), true);
+      push(mouthOut, false);
+      carried = true;
+    }
+    return { stitch: group[0]!, units, buried, radii: [] as number[] };
+  });
+  const earlier: { u: THREE.Vector3; rad: number }[] = [];
+  for (const line of lines) {
+    line.radii = line.units.map((u, i) => {
+      if (line.buried[i]) return inside;
+      let rad = 1 + half;
+      for (const e of earlier) {
+        const d2 = u.distanceToSquared(e.u);
+        if (d2 >= touch * touch) continue;
+        const f = Math.sqrt(Math.max(0, 1 - d2 / (touch * touch)));
+        rad = Math.max(rad, e.rad + touch * f);
+      }
+      return rad;
+    });
+    line.units.forEach((u, i) => {
+      if (!line.buried[i]) earlier.push({ u, rad: line.radii[i]! });
+    });
+  }
+  return lines.map((line) => ({
+    color: line.stitch.color,
+    operationId: line.stitch.operation?.operationId,
+    pts: line.units.map((u, i) => u.clone().multiplyScalar(line.radii[i]!)),
+  }));
+}
+
 function sameMark(a: [number, number, number], b: [number, number, number]) {
   const dx = a[0] - b[0];
   const dy = a[1] - b[1];
@@ -1246,11 +1361,21 @@ export function createMotifGeometryParts(
   stitches: Stitch[],
   colorIndex: number,
   kind = DEFAULT_KIND.stitch,
-  opts: { pile?: boolean } = {},
+  opts: { pile?: boolean; lie?: boolean } = {},
 ): THREE.BufferGeometry[] {
   const width = ribbonWidth(kind);
   const cord = kind !== "metallic";
   const parts: THREE.BufferGeometry[] = [];
+  if (opts.lie && cord) {
+    for (const part of lyingPetalParts(stitches, kind)) {
+      if (part.color !== colorIndex || part.pts.length < 2) continue;
+      const geo = cachedTube(part.pts, stitchRadius(kind), false, false, twistPerUnit(kind), 1);
+      geo.userData.operationId = part.operationId;
+      geo.userData.centerline = part.pts.map((p) => p.clone());
+      parts.push(geo);
+    }
+    return parts;
+  }
   // The pile lays its own heights; the count-based crossings are only for the old path.
   const annotated = cord && opts.pile ? stitches : annotateSetCrossings(stitches);
   const arcs: Extract<Stitch, { kind: "arc" }>[] = [];

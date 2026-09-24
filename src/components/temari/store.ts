@@ -209,6 +209,8 @@ type TemariState = {
   kagariSpacing: KagariSpacing;
   kagariPlan: Stitch[];
   kagariLaid: number;
+  /** Float index along the armed opening frame while the thread handle is dragged. Null leaves the player alone. */
+  kagariScrub: number | null;
   kagariPlaying: boolean;
   kagariFocus: Vec3 | null;
   kagariKept: Stitch[];
@@ -269,6 +271,8 @@ type TemariState = {
   setKagariDir: (dir: KagariDir) => void;
   setKagariSpacing: (spacing: KagariSpacing) => void;
   startKagari: () => void;
+  /** Opening frame: A round 0, B round 0, A round 1. Dragging lays the next leg and pulls it back. */
+  setThreadScrub: (stitches: number) => void;
   advanceKagari: () => void;
   fillKiku: () => void;
   /**
@@ -346,6 +350,63 @@ function withKikuMarks(
     );
   }
   return kikuWorkingPins(state.division, state.facingPole);
+}
+
+/**
+ * Simple 8, even spacing, one pole: set A round 0, set B round 0, set A round 1.
+ * Each call is the studio recipe (`motifStitchPlan`); A and B keep their own colours.
+ * Later rounds are not included. This is the current recipe path, not a new route.
+ */
+export function kikuOpeningFrame(
+  division: Division,
+  dir: KagariDir,
+  spacing: KagariSpacing,
+  pole: number,
+  colors: readonly [number, number],
+): Stitch[] {
+  const round = (layers: number, set: 0 | 1) =>
+    motifStitchPlan(division, "kiku", dir, spacing, pole, colors[set], layers, set);
+  const a1 = round(1, 0);
+  const b1 = round(1, 1);
+  const a2 = round(2, 0).slice(a1.length);
+  return [...a1, ...b1, ...a2];
+}
+
+const OPENING_DIVISION = "simple" as const;
+const OPENING_SPACING = "even" as const;
+
+let openingSpan = 0;
+
+/** Leg count of the opening frame. Cached so the slider range does not recompile on every paint. */
+export function kikuOpeningSpan() {
+  if (openingSpan === 0) {
+    openingSpan = kikuOpeningFrame(OPENING_DIVISION, "out", OPENING_SPACING, 0, [0, 1]).length;
+  }
+  return openingSpan;
+}
+
+function openingRoundAt(stitch: Stitch): "A1" | "B1" | "A2" | null {
+  if (stitch.kind !== "arc" || stitch.set === undefined || stitch.kai === undefined) return null;
+  if (stitch.set === 0 && stitch.kai === 0) return "A1";
+  if (stitch.set === 1 && stitch.kai === 0) return "B1";
+  if (stitch.set === 0 && stitch.kai === 1) return "A2";
+  return null;
+}
+
+function isOpeningFrame(plan: readonly Stitch[]) {
+  if (plan.length === 0 || plan.length % 3 !== 0) return false;
+  const legs = plan.length / 3;
+  return plan.every((stitch, i) => {
+    const round = i < legs ? "A1" : i < legs * 2 ? "B1" : "A2";
+    return openingRoundAt(stitch) === round;
+  });
+}
+
+/** Which of A1 / B1 / A2 the working end is on. Before the first leg, that is A1. */
+export function kikuFrameTip(plan: readonly Stitch[], scrub: number | null): "A1" | "B1" | "A2" {
+  if (scrub == null || scrub <= 0 || plan.length === 0) return "A1";
+  const index = Math.min(plan.length - 1, Math.max(0, Math.ceil(scrub) - 1));
+  return openingRoundAt(plan[index]!) ?? "A1";
 }
 
 function idleKagari(): Pick<
@@ -478,6 +539,7 @@ export const useTemari = create<TemariState>((set, get) => ({
   kagariSpacing: "even",
   kagariPlan: [],
   kagariLaid: 0,
+  kagariScrub: null,
   kagariPlaying: false,
   kagariFocus: null,
   kagariKept: [],
@@ -1308,6 +1370,38 @@ export const useTemari = create<TemariState>((set, get) => ({
     });
     if (get().motif !== "none") get().startKagari();
   },
+  setThreadScrub: (stitches) => {
+    const state = get();
+    if (state.mode !== "studio") return;
+    const armed = state.kagariScrub != null && isOpeningFrame(state.kagariPlan);
+    const poles = polePositions(OPENING_DIVISION);
+    const pole = state.division === OPENING_DIVISION
+      ? Math.max(0, Math.min(poles.length - 1, Math.round(state.facingPole)))
+      : 0;
+    const plan = armed
+      ? state.kagariPlan
+      : kikuOpeningFrame(OPENING_DIVISION, state.kagariDir, OPENING_SPACING, pole, state.kagariColors);
+    if (plan.length === 0) return;
+    const n = plan.length;
+    const x = Math.min(n, Math.max(0, stitches));
+    const at = plan[Math.min(n - 1, Math.floor(Math.max(0, x - 1e-9)))] ?? plan[0];
+    const look = !armed && (state.poseDirty || state.viewPole !== pole || state.viewNonce === 0);
+    set({
+      division: OPENING_DIVISION,
+      fills: state.division === OPENING_DIVISION ? state.fills : padFills(state.fills, OPENING_DIVISION),
+      kagariSpacing: OPENING_SPACING,
+      facingPole: pole,
+      kagariPlan: plan,
+      kagariKept: [],
+      kagariLaid: Math.floor(x),
+      kagariScrub: x,
+      kagariPlaying: false,
+      kagariFocus: stitchFocus(at, OPENING_DIVISION, "kiku"),
+      craft: "stitch",
+      motif: "kiku",
+      ...(look ? { viewPole: pole, viewNonce: state.viewNonce + 1, poseDirty: false } : {}),
+    });
+  },
   startKagari: () => {
     const state = get();
     if (state.mode !== "studio" || !state.layerDone) return;
@@ -1346,6 +1440,7 @@ export const useTemari = create<TemariState>((set, get) => ({
       ...(state.kagariPlan.length === 0 ? { kagariHistory: pushKagari(state) } : {}),
       kagariPlan: plan,
       kagariLaid: first,
+      kagariScrub: null,
       kagariPlaying: plan.length > first,
       kagariFocus: stitchFocus(plan[0], state.division, state.motif),
       kagariKept: kept,

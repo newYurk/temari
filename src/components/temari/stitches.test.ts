@@ -10,7 +10,7 @@ import {
   groupWorkingThreads,
   type Stitch,
 } from "./patterns.ts";
-import { stackedArcChainParts } from "./stitches.ts";
+import { clipArc, stackedArcChainParts } from "./stitches.ts";
 
 describe("thread stack is local, not a lifted petal", () => {
   it("stackBump peaks at the named sites and is ~0 on a bare mid-leg", () => {
@@ -504,5 +504,17 @@ describe("parked round still takes the inner bite", () => {
       return s;
     };
     assert.ok(Math.abs(span(north) - span(east)) < 0.08, "start-ray bite is not a special case");
+  });
+});
+
+describe("thread handle clips one leg", () => {
+  const leg = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, 1, 0))
+    .find((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc")!;
+
+  it("starts at the leg start and finishes at its end", () => {
+    const start = clipArc(leg, 0);
+    const end = clipArc(leg, 1);
+    assert.ok(Math.hypot(start.b[0] - leg.a[0], start.b[1] - leg.a[1], start.b[2] - leg.a[2]) < 1e-6);
+    assert.ok(Math.hypot(end.b[0] - leg.b[0], end.b[1] - leg.b[1], end.b[2] - leg.b[2]) < 1e-6);
   });
 });

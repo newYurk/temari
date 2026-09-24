@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { PUZZLES } from "./puzzles";
 import { fillsMatch, polePositions } from "./division";
-import { useTemari } from "./store";
+import { kikuFrameTip, kikuOpeningSpan, useTemari } from "./store";
 import { ActionBar } from "./ActionBar";
 import { IconPoles } from "./icons";
 import { kikuRow, ROW_COLORS, useRowColors } from "./row-colors";
@@ -73,6 +73,44 @@ function RecenterButton({ className }: { className?: string }) {
       <IconPoles next={nextNorth ? "north" : "south"} className="size-5" />
       <span className="max-w-32 text-xs sm:max-w-none sm:text-sm">{n === 2 ? label : "Следующий полюс"}</span>
     </button>
+  );
+}
+
+const FRAME_PHASES = ["A1", "B1", "A2"] as const;
+
+function ThreadScrub() {
+  const plan = useTemari((s) => s.kagariPlan);
+  const scrub = useTemari((s) => s.kagariScrub);
+  const setThreadScrub = useTemari((s) => s.setThreadScrub);
+  useEffect(() => {
+    if (useTemari.getState().kagariScrub == null) setThreadScrub(kikuOpeningSpan());
+  }, [setThreadScrub]);
+  const armed = scrub != null && plan.length > 0;
+  const span = armed ? plan.length : kikuOpeningSpan();
+  const phase = kikuFrameTip(armed ? plan : [], scrub);
+  return (
+    <div className="pointer-events-none absolute inset-y-24 right-3 z-20 flex items-center md:right-6">
+      <label className="pointer-events-auto flex h-72 flex-col items-center gap-2 rounded-full bg-linen/90 px-2 py-3 text-xs text-ink ring-1 ring-line">
+        <span className="flex flex-col items-center gap-0.5 font-medium tabular-nums" aria-hidden="true">
+          {FRAME_PHASES.map((name) => (
+            <span key={name} className={name === phase ? "text-ink" : "text-stone/45"}>{name}</span>
+          ))}
+        </span>
+        <span className="[writing-mode:vertical-rl]">Нить ряда</span>
+        <input
+          type="range"
+          className="h-40 w-8 accent-ink"
+          style={{ writingMode: "vertical-lr", direction: "rtl" }}
+          min={0}
+          max={span}
+          step={0.02}
+          value={scrub ?? 0}
+          aria-label="Прошить или распустить нить: A1, затем B1, затем A2"
+          aria-valuetext={armed ? `${phase}, ${scrub!.toFixed(1)} из ${span}` : `${phase}, ещё не ведётся`}
+          onChange={(e) => setThreadScrub(Number(e.target.value))}
+        />
+      </label>
+    </div>
   );
 }
 
@@ -162,6 +200,7 @@ function Workbench() {
           ) : null}
         </div>
       ) : null}
+      {mode === "studio" ? <ThreadScrub /> : null}
       <ActionBar chromeRef={dockRef} />
     </>
   );

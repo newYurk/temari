@@ -21,7 +21,7 @@ import {
 } from "./patterns";
 import { PUZZLES } from "./puzzles";
 import { createTemariMaterial, createWrapBaker, createWrapCoverMaterial, syncTemariMaterial, syncWrapCoverMaterial } from "./shader";
-import { createMotifGeometry, createMotifGeometryParts, getPerleBump, getPerleTexture, getYarnTexture } from "./stitches";
+import { clipArc, createMotifGeometry, createMotifGeometryParts, getPerleBump, getPerleTexture, getYarnTexture } from "./stitches";
 import { pinPosition, useTemari } from "./store";
 import * as feel from "./feel";
 import { DEFAULT_KIND, threadMetalness, threadRoughness, type ThreadKind } from "./thread";
@@ -85,12 +85,15 @@ function ThreadLayer({
   opacity = 1,
   kind = DEFAULT_KIND.stitch,
   order = 6,
+  lie = false,
 }: {
   stitches: Stitch[];
   colors: readonly string[];
   opacity?: number;
   kind?: ThreadKind;
   order?: number;
+  /** Recipe legs on the mari. No pile loops. */
+  lie?: boolean;
 }) {
   // Opaque thread is drawn as the pieces it is made of — merging the whole
   // flower after every stitch was the long frame. A ghost stays one geometry:
@@ -98,10 +101,10 @@ function ThreadLayer({
   const geos = useMemo(() => {
     return colors.map((_, i) =>
       opacity >= 1
-        ? createMotifGeometryParts(stitches, i, kind, { pile: PILE_RENDER })
+        ? createMotifGeometryParts(stitches, i, kind, { pile: lie ? false : PILE_RENDER, lie })
         : [createMotifGeometry(stitches, i, kind)].filter((g): g is THREE.BufferGeometry => !!g),
     );
-  }, [stitches, kind, colors, opacity]);
+  }, [stitches, kind, colors, opacity, lie]);
   // A pearl cord shows its two plies; flat metallic jiwari keeps the plain yarn.
   const cord = kind !== "metallic";
   const yarn = useMemo(() => (cord ? getPerleTexture() : getYarnTexture()), [cord]);
@@ -540,6 +543,7 @@ export function Ball() {
     mode === "title" ? "kiku" : "none";
   const kagariPlan = useTemari((s) => s.kagariPlan);
   const kagariLaid = useTemari((s) => s.kagariLaid);
+  const kagariScrub = useTemari((s) => s.kagariScrub);
   const kagariKept = useTemari((s) => s.kagariKept);
   const [stitchesOn, setStitchesOn] = useState(mode !== "title");
   useEffect(() => {
@@ -565,11 +569,17 @@ export function Ball() {
     [division, mode, sewn],
   );
   const playingStitches = useMemo(
-    () =>
-      mode === "studio"
-        ? [...kagariKept, ...kagariPlan.slice(0, kagariLaid)]
-        : [],
-    [kagariKept, kagariLaid, kagariPlan, mode],
+    () => {
+      if (mode !== "studio") return [];
+      if (kagariScrub == null) return [...kagariKept, ...kagariPlan.slice(0, kagariLaid)];
+      const done = Math.floor(kagariScrub);
+      const shown = kagariPlan.slice(0, done);
+      const leg = kagariPlan[done];
+      const along = kagariScrub - done;
+      if (leg && leg.kind === "arc" && along > 0) shown.push(clipArc(leg, along));
+      return shown;
+    },
+    [kagariKept, kagariLaid, kagariPlan, kagariScrub, mode],
   );
   const pinStitches = useMemo(
     () => (mode === "studio" ? arcsToStitches(pinArcs) : []),
@@ -1323,7 +1333,7 @@ export function Ball() {
         <ThreadLayer stitches={presetStitches} colors={THREAD_COLORS} order={14} />
       ) : null}
       {playingStitches.length > 0 ? (
-        <ThreadLayer stitches={playingStitches} colors={THREAD_COLORS} order={14} />
+        <ThreadLayer stitches={playingStitches} colors={THREAD_COLORS} order={14} lie={kagariScrub != null} />
       ) : null}
       {sewnStitches.length > 0 ? (
         <ThreadLayer stitches={sewnStitches} colors={THREAD_COLORS} order={14} />
