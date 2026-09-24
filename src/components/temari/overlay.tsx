@@ -36,7 +36,13 @@ export function Overlay() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (new URLSearchParams(window.location.search).get("kiku") === "1") {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("opening") === "1") {
+      if (useTemari.getState().mode !== "studio") useTemari.getState().enterStudio();
+      useTemari.getState().setThreadScrub(kikuOpeningSpan());
+      return;
+    }
+    if (params.get("kiku") === "1") {
       useTemari.getState().showExample();
       return;
     }
@@ -82,9 +88,6 @@ function ThreadScrub() {
   const plan = useTemari((s) => s.kagariPlan);
   const scrub = useTemari((s) => s.kagariScrub);
   const setThreadScrub = useTemari((s) => s.setThreadScrub);
-  useEffect(() => {
-    if (useTemari.getState().kagariScrub == null) setThreadScrub(kikuOpeningSpan());
-  }, [setThreadScrub]);
   const armed = scrub != null && plan.length > 0;
   const span = armed ? plan.length : kikuOpeningSpan();
   const phase = kikuFrameTip(armed ? plan : [], scrub);
@@ -96,7 +99,7 @@ function ThreadScrub() {
             <span key={name} className={name === phase ? "text-ink" : "text-stone/45"}>{name}</span>
           ))}
         </span>
-        <span className="[writing-mode:vertical-rl]">Нить ряда</span>
+        <span className="[writing-mode:vertical-rl]">Схема нити ряда</span>
         <input
           type="range"
           className="h-40 w-8 accent-ink"
@@ -105,7 +108,7 @@ function ThreadScrub() {
           max={span}
           step={0.02}
           value={scrub ?? 0}
-          aria-label="Прошить или распустить нить: A1, затем B1, затем A2"
+          aria-label="Открыть часть схемы: A1, затем B1, затем A2"
           aria-valuetext={armed ? `${phase}, ${scrub!.toFixed(1)} из ${span}` : `${phase}, ещё не ведётся`}
           onChange={(e) => setThreadScrub(Number(e.target.value))}
         />
@@ -116,6 +119,9 @@ function ThreadScrub() {
 
 function Workbench() {
   const mode = useTemari((s) => s.mode);
+  // This illustration replaces the active plan; opt in before mounting its
+  // auto-arming effect so an ordinary studio session keeps its own history.
+  const opening = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("opening") === "1";
   const rowColors = useRowColors();
   const kept = useTemari((s) => s.kagariKept);
   const plan = useTemari((s) => s.kagariPlan);
@@ -158,8 +164,10 @@ function Workbench() {
           <RecenterButton />
         </div>
         {mode === "studio" && <p className="pointer-events-auto basis-full rounded-lg bg-ink/5 px-3 py-2 text-xs leading-relaxed" aria-label="Состояние модели мастерской">
-          <b>Модель в работе.</b> Ширина подхвата, укладка и проколы ещё не исправлены.{" "}
-          <a className="underline underline-offset-2" href="?upper-bundle=1&control=needle">Проверка одного прохода</a>
+          {opening ? <><b>Схема A1 → B1 → A2.</b> Это иллюстрация, не механический расчёт шитья или затягивания.{" "}
+            <a className="underline underline-offset-2" href="?rows=1">Обычная мастерская</a></>
+            : <><b>Модель в работе.</b> Ширина подхвата, укладка и проколы ещё не исправлены.{" "}
+              <a className="underline underline-offset-2" href="?upper-bundle=1&control=needle">Проверка одного прохода</a></>}
         </p>}
         {rowColors && rows.length > 0 && <div className="basis-full rounded-lg bg-linen/95 px-3 py-2 text-xs" aria-label="Цвета рядов">
           <p>Цвета рядов · группа A светлее, B темнее. Форма нити та же.</p>
@@ -200,7 +208,7 @@ function Workbench() {
           ) : null}
         </div>
       ) : null}
-      {mode === "studio" ? <ThreadScrub /> : null}
+      {mode === "studio" && opening ? <ThreadScrub /> : null}
       <ActionBar chromeRef={dockRef} />
     </>
   );

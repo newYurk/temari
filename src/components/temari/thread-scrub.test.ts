@@ -1,7 +1,7 @@
 import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { motifStitchPlan, type Stitch } from "./patterns.ts";
-import { lyingPetalParts } from "./stitches.ts";
+import { clipArc, lyingPetalParts } from "./stitches.ts";
 import { kikuFrameTip, kikuOpeningFrame, useTemari } from "./store.ts";
 
 const initial = useTemari.getState();
@@ -105,5 +105,29 @@ describe("thread scrub opens A1, then B1, then A2", () => {
     assert.ok(base > 1 && base < 1.02, `surface thread leaves the mari (${base})`);
     assert.ok(top - base < 0.08, `stack is a staircase (${top - base})`);
     assert.ok(top > base + 0.005, "a later thread never rises at a crossing");
+  });
+
+  it("does not perform a terminal bite until the illustrated leg is complete", () => {
+    const leg = kikuOpeningFrame("simple", "out", "even", 0, [0, 1])
+      .find((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc")!;
+    const original = structuredClone(leg);
+    assert.ok(leg.bite);
+    const partial = clipArc(leg, 0.4);
+    assert.equal(partial.bite, undefined);
+    assert.ok(lyingPetalParts([partial]).flatMap(part => part.pts).every(p => p.length() > 1),
+      "the incomplete leg must not introduce the full buried recipe bite");
+    assert.deepEqual(clipArc(leg, 1), original, "completion retains the real bite and metadata");
+    assert.deepEqual(leg, original, "clipping does not change the recipe");
+  });
+
+  it("retains the entire prefix when stopping exactly at a via node", () => {
+    const leg: Extract<Stitch, { kind: "arc" }> = {
+      kind: "arc", color: 0, a: [1, 0, 0], b: [0, 1, 0],
+      via: [[Math.sqrt(3) / 2, 0.5, 0], [0.5, Math.sqrt(3) / 2, 0]],
+    };
+    for (const node of [1, 2]) {
+      const prefix = clipArc(leg, node / 3);
+      assert.deepEqual([prefix.a, ...prefix.via!, prefix.b], [leg.a, ...leg.via!.slice(0, node)]);
+    }
   });
 });

@@ -264,11 +264,13 @@ export function arcPath(
   return pts;
 }
 
-/** Prefix of one laid leg. `t` 0 is the start, 1 is the finished leg. */
+/** Illustrated prefix of one leg. `t` 0 is the start, 1 is the finished
+ * recipe leg. A partial leg has not performed the terminal bite. */
 export function clipArc(
   stitch: Extract<Stitch, { kind: "arc" }>,
   t: number,
 ): Extract<Stitch, { kind: "arc" }> {
+  if (t >= 1) return stitch;
   const via = stitch.via ?? [];
   const anchors: [number, number, number][] = [stitch.a, ...via, stitch.b];
   const steps = Math.max(1, anchors.length - 1);
@@ -285,9 +287,10 @@ export function clipArc(
   );
   const end: [number, number, number] = [_a.x, _a.y, _a.z];
   const head = anchors.slice(0, seg + 1);
-  const points = local < 1e-6 ? [head[0]!, head[0]!] : [...head, end];
+  const points = local === 0 ? head.length > 1 ? head : [head[0]!, head[0]!] : [...head, end];
+  const { bite: _terminalBite, ...partial } = stitch;
   return {
-    ...stitch,
+    ...partial,
     a: points[0]!,
     b: points[points.length - 1]!,
     via: points.slice(1, -1),
@@ -295,10 +298,10 @@ export function clipArc(
 }
 
 /**
- * Opening-frame picture. Each round is one cord on the mari. At every recipe
- * tip the cord enters one bite mouth, crosses inside the mari, and leaves by
- * the other mouth. A later round rises by one thread diameter only where it
- * actually crosses an earlier surface thread.
+ * Opt-in opening illustration, not a mechanical solution. A completed recipe
+ * leg includes its bite; partial legs have none. Prescribed radial offsets
+ * illustrate proximity to earlier sampled paths; they do not certify contact,
+ * a needle passage or material conservation.
  */
 export function lyingPetalParts(stitches: Stitch[], kind: ThreadKind = DEFAULT_KIND.stitch) {
   const arcs = stitches.filter((s): s is Extract<Stitch, { kind: "arc" }> => s.kind === "arc");
