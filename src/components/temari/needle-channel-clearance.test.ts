@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Quaternion, Vector3 } from 'three';
-import { pointNeedleChannelClearance, segmentNeedleChannelClearance,
+import { pointNeedleChannelClearance, segmentNeedleChannelClearance, minimumNeedleChannelClearance,
   type ChannelPointMm, type NeedleChannelDomain } from './needle-channel-clearance.ts';
 
 const domain: NeedleChannelDomain = { sphereCenterMm: [0, 0, 0], bodyRadiusMm: 2,
@@ -98,5 +98,117 @@ describe('assigned conservative spatial needle channel', () => {
       assert.throws(() => segmentNeedleChannelClearance([0, 0, 0], [3, 0, 0], domain, { maxEvaluations }), RangeError);
     }
     assert.throws(() => segmentNeedleChannelClearance([0, 0, 0], [3, 0, 0], domain, { toleranceMm: 0 }), RangeError);
+  });
+});
+
+describe('whole-segment channel minimum and envelope derivatives', () => {
+  const finiteDifference = (a: ChannelPointMm, b: ChannelPointMm, d: NeedleChannelDomain, epsilon = 1e-5) => {
+    const result = minimumNeedleChannelClearance(a, b, d);
+    assert.equal(result.status, 'resolved'); assert.equal(result.gradientStatus, 'smooth');
+    for (const end of [0, 1]) for (let k = 0; k < 3; k++) {
+      const plus = [[...a], [...b]] as [number, number, number][];
+      const minus = [[...a], [...b]] as [number, number, number][];
+      plus[end][k] += epsilon; minus[end][k] -= epsilon;
+      const fd = (minimumNeedleChannelClearance(plus[0], plus[1], d).gapMm
+        - minimumNeedleChannelClearance(minus[0], minus[1], d).gapMm) / (2 * epsilon);
+      near((end === 0 ? result.gradientA : result.gradientB)![k], fd, 3e-6);
+    }
+    return result;
+  };
+
+  it('has the analytic rim minimum and mixed endpoint derivatives', () => {
+    // At z=1, sqrt(x²+1)+x=R+a=2.5 gives x=1.05 and g=-.8.
+    // The translated minimum has dz derivative z/(R+a)=.4; dx derivative 0.
+    const result = finiteDifference([0, 0, 1], [3, 0, 1], domain);
+    near(result.gapMm, -.8); near(result.witness.t, .35);
+    near(result.gradientA![0], 0); near(result.gradientB![0], 0);
+    near(result.gradientA![2], .26); near(result.gradientB![2], .14);
+    assert.ok(result.lowerBoundMm <= -.8 && result.upperBoundMm >= -.8);
+  });
+
+  it('corrects the persistent sampled-gradient error on a real first-visit segment', () => {
+    // Segment 4 of the saved 80-iteration first-visit diagnostic; no acceptance
+    // of that failed geometry is implied by checking this derivative.
+    const a: ChannelPointMm = [-24.040567834961465, 18.56892978797637, -23.003107306211042];
+    const b: ChannelPointMm = [-25.463236770352626, 19.400116724409198, -22.10281905773214];
+    const d: NeedleChannelDomain = { sphereCenterMm: [0, 0, 0], bodyRadiusMm: 38.197186342054884,
+      entryMm: [-23.385520724078976, 18.48045130914528, -23.88755710246754],
+      exitMm: [-23.887557102467536, 18.48045130914528, -23.385520724078983],
+      channelRadiusMm: .405, threadRadiusMm: .355 };
+    const result = finiteDifference(a, b, d);
+    near(result.gapMm, -.25528104359451786, 1e-9);
+    const translated = new Vector3(...result.gradientA!).add(new Vector3(...result.gradientB!));
+    const delta = new Vector3(...b).sub(new Vector3(...a));
+    near(translated.dot(delta), 0, 1e-9);
+    const sampled = segmentNeedleChannelClearance(a, b, d, { toleranceMm: 1e-5 });
+    assert.ok(Math.abs(sampled.gapMm - result.gapMm) < 1e-5);
+    assert.ok(new Vector3(...sampled.witness.evaluation.gradient!).distanceTo(translated) > .7,
+      'small error in the sampled value does not justify its single-branch gradient');
+    assert.ok(result.gapMm >= sampled.lowerBoundMm && result.gapMm <= sampled.upperBoundMm);
+  });
+
+  it('handles exterior stationary points and one-sided endpoint minima', () => {
+    const interior = finiteDifference([-1, 0, 3], [1, 0, 3], domain);
+    near(interior.gapMm, .75); near(interior.witness.t, .5);
+    assert.deepEqual(interior.gradientA, [0, 0, .5]);
+    const endpoint = finiteDifference([3, 0, 0], [4, 0, 0], domain);
+    near(endpoint.gapMm, .75); near(endpoint.witness.t, 0);
+    assert.deepEqual(endpoint.gradientA, [1, 0, 0]);
+    assert.deepEqual(endpoint.gradientB, [0, 0, 0]);
+  });
+
+  it('resolves clearance without inventing derivatives for ties, flat minima or degeneracies', () => {
+    for (const [a, b] of [
+      [[-3, 0, 0], [3, 0, 0]], // two distinct rim minima
+      [[0, 0, -3], [0, 0, 3]], // flat slack channel on its axis
+      [[1.25, 0, -.5], [1.25, 0, .5]], // tangent branch switch
+      [[1.25, 0, 0], [3, 0, 0]], // branch switch at the endpoint
+      [[3, 0, 0], [3, 0, 0]], // coincident endpoints
+    ] as [ChannelPointMm, ChannelPointMm][]) {
+      const result = minimumNeedleChannelClearance(a, b, domain);
+      assert.equal(result.status, 'resolved');
+      assert.equal(result.gradientStatus, 'unresolved');
+      assert.equal(result.gradientA, null); assert.equal(result.gradientB, null);
+    }
+    const slack = minimumNeedleChannelClearance([0, 0, -3], [0, 0, 3], domain);
+    near(slack.gapMm, .25); assert.ok(slack.lowerBoundMm > 0);
+    const pair = minimumNeedleChannelClearance([-3, 0, 0], [3, 0, 0], domain);
+    near(pair.gapMm, -1); assert.equal(pair.reason, 'tied-minima');
+  });
+
+  it('preserves scalar/gradient covariance under rigid motion and scale', () => {
+    const a: ChannelPointMm = [0, 0, 1], b: ChannelPointMm = [3, 0, 1];
+    const original = structuredClone({ a, b, domain });
+    const reference = minimumNeedleChannelClearance(a, b, domain);
+    const rotation = new Quaternion().setFromAxisAngle(new Vector3(1, 2, 3).normalize(), .73);
+    for (const scale of [.001, 1, 1000]) {
+      const shift = new Vector3(4, -7, 2).multiplyScalar(scale);
+      const transform = (p: ChannelPointMm): ChannelPointMm => new Vector3(...p).applyQuaternion(rotation).multiplyScalar(scale).add(shift).toArray();
+      const transformed = { ...domain, sphereCenterMm: transform(domain.sphereCenterMm), entryMm: transform(domain.entryMm),
+        exitMm: transform(domain.exitMm), bodyRadiusMm: domain.bodyRadiusMm * scale,
+        channelRadiusMm: domain.channelRadiusMm * scale, threadRadiusMm: domain.threadRadiusMm * scale };
+      const result = minimumNeedleChannelClearance(transform(a), transform(b), transformed);
+      assert.equal(result.status, 'resolved'); assert.equal(result.gradientStatus, 'smooth');
+      near(result.gapMm / scale, reference.gapMm); near(result.witness.t, reference.witness.t);
+      for (const key of ['gradientA', 'gradientB'] as const) {
+        assert.ok(new Vector3(...reference[key]!).applyQuaternion(rotation).distanceTo(new Vector3(...result[key]!)) < 1e-8);
+      }
+    }
+    assert.deepEqual({ a, b, domain }, original);
+  });
+
+  it('agrees with independently bounded full-segment minima', () => {
+    const cases: [ChannelPointMm, ChannelPointMm][] = [
+      [[-3, 0, 0], [3, 0, 0]], [[0, 0, -3], [0, 0, 3]], [[-1, 0, 3], [1, 0, 3]],
+      [[0, 0, 1], [3, 0, 1]], [[1.25, 0, -.5], [1.25, 0, .5]],
+      [[.1, .2, 2.8], [2, -.5, -.3]], [[1, 1, 1], [-1, .5, -2]],
+    ];
+    for (const [a, b] of cases) {
+      const result = minimumNeedleChannelClearance(a, b, domain);
+      const independent = segmentNeedleChannelClearance(a, b, domain, { toleranceMm: 1e-5, maxEvaluations: 2049 });
+      assert.ok(result.gapMm >= independent.lowerBoundMm - 1e-10);
+      assert.ok(result.gapMm <= independent.upperBoundMm + 1e-10);
+      assert.ok(result.lowerBoundMm <= independent.upperBoundMm && result.upperBoundMm >= independent.lowerBoundMm);
+    }
   });
 });

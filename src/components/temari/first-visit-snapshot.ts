@@ -50,7 +50,8 @@ export function snapshotFirstVisit(fixture: Fixture, result: YarnEquilibriumResu
     kind: 'first-visit-snapshot-v1' as const,
     phase: result ? 'solved' as const : 'prepared' as const,
     route: fixture.route, thread, material, inspection, passages, channelStatus, acceptance,
-    solver: result ? { status: result.status, numericallyValid: result.numericallyValid,
+    solver: result ? { status: result.status, contactMethod: result.contactMethod, finalBarrierNmm: result.finalBarrierNmm,
+      numericallyValid: result.numericallyValid,
       iterations: result.iterations, residuals: result.residuals, diagnostics: result.diagnostics,
       energy: result.energy, materialLedger: result.materialLedger } : null,
     limitations: [
@@ -59,6 +60,7 @@ export function snapshotFirstVisit(fixture: Fixture, result: YarnEquilibriumResu
       'Направленный проход проверяется на границе для оси R+r, согласованной с допуском круглой нити. Пересечения номинальной поверхности R — отдельное наблюдение.',
       `Назначено ${availableLengthMm} мм рабочей нити независимо от шага сетки. Это контрольный запас, не измеренный расход вышивки.`,
       'Удерживаются только два среза наблюдения, а не концы материала. Входы и выходы каналов не закрепляют узлы нити.',
+      'Относительные размеры ячеек заданы до расчёта отдельно от материала. Их влияние на равновесную форму ещё требует проверки уточнением сетки.',
       'Натяжение, жёсткость, круглый радиус и слой основы не калиброваны. Трение и деформация намотки не рассчитаны.',
       'Проверяются полные отрезки в консервативных областях каналов и показанный меш круглой нити. Это не полная проверка всех самоконтактов и ремесленной топологии.',
       'В этом примере ещё нет прежнего пучка вышивки и физической разметочной нити.',
@@ -77,7 +79,7 @@ export function buildFirstVisitSnapshot(): FirstVisitSnapshot {
 export function solveFirstVisitSnapshot(options: YarnEquilibriumOptions = {}): FirstVisitSnapshot {
   const fixture = buildFirstVisitEquilibriumInput();
   const result = solveYarnEquilibrium({ ...fixture.input, options: {
-    maxOuterIterations: 2, maxIterationsPerOuter: 40, ...options,
+    ...fixture.input.options, maxOuterIterations: 2, maxIterationsPerOuter: 40, ...options,
   } });
   return snapshotFirstVisit(fixture, result);
 }

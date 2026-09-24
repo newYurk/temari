@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildFirstVisitEquilibriumInput, solveFirstVisitEquilibrium } from './first-visit-equilibrium';
+import { evaluateYarnEquilibrium } from './yarn-equilibrium';
+import { snapshotFirstVisit } from './first-visit-snapshot';
 
 describe('first visit handed to the one-thread solver', () => {
   it('covers the recipe route with one reserve and three ordered channels', () => {
@@ -8,7 +10,7 @@ describe('first visit handed to the one-thread solver', () => {
     const [thread] = fixture.input.threads;
     assert.equal(fixture.input.threads.length, 1);
     assert.equal(thread.id, 'first-visit/physical-thread-1');
-    assert.equal(thread.feed?.discretization, 'equal-chord');
+    assert.equal(thread.feed?.discretization, 'fixed-chord-ratios');
     assert.deepEqual(thread.channelPassages?.map(p => [p.firstNode, p.lastNode]), [
       [0, thread.channelPassages![0].lastNode],
       [thread.channelPassages![0].lastNode, thread.channelPassages![1].lastNode],
@@ -18,9 +20,21 @@ describe('first visit handed to the one-thread solver', () => {
     assert.equal(fixture.status, 'not-certified');
   });
 
-  it('runs the solver without calling convergence a craft result', () => {
+  it('tightens the actual first visit while preserving all three finite channel passages', () => {
     const solved = solveFirstVisitEquilibrium({ maxOuterIterations: 2, maxIterationsPerOuter: 40 });
+    const initial = evaluateYarnEquilibrium(solved.input);
+    const snapshot = snapshotFirstVisit(solved, solved.result);
     assert.equal(solved.result.threads.length, 1);
+    assert.equal(solved.result.contactMethod, 'interior-barrier');
+    assert.ok(solved.result.iterations > 0);
+    assert.ok(solved.result.energy.totalNmm < initial.energy.totalNmm);
+    assert.equal(solved.result.residuals.maxPenetrationMm, 0);
+    assert.ok(solved.result.trace.every(step => step.maxPenetrationMm === 0));
+    assert.equal(snapshot.channelStatus, 'passed');
+    assert.deepEqual(snapshot.passages.map(p => p.audit.crossings.length), [2, 2, 2]);
+    assert.equal(snapshot.inspection.threads[0].mesh?.foldedFaces, 0);
+    assert.deepEqual(solved.result.threads[0].feed, solved.input.threads[0].feed);
+    assert.deepEqual(solved.result.threads[0].nodes.filter(n => n.fixed), solved.input.threads[0].nodes.filter(n => n.fixed));
     assert.notEqual(solved.physicalAcceptance, 'certified');
     assert.ok(['not-certified', 'unresolved', 'rejected-mechanics'].includes(solved.physicalAcceptance));
   });

@@ -65,7 +65,14 @@ function CameraRig({ inspection }: { inspection?: Inspection }) {
       else {
         target.copy(focus);
         camera.position.copy(focus).multiplyScalar(inspection.view === 'close' ? 1.7 : 1.15);
-        if (inspection.view === 'side') camera.position.x += .7;
+        if (inspection.view === 'side') {
+          // A fixed world-X offset can move the camera inside the sphere on
+          // its negative-X side. Move along the local tangent instead.
+          const normal = focus.clone().normalize();
+          const tangent = new THREE.Vector3().crossVectors(camera.up, normal);
+          if (tangent.lengthSq() < 1e-8) tangent.crossVectors(new THREE.Vector3(1, 0, 0), normal);
+          camera.position.addScaledVector(tangent.normalize(), .7);
+        }
       }
     }
     camera.lookAt(target);

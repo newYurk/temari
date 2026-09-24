@@ -1,7 +1,8 @@
 import { closestSegmentApproach } from './thread-geometry';
-import { pointNeedleChannelClearance, segmentNeedleChannelClearance,
+import { pointNeedleChannelClearance, segmentNeedleChannelClearance, minimumNeedleChannelClearance,
   type NeedleChannelDomain } from './needle-channel-clearance';
 import type { PointMm } from './thread-path';
+import { contactBarrier } from './contact-barrier';
 
 /** Engineering controls, not calibrated pearl-cotton properties. All lengths are mm.
  * Quasistatic, frictionless discrete elastic rods with a fixed circular radius.
@@ -61,7 +62,10 @@ export type EquilibriumYarn = {
      * Refinement remains necessary. End nodes must be held; default is free
      * vertices. Bounds attached to nodes must describe the intended spatial
      * region after redistribution, not stale material-coordinate permissions. */
-    discretization?: 'free-vertices' | 'equal-chord';
+    discretization?: 'free-vertices' | 'equal-chord' | 'fixed-chord-ratios';
+    /** Numerical reference metric for a nonuniform mesh. Assigned once before
+     * solving; distinct from material rest lengths and never reset on restart. */
+    referenceChordLengthsMm?: readonly number[];
   };
   /** Per finite segment, AXIS forbidden radius. Independent of node overrides. */
   segmentMinimumSphereRadiiMm?: readonly number[];
@@ -70,6 +74,11 @@ export type EquilibriumYarn = {
   channelPassages?: readonly YarnChannelPassage[];
 };
 export type YarnEquilibriumOptions = {
+  /** Interior mode requires a strictly feasible seed. The barrier is numerical,
+   * not a contact-compliance law; the same KKT tolerances still decide success. */
+  contactMethod?: 'augmented-lagrangian' | 'interior-barrier';
+  barrierDistanceMm?: number;
+  initialBarrierNmm?: number;
   maxOuterIterations?: number;
   maxIterationsPerOuter?: number;
   gradientToleranceN?: number;
@@ -128,8 +137,8 @@ export type YarnMaterialLedger = {
   heldNodesPermitSliding: true;
 };
 export type YarnMeshConstraint = {
-  id: string; kind: 'equal-chord'; threadId: string; nodeIndex: number;
-  /** Signed current left chord minus right chord. */
+  id: string; kind: 'equal-chord' | 'fixed-chord-ratios'; threadId: string; nodeIndex: number;
+  /** Signed left-minus-right chord residual; weighted for reference ratios. */
   errorMm: number;
   /** Signed numerical gauge reaction, NOT a yarn or contact force. */
   multiplierN: number;
@@ -147,6 +156,7 @@ export type YarnEquilibriumResiduals = {
   maxMaterialOverdrawMm: number;
 };
 export type YarnEquilibriumTrace = YarnEquilibriumResiduals & {
+  barrierNmm: number;
   outerIteration: number; iterations: number; penaltyNPerMm: number; elasticEnergyNmm: number; potentialEnergyNmm: number;
   /** Inexact inner solves may use a looser target; final acceptance never does. */
   innerTargetN: number; innerGradientNormN: number; subproblemConverged: boolean;
@@ -154,6 +164,8 @@ export type YarnEquilibriumTrace = YarnEquilibriumResiduals & {
 };
 export type YarnEquilibriumResult = {
   model: 'discrete-circular-elastic-yarn-v1';
+  contactMethod: 'augmented-lagrangian' | 'interior-barrier';
+  finalBarrierNmm: number;
   status: 'converged' | 'unresolved' | 'rejected';
   /** False means overflow/undefined arithmetic, not a geometric witness. */
   numericallyValid: boolean;
@@ -172,6 +184,8 @@ export type YarnEquilibriumResult = {
 };
 
 export const YARN_EQUILIBRIUM_DEFAULTS = Object.freeze({
+  contactMethod: 'augmented-lagrangian' as const,
+  barrierDistanceMm: .02, initialBarrierNmm: 1e-3,
   maxOuterIterations: 12, maxIterationsPerOuter: 250,
   gradientToleranceN: 1e-7, penetrationToleranceMm: 1e-5,
   meshSpacingToleranceMm: 1e-6,
@@ -184,6 +198,8 @@ type Segment = { a: number; b: number; thread: number; index: number; rest: numb
 type Pair = [number, number];
 type Constraint = { contact: Omit<YarnContact, 'multiplierN' | 'kind'> & { kind: YarnContact['kind'] | 'mesh-equal-chord' };
   mesh?: { thread: number; nodeIndex: number };
+  /** Endpoint motion bounds for a complete assigned-channel segment. */
+  boundNodes?: readonly [number, number];
   derivatives: { node: number; value: V }[] };
 const sub = (a: PointMm, b: PointMm): V => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a: readonly number[], b: readonly number[]) => a.reduce((s, x, i) => s + x * b[i], 0);
@@ -218,7 +234,11 @@ function channelBoundaryWitness(point: PointMm, domain: NeedleChannelDomain,
 function prepare(input: YarnEquilibriumInput) {
   const options = { ...YARN_EQUILIBRIUM_DEFAULTS, ...input.options };
   for (const [key, value] of Object.entries(options)) {
-    if (key === 'selfExclusionRadii' ? !Number.isFinite(value) || value < 0 : !positive(value)) throw new RangeError(`Invalid ${key}`);
+    if (key === 'contactMethod') {
+      if (value !== 'augmented-lagrangian' && value !== 'interior-barrier') throw new RangeError('Invalid contactMethod');
+      continue;
+    }
+    if (typeof value !== 'number' || (key === 'selfExclusionRadii' ? !Number.isFinite(value) || value < 0 : !positive(value))) throw new RangeError(`Invalid ${key}`);
   }
   for (const key of ['maxOuterIterations', 'maxIterationsPerOuter', 'maxContactPairs'] as const)
     if (!Number.isSafeInteger(options[key])) throw new RangeError(`${key} must be an integer`);
@@ -231,9 +251,16 @@ function prepare(input: YarnEquilibriumInput) {
     if (!yarn.id || !positive(yarn.radiusMm) || !positive(yarn.axialStiffnessN) || !positive(yarn.bendingStiffnessNmm2)
       || yarn.nodes.length < 2 || yarn.restLengthsMm.length !== yarn.nodes.length - 1 || !yarn.restLengthsMm.every(positive)) throw new RangeError(`Invalid yarn ${yarn.id}`);
     if (yarn.feed && (!positive(yarn.feed.tensionN) || !positive(yarn.feed.availableLengthMm))) throw new RangeError('Feed needs positive finite tension and available material');
-    if (yarn.feed?.discretization !== undefined && !['free-vertices', 'equal-chord'].includes(yarn.feed.discretization)) throw new RangeError('Unknown feed discretization');
-    if (yarn.feed?.discretization === 'equal-chord' && (!yarn.nodes[0].fixed || !yarn.nodes.at(-1)!.fixed))
-      throw new RangeError('Equal-chord mesh needs held observation endpoints');
+    if (yarn.feed?.discretization !== undefined && !['free-vertices', 'equal-chord', 'fixed-chord-ratios'].includes(yarn.feed.discretization)) throw new RangeError('Unknown feed discretization');
+    if (yarn.feed && ['equal-chord', 'fixed-chord-ratios'].includes(yarn.feed.discretization ?? '')
+      && (!yarn.nodes[0].fixed || !yarn.nodes.at(-1)!.fixed)) throw new RangeError('Constrained chord mesh needs held observation endpoints');
+    if (yarn.feed?.discretization === 'fixed-chord-ratios') {
+      const reference = yarn.feed.referenceChordLengthsMm;
+      if (!reference || reference.length !== yarn.nodes.length - 1 || !reference.every(positive))
+        throw new RangeError('Fixed chord ratios need positive reference lengths for every segment');
+      if (reference.slice(1).some((h, i) => !positive(h / reference[i]) || !positive(reference[i] / h)))
+        throw new RangeError('Reference chord ratios exceed the supported numerical range');
+    } else if (yarn.feed?.referenceChordLengthsMm !== undefined) throw new RangeError('Reference mesh lengths require fixed-chord-ratios');
     if (yarn.segmentMinimumSphereRadiiMm && (yarn.segmentMinimumSphereRadiiMm.length !== yarn.restLengthsMm.length
       || yarn.segmentMinimumSphereRadiiMm.some(r => !Number.isFinite(r) || r < 0))) throw new RangeError('Invalid segment axis exclusion radii');
     const channelSegments = new Set<number>(), passageIds = new Set<string>();
@@ -414,18 +441,27 @@ function evaluate(prep: Prepared, points: V[]) {
     }
     for (let i = passage.firstNode; i < passage.lastNode; i++) {
       const segment = threadSegments[ti][i]!;
-      const clearance = segmentNeedleChannelClearance(points[segment.a], points[segment.b], passage.domain,
-        { toleranceMm: passage.toleranceMm, maxEvaluations: passage.maxEvaluations });
+      const minimum = prep.options.contactMethod === 'interior-barrier'
+        ? minimumNeedleChannelClearance(points[segment.a], points[segment.b], passage.domain) : null;
+      const clearance = minimum ? { ...minimum,
+        clearance: minimum.lowerBoundMm >= 0 ? 'clear' as const : minimum.upperBoundMm < 0 ? 'outside-domain' as const : 'unresolved' as const }
+        : segmentNeedleChannelClearance(points[segment.a], points[segment.b], passage.domain,
+          { toleranceMm: passage.toleranceMm, maxEvaluations: passage.maxEvaluations });
       const point = [...clearance.witness.pointMm] as V, evaluation = clearance.witness.evaluation;
       const witness = channelBoundaryWitness(point, passage.domain, evaluation);
       constraints.push({ contact: { id: `needle-channel-segment:${ti}:${passage.id}:${i}`, kind: 'needle-channel-segment',
         gapMm: clearance.gapMm, pointsMm: [point, witness],
         immovable: prep.fixed[segment.a] && prep.fixed[segment.b],
-        normalDefined: clearance.status === 'resolved' && clearance.clearance !== 'unresolved'
-          && evaluation.gradientStatus === 'smooth' && evaluation.gradient !== null,
+        normalDefined: minimum ? minimum.gradientStatus === 'smooth'
+          : clearance.status === 'resolved' && clearance.clearance !== 'unresolved'
+            && evaluation.gradientStatus === 'smooth' && evaluation.gradient !== null,
         channelClearance: { status: clearance.status, clearance: clearance.clearance,
           lowerBoundMm: clearance.lowerBoundMm, upperBoundMm: clearance.upperBoundMm, accuracyMm: clearance.accuracyMm } },
-      derivatives: evaluation.gradient ? [
+      boundNodes: [segment.a, segment.b],
+      derivatives: minimum ? minimum.gradientA && minimum.gradientB ? [
+        { node: segment.a, value: [...minimum.gradientA] as V },
+        { node: segment.b, value: [...minimum.gradientB] as V },
+      ] : [] : evaluation.gradient ? [
         { node: segment.a, value: scale(evaluation.gradient, 1 - clearance.witness.t) },
         { node: segment.b, value: scale(evaluation.gradient, clearance.witness.t) },
       ] : [] });
@@ -465,18 +501,22 @@ function evaluate(prep: Prepared, points: V[]) {
   // These are equality constraints on the DISCRETIZATION. They are appended
   // after physical contacts for stable replay, and exposed in a separate list.
   // No stretching energy, rest length reset, or material source is introduced.
-  for (const [ti, yarn] of prep.input.threads.entries()) if (yarn.feed?.discretization === 'equal-chord') {
+  for (const [ti, yarn] of prep.input.threads.entries()) if (yarn.feed && ['equal-chord', 'fixed-chord-ratios'].includes(yarn.feed.discretization ?? '')) {
     for (let i = 1; i < yarn.nodes.length - 1; i++) {
       // Held positions and free topological channel boundaries both split the
       // numerical gauge. Neither condition fixes a material coordinate.
       if (yarn.nodes[i].fixed || prep.channelBoundaryNodes[ti].has(i)) continue;
       const node = prep.starts[ti] + i, left = sub(points[node], points[node - 1]), right = sub(points[node + 1], points[node]);
       const Lleft = length(left), Lright = length(right), t0 = scale(left, 1 / Lleft), t1 = scale(right, 1 / Lright);
+      const refs = yarn.feed.referenceChordLengthsMm;
+      const h0 = refs?.[i - 1] ?? 1, h1 = refs?.[i] ?? 1;
+      // Bounded weights; ratios are numerical coordinates, not rest lengths.
+      const w0 = 2 / (1 + h0 / h1), w1 = 2 / (1 + h1 / h0);
       constraints.push({ mesh: { thread: ti, nodeIndex: i },
-        contact: { id: `mesh:${ti}:${i}`, kind: 'mesh-equal-chord', gapMm: Lleft - Lright,
+        contact: { id: `mesh:${ti}:${i}`, kind: 'mesh-equal-chord', gapMm: w0 * Lleft - w1 * Lright,
           pointsMm: [points[node - 1], points[node + 1]], immovable: false, normalDefined: Lleft > 1e-9 && Lright > 1e-9 },
-        derivatives: [{ node: node - 1, value: scale(t0, -1) }, { node, value: sub(t0, scale(t1, -1)) },
-          { node: node + 1, value: scale(t1, -1) }] });
+        derivatives: [{ node: node - 1, value: scale(t0, -w0) }, { node, value: sub(scale(t0, w0), scale(t1, -w1)) },
+          { node: node + 1, value: scale(t1, -w1) }] });
     }
   }
   valid = valid && Number.isFinite(stretchNmm) && Number.isFinite(bendNmm) && Number.isFinite(tensionNmm) && Number.isFinite(stretchNmm + bendNmm + tensionNmm)
@@ -488,15 +528,18 @@ function evaluate(prep: Prepared, points: V[]) {
     energy: { stretchNmm, bendNmm, tensionNmm, totalNmm: valid ? stretchNmm + bendNmm + tensionNmm : Infinity } };
 }
 type Evaluation = ReturnType<typeof evaluate>;
-function augmented(prep: Prepared, e: Evaluation, multipliers: readonly number[], penalty = 0) {
+function augmented(prep: Prepared, e: Evaluation, multipliers: readonly number[], penalty = 0, barrier = 0) {
   const gradient = e.gradient.map(p => [...p] as V), effective: number[] = [];
   let merit = e.energy.totalNmm;
   for (let i = 0; i < e.constraints.length; i++) {
     const c = e.constraints[i], lambda = multipliers[i] ?? 0;
-    const force = c.contact.excludedLocal ? 0 : penalty
+    const interior = barrier && !c.mesh && !c.contact.excludedLocal
+      ? contactBarrier(c.contact.gapMm, prep.options.barrierDistanceMm, barrier) : null;
+    const force = c.contact.excludedLocal ? 0 : interior ? interior.forceN : penalty
       ? c.mesh ? lambda - penalty * c.contact.gapMm : Math.max(0, lambda - penalty * c.contact.gapMm) : lambda;
     effective.push(force);
-    if (penalty) merit += (force * force - lambda * lambda) / (2 * penalty);
+    if (interior) merit += interior.energyNmm;
+    else if (penalty) merit += (force * force - lambda * lambda) / (2 * penalty);
     for (const d of c.derivatives) for (let k = 0; k < 3; k++) gradient[d.node][k] -= force * d.value[k];
   }
   const flat = gradient.flatMap((p, i) => prep.fixed[i] ? [0, 0, 0] : p);
@@ -537,7 +580,8 @@ function physicalContacts(e: Evaluation, lambda: readonly number[]): YarnContact
   return e.constraints.flatMap((c, i) => c.mesh ? [] : [{ ...c.contact, multiplierN: lambda[i] } as YarnContact]);
 }
 function meshConstraints(prep: Prepared, e: Evaluation, lambda: readonly number[]): YarnMeshConstraint[] {
-  return e.constraints.flatMap((c, i) => c.mesh ? [{ id: c.contact.id, kind: 'equal-chord' as const,
+  return e.constraints.flatMap((c, i) => c.mesh ? [{ id: c.contact.id,
+    kind: prep.input.threads[c.mesh.thread].feed?.discretization === 'fixed-chord-ratios' ? 'fixed-chord-ratios' as const : 'equal-chord' as const,
     threadId: prep.input.threads[c.mesh.thread].id, nodeIndex: c.mesh.nodeIndex, errorMm: c.contact.gapMm, multiplierN: lambda[i] }] : []);
 }
 
@@ -561,29 +605,31 @@ export function evaluateYarnEquilibrium(input: YarnEquilibriumInput, contactMult
  * Segment Laplacians approximate stretching/tangent stiffness; active rho J^T J
  * supplies the otherwise very stiff normal contact directions. Matrix-free CG
  * is bounded and need not converge: the outer Armijo test remains authoritative. */
-function contactPreconditioner(prep: Prepared, points: V[], e: Evaluation, effective: readonly number[], penalty: number) {
+function contactPreconditioner(prep: Prepared, points: V[], e: Evaluation, effective: readonly number[], penalty: number, barrier = 0) {
   const size = points.length * 3;
   const edges = prep.segments.map(s => {
     const yarn = prep.input.threads[s.thread], L = length(sub(points[s.b], points[s.a]));
     const bending = yarn.bendingStiffnessNmm2 / (L * L * L);
     return { a: s.a, b: s.b, k: (yarn.feed ? yarn.feed.tensionN / L : yarn.axialStiffnessN / s.rest) + 4 * bending };
   });
-  const active = e.constraints.filter((c, i) => c.mesh || effective[i] > 0 && !c.contact.excludedLocal);
+  const active = e.constraints.flatMap((c, i) => c.mesh || effective[i] > 0 && !c.contact.excludedLocal
+    ? [{ c, stiffness: barrier && !c.mesh
+      ? contactBarrier(c.contact.gapMm, prep.options.barrierDistanceMm, barrier).stiffnessNPerMm : penalty }] : []);
   const scaleNPerMm = Math.max(1e-12, ...edges.map(s => s.k));
   const regularization = scaleNPerMm * 1e-8;
   const diagonal = points.map(() => regularization);
   for (const edge of edges) { diagonal[edge.a] += edge.k; diagonal[edge.b] += edge.k; }
-  for (const c of active) for (const d of c.derivatives) diagonal[d.node] += penalty * dot(d.value, d.value);
+  for (const { c, stiffness } of active) for (const d of c.derivatives) diagonal[d.node] += stiffness * dot(d.value, d.value);
   const apply = (v: number[]) => {
     const out = v.map(x => regularization * x);
     for (const edge of edges) for (let k = 0; k < 3; k++) {
       const difference = edge.k * (v[3 * edge.b + k] - v[3 * edge.a + k]);
       out[3 * edge.a + k] -= difference; out[3 * edge.b + k] += difference;
     }
-    for (const c of active) {
+    for (const { c, stiffness } of active) {
       let jv = 0;
       for (const d of c.derivatives) for (let k = 0; k < 3; k++) jv += d.value[k] * v[3 * d.node + k];
-      for (const d of c.derivatives) for (let k = 0; k < 3; k++) out[3 * d.node + k] += penalty * jv * d.value[k];
+      for (const d of c.derivatives) for (let k = 0; k < 3; k++) out[3 * d.node + k] += stiffness * jv * d.value[k];
     }
     for (let i = 0; i < points.length; i++) if (prep.fixed[i]) out.fill(0, 3 * i, 3 * i + 3);
     return out;
@@ -614,15 +660,26 @@ export function solveYarnEquilibrium(input: YarnEquilibriumInput): YarnEquilibri
   const prep = prepare(input), o = prep.options;
   let points = prep.positions.map(p => [...p] as V), e = evaluate(prep, points);
   let lambda = e.constraints.map(() => 0), penalty = o.initialPenaltyNPerMm, iterations = 0;
+  let barrier = o.contactMethod === 'interior-barrier' ? o.initialBarrierNmm : 0;
   let status: YarnEquilibriumResult['status'] = 'unresolved';
   const diagnostics: string[] = [], trace: YarnEquilibriumTrace[] = [];
+  const updateBarrierReactions = () => {
+    if (barrier) lambda = lambda.map((value, i) => e.constraints[i].mesh ? value
+      : e.constraints[i].contact.excludedLocal ? 0
+      : contactBarrier(e.constraints[i].contact.gapMm, o.barrierDistanceMm, barrier).forceN);
+  };
+  const strictlyFeasible = (evaluation: Evaluation) => evaluation.constraints.every(c => c.mesh || c.contact.excludedLocal
+    || c.contact.gapMm > 0 && (!c.contact.channelClearance
+      || c.contact.channelClearance.status === 'resolved' && c.contact.channelClearance.lowerBoundMm > 0));
   const finish = () => {
+    if (!barrier || strictlyFeasible(e)) updateBarrierReactions();
     const a = augmented(prep, e, lambda), r = residuals(prep, e, lambda);
     const unresolvedChannel = unresolvedChannelConstraint(e);
     if (unresolvedChannel && !diagnostics.some(message => message.includes('full-segment channel bound'))) {
       diagnostics.push(`Unresolved full-segment channel bound at ${unresolvedChannel.contact.id}; discrete convergence is withheld.`);
     }
-    return { model: 'discrete-circular-elastic-yarn-v1' as const, status, numericallyValid: e.valid && finiteAugmented(a) && Object.values(r).every(Number.isFinite),
+    return { model: 'discrete-circular-elastic-yarn-v1' as const, contactMethod: o.contactMethod, finalBarrierNmm: barrier,
+      status, numericallyValid: e.valid && finiteAugmented(a) && Object.values(r).every(Number.isFinite),
       threads: input.threads.map((t, i) => ({ ...t, restLengthsMm: [...t.restLengthsMm],
         ...(t.segmentMinimumSphereRadiiMm ? { segmentMinimumSphereRadiiMm: [...t.segmentMinimumSphereRadiiMm] } : {}),
         nodes: t.nodes.map((n, j) => ({ ...n, positionMm: [...points[prep.starts[i] + j]] as V })) })),
@@ -646,19 +703,25 @@ export function solveYarnEquilibrium(input: YarnEquilibriumInput): YarnEquilibri
   };
   if (!e.valid) { diagnostics.push('Non-finite initial energy, gradient, contact, or segment arithmetic; no equilibrium was computed.'); return finish(); }
   if (obstacles()) return finish();
+  if (barrier && !strictlyFeasible(e)) {
+    diagnostics.push('Interior contact mode needs a strictly feasible seed with resolved full-segment channel bounds; no point was moved.');
+    return finish();
+  }
+  updateBarrierReactions();
+  if (barrier && obstacles()) return finish();
   // An inexact AL forcing sequence, not a physical acceptance tolerance. Work
   // chunks that miss this target continue the SAME subproblem and multiplier.
-  let innerTarget = Math.max(o.gradientToleranceN * .5, length(augmented(prep, e, lambda, penalty).flat) * .1);
+  let innerTarget = Math.max(o.gradientToleranceN * .5, length(augmented(prep, e, lambda, penalty, barrier).flat) * .1);
   const violationSize = (r: YarnEquilibriumResiduals) => Math.max(r.maxPenetrationMm, r.maxMaterialOverdrawMm, r.maxMeshSpacingErrorMm);
   let previousViolation = violationSize(residuals(prep, e, lambda));
   const history: { s: number[]; y: number[]; rho: number }[] = [];
   for (let outer = 0; outer < o.maxOuterIterations; outer++) {
-    let a = augmented(prep, e, lambda, penalty);
+    let a = augmented(prep, e, lambda, penalty, barrier);
     if (!finiteAugmented(a)) { diagnostics.push('Non-finite augmented energy, forces, or multipliers; numerical equilibrium is unresolved.'); return finish(); }
     let lineSearchFailed = false;
     for (let inner = 0; inner < o.maxIterationsPerOuter; inner++) {
       if (length(a.flat) <= innerTarget) break;
-      const precondition = contactPreconditioner(prep, points, e, a.effective, penalty);
+      const precondition = contactPreconditioner(prep, points, e, a.effective, penalty, barrier);
       let direction = [...a.flat]; const alpha: number[] = [];
       for (let k = history.length - 1; k >= 0; k--) { const h = history[k]; alpha[k] = h.rho * dot(h.s, direction); direction = direction.map((x, i) => x - alpha[k] * h.y[i]); }
       direction = precondition(direction);
@@ -673,10 +736,19 @@ export function solveYarnEquilibrium(input: YarnEquilibriumInput): YarnEquilibri
         if (!(slope < 0) || !Number.isFinite(slope) || !Number.isFinite(norm)) continue;
         // Rotation-invariant trust step; NOT a topology certificate.
         let step = Math.min(1, Math.min(...input.threads.map(t => t.radiusMm)) / Math.max(norm, 1e-30));
+        if (barrier) for (const c of e.constraints) if (c.boundNodes && c.contact.channelClearance) {
+          // g is 1-Lipschitz. Bound the complete interpolated segment, and
+          // retain at least 10% of its old clearance. Feasibility alone would
+          // allow tiny positive gaps with enormous barrier forces.
+          const speed = Math.max(...c.boundNodes.map(node => length(direction.slice(3 * node, 3 * node + 3))));
+          if (speed > 0) step = Math.min(step, .9 * c.contact.channelClearance.lowerBoundMm / speed);
+        }
         for (let search = 0; search < 35; search++, step *= .5) {
           const next = points.map((p, i) => prep.fixed[i] ? [...p] as V : p.map((x, d) => x + step * direction[3 * i + d]) as V);
-          const trial = evaluate(prep, next), trialA = augmented(prep, trial, lambda, penalty);
-          if (trial.valid && finiteAugmented(trialA) && trialA.merit <= a.merit + 1e-4 * step * slope) {
+          const trial = evaluate(prep, next), trialA = augmented(prep, trial, lambda, penalty, barrier);
+          if (trial.valid && (!barrier || strictlyFeasible(trial)) && finiteAugmented(trialA)
+            && (!barrier || trial.constraints.every((c, i) => c.mesh || trialA.effective[i] === 0 || c.contact.normalDefined))
+            && trialA.merit <= a.merit + 1e-4 * step * slope) {
             const oldFlat = points.flat(), s = next.flat().map((x, i) => x - oldFlat[i]), y = trialA.flat.map((x, i) => x - a.flat[i]), sy = dot(s, y);
             if (sy > 1e-12 * length(s) * length(y)) { history.push({ s, y, rho: 1 / sy }); if (history.length > 7) history.shift(); }
             points = next; e = trial; a = trialA; accepted = true; iterations++; break;
@@ -687,8 +759,9 @@ export function solveYarnEquilibrium(input: YarnEquilibriumInput): YarnEquilibri
     }
     const innerGradient = length(a.flat), subproblemConverged = innerGradient <= innerTarget;
     if (subproblemConverged) lambda = a.effective;
+    updateBarrierReactions();
     const r = residuals(prep, e, lambda);
-    trace.push({ ...r, outerIteration: outer + 1, iterations, penaltyNPerMm: penalty,
+    trace.push({ ...r, outerIteration: outer + 1, iterations, penaltyNPerMm: penalty, barrierNmm: barrier,
       elasticEnergyNmm: e.energy.stretchNmm + e.energy.bendNmm, potentialEnergyNmm: e.energy.totalNmm,
       innerTargetN: innerTarget, innerGradientNormN: innerGradient, subproblemConverged, multiplierNormN: length(lambda) });
     if (obstacles()) return finish();
@@ -703,6 +776,9 @@ export function solveYarnEquilibrium(input: YarnEquilibriumInput): YarnEquilibri
         penalty = Math.min(o.maxPenaltyNPerMm, penalty * 5);
       previousViolation = violation;
       innerTarget = Math.max(o.gradientToleranceN * .5, innerTarget * .2);
+      if (barrier && outer + 1 < o.maxOuterIterations && r.maxMeshSpacingErrorMm <= o.meshSpacingToleranceMm) {
+        barrier = Math.max(o.complementarityToleranceNmm * .1, barrier * .2);
+      }
       history.length = 0;
     }
   }

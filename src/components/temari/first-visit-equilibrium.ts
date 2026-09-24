@@ -96,17 +96,19 @@ export function buildFirstVisitEquilibriumInput(options: { stepMm?: number; avai
     id: threadId, radiusMm: route.threadRadiusMm, axialStiffnessN: 10, bendingStiffnessNmm2: 0.001,
     nodes: points.map((positionMm, i) => ({ positionMm, fixed: i === 0 || i === points.length - 1 })),
     restLengthsMm: Array(points.length - 1).fill(laid / (points.length - 1)),
-    feed: { tensionN: 0.05, availableLengthMm, discretization: 'equal-chord' },
+    feed: { tensionN: 0.05, availableLengthMm, discretization: 'fixed-chord-ratios',
+      referenceChordLengthsMm: points.slice(1).map((point, i) => distance(points[i]!, point)) },
     channelPassages: passages,
   };
-  const input: YarnEquilibriumInput = { threads: [thread], sphere: { centerMm: [0, 0, 0], radiusMm: route.R } };
+  const input: YarnEquilibriumInput = { threads: [thread], sphere: { centerMm: [0, 0, 0], radiusMm: route.R },
+    options: { contactMethod: 'interior-barrier' } };
   return { model: 'first-visit-equilibrium-v1' as const, route, input, threadId, stepMm, laidLengthMm: laid,
     initialSegmentsOutside, mechanics: 'prepared' as const, status: 'not-certified' as const };
 }
 
 export function solveFirstVisitEquilibrium(options: YarnEquilibriumOptions = {}) {
   const fixture = buildFirstVisitEquilibriumInput();
-  const result = solveYarnEquilibrium({ ...fixture.input, options });
+  const result = solveYarnEquilibrium({ ...fixture.input, options: { ...fixture.input.options, ...options } });
   const physicalAcceptance = result.status === 'rejected' ? 'rejected-mechanics' as const
     : result.status === 'converged' && !fixture.initialSegmentsOutside ? 'not-certified' as const
     : 'unresolved' as const;

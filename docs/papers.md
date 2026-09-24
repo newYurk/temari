@@ -64,6 +64,13 @@ Harmeet Singh, *Planar equilibria of an elastic rod wrapped around a circular ca
 
 ## Численные методы
 
+- M. Li et al., *Incremental Potential Contact: Intersection- and Inversion-free
+  Large Deformation Dynamics* (2020), [официальный PDF](https://ipc-sim.github.io/file/IPC-paper-fullRes.pdf).
+  Eq. 6 проверена 24.09.2026. `contact-barrier.ts` использует её скалярную
+  компактную логарифмическую форму, нормированную на квадрат активационного
+  расстояния. Это численное средство ограничения зазора; реализация не является
+  алгоритмом IPC, не наследует все его гарантии и не калибрует хлопок.
+
 - M. Bergou, M. Wardetzky, S. Robinson, B. Audoly, E. Grinspun,
   *Discrete Elastic Rods*, ACM TOG 27(3), 63 (2008).
   [Страница авторов](https://www.cs.columbia.edu/cg/rods/) и аннотация проверены

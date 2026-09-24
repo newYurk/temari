@@ -144,7 +144,8 @@ function FirstVisitSnapshotView({ prepared, onStraight }: { prepared: FirstVisit
       </div>
     </div>
     <div className="z-10 max-h-[48dvh] overflow-y-auto border-t border-ink/15 bg-linen px-4 py-3 text-sm">
-      <p role="status" className="mb-2"><b>{phaseText}. {acceptanceText[snapshot.acceptance]}</b></p>
+      <p role="status" className="mb-2"><b>{phaseText}. {snapshot.phase === 'solved' && snapshot.channelStatus === 'passed'
+        && snapshot.acceptance === 'unresolved' ? 'Каналы пройдены. Затягивание ещё не сошлось.' : acceptanceText[snapshot.acceptance]}</b></p>
       {running && <p role="status" className="mb-2">Идёт ограниченный расчёт: до 2 × 40 итераций. Пока показан прежний снимок.</p>}
       {rendered.error && <p role="alert" className="mb-2 text-red-800">{rendered.error} {rendered.axis ? 'Показана только ось, без сечения.' : 'Путь не показан.'}</p>}
       {error && <p role="alert" className="mb-2 text-red-800">{error}</p>}
@@ -166,7 +167,7 @@ function FirstVisitSnapshotView({ prepared, onStraight }: { prepared: FirstVisit
       <p className="mt-1 text-xs">Ползунок меняет только видимость готового пути. Это не движение иглы, шитьё или затягивание.
         Проверка и экспорт относятся ко всему выбранному снимку.</p>
       <details className="mt-3 text-xs" open={snapshot.phase === 'solved'}>
-        <summary className="cursor-pointer">Где нарушен проход</summary>
+        <summary className="cursor-pointer">Проверка трёх проходов</summary>
         <p className="mt-2">Для оси круглой нити граница непроникновения проходит на один её радиус выше поверхности мари.
           У каждого канала проверяем один вход и один выход через эту границу, направление и весь путь между ними.
           Пересечения самой поверхности мари считаем отдельно: это не измеренные проколы.</p>
@@ -191,7 +192,8 @@ function FirstVisitSnapshotView({ prepared, onStraight }: { prepared: FirstVisit
         <dt>Запас материала</dt><dd>{mm(snapshot.material.reserveLengthMm)} мм</dd>
         <dt>Численный статус</dt><dd>{snapshot.solver?.status ?? 'не рассчитывался'}</dd>
         {snapshot.solver && <><dt>Итераций</dt><dd>{snapshot.solver.iterations}</dd>
-          <dt>Максимальное проникновение</dt><dd>{mm(snapshot.solver.residuals.maxPenetrationMm)} мм</dd></>}
+          <dt>Максимальное проникновение</dt><dd>{mm(snapshot.solver.residuals.maxPenetrationMm)} мм</dd>
+          <dt>Остаток сил</dt><dd>{snapshot.solver.residuals.freeGradientNormN.toExponential(2)} Н</dd></>}
       </dl>
       <p className="mt-2 text-xs">Три последовательных канала: нижний → верхний → нижний. Порты взяты из текущего рецепта.
         Слой {mm(layerMm)} мм задан для контроля; он не измерен на реальной мари.</p>
