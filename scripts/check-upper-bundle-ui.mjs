@@ -182,6 +182,12 @@ try {
         .some(node => node.textContent?.includes('Прямой расчёт сошёлся; физическая приёмка не выдана.')), null, { timeout: 120000 });
       assert.equal(await page.getByRole('button', { name: 'Результат расчёта', exact: true }).getAttribute('aria-pressed'), 'true');
       assert.match(await page.getByRole('definition').allTextContents().then(values => values.join(' ')), /converged/);
+      await page.getByRole('button', { name: 'Сечение', exact: true }).click();
+      const section = page.locator('svg[aria-label="Сечение прямого канала в миллиметрах"]');
+      assert.equal(await section.getAttribute('data-thread-state'), 'resolved');
+      assert.equal(await section.locator('[data-role="thread-section"]').getAttribute('stroke'), '#46a47a');
+      await page.getByRole('button', { name: 'Прозрачная мари', exact: true }).click();
+      await page.locator('canvas').waitFor();
       const needleDownload = page.waitForEvent('download');
       await page.getByRole('button', { name: 'Скачать данные', exact: true }).click();
       const needleArtifactPath = `${out}/needle-export-${width}.json`;
@@ -205,6 +211,11 @@ try {
       await page.screenshot({ path: r.needleScreenshot, animations: 'disabled' });
       await page.getByRole('button', { name: 'Узкий 2 мм', exact: true }).click();
       await page.getByRole('button', { name: 'Результат расчёта', exact: true }).waitFor({ state: 'detached' });
+      await page.getByRole('button', { name: 'Сечение', exact: true }).click();
+      assert.equal(await section.getAttribute('data-thread-state'), 'rejected');
+      assert.equal(await section.locator('[data-role="thread-section"]').getAttribute('stroke'), '#c84f42');
+      await page.getByRole('button', { name: 'Прозрачная мари', exact: true }).click();
+      await page.locator('canvas').waitFor();
       await page.getByRole('button', { name: 'Рассчитать прямой проход', exact: true }).click();
       await page.waitForFunction(() => [...document.querySelectorAll('[role="status"]')]
         .some(node => node.textContent?.includes('Расчёт остановлен входной геометрией.')), null, { timeout: 120000 });
@@ -215,6 +226,7 @@ try {
       r.needleControl = {
         acceptedControl: needleArtifact.equilibrium.physicalAcceptance,
         narrowControl: 'rejected-preflight',
+        sectionStates: ['resolved', 'rejected'],
       };
       r.needleLayout = await page.evaluate(() => ({ width: innerWidth,
         scrollWidth: document.documentElement.scrollWidth,

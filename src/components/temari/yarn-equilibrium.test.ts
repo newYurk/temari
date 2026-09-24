@@ -129,9 +129,27 @@ describe('quasistatic discrete circular yarn: explicit elastic/contact engineeri
     assert.deepEqual(input, original);
   });
 
+  it('withholds convergence when the complete channel-segment bound is unresolved', () => {
+    const base = inChannel(yarn('channel-budget', [[0, 0, 0], [3, 0, 0]], [3]));
+    const passage = base.threads[0].channelPassages![0];
+    const input: YarnEquilibriumInput = { ...base, threads: [{ ...base.threads[0],
+      channelPassages: [{ ...passage, maxEvaluations: 2 }] }] };
+    const evaluated = evaluateYarnEquilibrium(input);
+    const contact = evaluated.contacts.find(c => c.kind === 'needle-channel-segment')!;
+    assert.equal(contact.channelClearance?.status, 'unresolved');
+    assert.equal(contact.channelClearance?.clearance, 'unresolved');
+    assert.ok(contact.channelClearance!.lowerBoundMm <= -1 && contact.channelClearance!.upperBoundMm >= .25);
+    const result = solveYarnEquilibrium(input);
+    assert.equal(result.status, 'unresolved');
+    assert.ok(result.diagnostics.some(message => message.includes('full-segment channel bound')));
+  });
+
   it('relaxes a free point through one fixed world-space channel without pinning channel mouths', () => {
     const thread = yarn('channel-relax', [[0, 0, -3], [.4, 0, 0], [0, 0, 3]], [3, 3], [true, false, true]);
-    const input = inChannel(thread), result = solveYarnEquilibrium(input);
+    const base = inChannel(thread), passage = base.threads[0].channelPassages![0];
+    const input: YarnEquilibriumInput = { ...base, threads: [{ ...base.threads[0],
+      channelPassages: [{ ...passage, toleranceMm: .002, maxEvaluations: 2049 }] }] };
+    const result = solveYarnEquilibrium(input);
     assert.equal(result.status, 'converged', JSON.stringify({ residuals: result.residuals, diagnostics: result.diagnostics }));
     near(distance(result.threads[0].nodes[1].positionMm, [0, 0, 0]), 0, 1e-5);
     assert.ok(result.contacts.some(c => c.kind === 'needle-channel-segment'));
@@ -183,6 +201,14 @@ describe('quasistatic discrete circular yarn: explicit elastic/contact engineeri
     assert.throws(() => evaluateYarnEquilibrium({ ...base, threads: [{ ...base.threads[0],
       channelPassages: [{ ...passage, domain: { ...passage.domain, threadRadiusMm: .2 } }] }] }), /yarn radius/);
     assert.throws(() => evaluateYarnEquilibrium({ ...base, sphere: undefined }), /nominal sphere/);
+  });
+
+  it('rejects partial index-assigned channels for sliding feed until topological boundaries exist', () => {
+    const base = inChannel(yarn('partial-sliding-channel', [[0, 0, -3], [0, 0, 0], [0, 0, 3]], [3, 3]));
+    const passage = base.threads[0].channelPassages![0];
+    const thread = { ...base.threads[0], feed: { tensionN: .05, availableLengthMm: 12 },
+      channelPassages: [{ ...passage, lastNode: 1 }] };
+    assert.throws(() => evaluateYarnEquilibrium({ ...base, threads: [thread] }), /complete observed mesh/);
   });
 
   it('uses finite contacts, reports immovable overlaps, and never silently invents a contact normal', () => {

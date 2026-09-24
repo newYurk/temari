@@ -261,6 +261,11 @@ function prepare(input: YarnEquilibriumInput) {
         channelSegments.add(i);
       }
     }
+    if (yarn.feed && yarn.channelPassages?.length
+      && (yarn.channelPassages.length !== 1 || yarn.channelPassages[0].firstNode !== 0
+        || yarn.channelPassages[0].lastNode !== yarn.nodes.length - 1)) {
+      throw new RangeError('Sliding feed currently requires one assigned channel covering the complete observed mesh');
+    }
     const start = positions.length; starts.push(start);
     for (const node of yarn.nodes) {
       if (!pointValid(node.positionMm) || typeof node.fixed !== 'boolean'
@@ -511,7 +516,13 @@ function residuals(prep: Prepared, e: Evaluation, lambda: readonly number[]): Ya
     freeGradientNormN: length(a.flat), freePhysicalGradientNormN: length(physical.flat), maxRelativeStretch: e.maxRelativeStretch,
     maxComplementarityNmm: Math.max(0, ...e.constraints.map((c, i) => c.mesh || c.contact.excludedLocal ? 0 : Math.abs((lambda[i] ?? 0) * c.contact.gapMm))) };
 }
-const passes = (r: YarnEquilibriumResiduals, o: Options) => Object.values(r).every(Number.isFinite)
+const unresolvedChannelConstraint = (e: Evaluation) => e.constraints.find(c => {
+  if (c.contact.kind !== 'needle-channel-segment') return false;
+  const clearance = c.contact.channelClearance;
+  return !clearance || clearance.status !== 'resolved' || clearance.clearance === 'unresolved';
+});
+const passes = (r: YarnEquilibriumResiduals, o: Options, e: Evaluation) => !unresolvedChannelConstraint(e)
+  && Object.values(r).every(Number.isFinite)
   && r.maxPenetrationMm <= o.penetrationToleranceMm
   && r.maxMaterialOverdrawMm === 0
   && r.maxMeshSpacingErrorMm <= o.meshSpacingToleranceMm
@@ -602,6 +613,10 @@ export function solveYarnEquilibrium(input: YarnEquilibriumInput): YarnEquilibri
   const diagnostics: string[] = [], trace: YarnEquilibriumTrace[] = [];
   const finish = () => {
     const a = augmented(prep, e, lambda), r = residuals(prep, e, lambda);
+    const unresolvedChannel = unresolvedChannelConstraint(e);
+    if (unresolvedChannel && !diagnostics.some(message => message.includes('full-segment channel bound'))) {
+      diagnostics.push(`Unresolved full-segment channel bound at ${unresolvedChannel.contact.id}; discrete convergence is withheld.`);
+    }
     return { model: 'discrete-circular-elastic-yarn-v1' as const, status, numericallyValid: e.valid && finiteAugmented(a) && Object.values(r).every(Number.isFinite),
       threads: input.threads.map((t, i) => ({ ...t, restLengthsMm: [...t.restLengthsMm],
         ...(t.segmentMinimumSphereRadiiMm ? { segmentMinimumSphereRadiiMm: [...t.segmentMinimumSphereRadiiMm] } : {}),
@@ -672,7 +687,7 @@ export function solveYarnEquilibrium(input: YarnEquilibriumInput): YarnEquilibri
       elasticEnergyNmm: e.energy.stretchNmm + e.energy.bendNmm, potentialEnergyNmm: e.energy.totalNmm,
       innerTargetN: innerTarget, innerGradientNormN: innerGradient, subproblemConverged, multiplierNormN: length(lambda) });
     if (obstacles()) return finish();
-    if (e.valid && finiteAugmented(a) && passes(r, o)) { status = 'converged'; return finish(); }
+    if (e.valid && finiteAugmented(a) && passes(r, o, e)) { status = 'converged'; return finish(); }
     if (lineSearchFailed) { diagnostics.push('Inner line search failed after history reset and steepest-descent fallback; multipliers and penalty were not advanced.'); return finish(); }
     if (subproblemConverged) {
       const violation = violationSize(r);

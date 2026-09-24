@@ -65,20 +65,24 @@ function CatchGeometry({ model, needle, transparent, resolved }: {
 }
 
 /** Exact planar section containing the straight channel and the sphere centre. */
-function ChannelSection({ model, needle }: { model: SingleNeedleCatch; needle: boolean }) {
+function ChannelSection({ model, needle, resolved }: { model: SingleNeedleCatch; needle: boolean; resolved: boolean }) {
   const { R, layerThickness, widthMm, rNeedle, rThread } = model.parameters;
   const a = widthMm / 2, depth = model.channel.chordDepthMm, radius = needle ? rNeedle : rThread;
+  const state = needle ? 'needle' : resolved ? 'resolved' : model.geometryStatus === 'rejected' ? 'rejected' : 'source';
+  const colour = needle ? '#777e88' : resolved ? '#46a47a' : model.geometryStatus === 'rejected' ? '#c84f42' : gold;
   const extent = a + 1;
   const boundary = (r: number) => Array.from({ length: 161 }, (_, i) => {
     const x = -extent + 2 * extent * i / 160;
     return `${i ? 'L' : 'M'}${x},${R - Math.sqrt(r * r - x * x)}`;
   }).join(' ');
-  return <svg role="img" aria-label="Сечение прямого канала в миллиметрах" className="h-full w-full" viewBox={`${-extent} -1.15 ${extent * 2} 3.7`}>
+  return <svg role="img" aria-label="Сечение прямого канала в миллиметрах" data-thread-state={state}
+    className="h-full w-full" viewBox={`${-extent} -1.15 ${extent * 2} 3.7`}>
     <path d={`${boundary(R)} L ${extent},2.55 L ${-extent},2.55 Z`} fill="#ded0b9" />
     <path d={`${boundary(R - layerThickness)} L ${extent},2.55 L ${-extent},2.55 Z`} fill="#bcae97" />
     <path d={boundary(R)} fill="none" stroke="#8b795e" strokeWidth=".025" />
     <path d={boundary(R - layerThickness)} fill="none" stroke="#7b6b53" strokeWidth=".025" />
-    <path d={`M ${a},${depth} H ${-a}`} stroke={needle ? '#777e88' : gold} strokeWidth={2 * radius} strokeLinecap={needle ? 'round' : 'butt'} />
+    <path data-role="thread-section" d={`M ${a},${depth} H ${-a}`} stroke={colour}
+      strokeWidth={2 * radius} strokeLinecap={needle ? 'round' : 'butt'} />
     <path d={`M ${a},${depth} H ${-a}`} stroke="#282828" strokeWidth=".015" strokeDasharray=".08 .07" />
     <circle cx="0" cy="-.1" r=".1" fill="#877458" fillOpacity=".55" stroke="#695131" strokeWidth=".025">
       <title>Сечение разметки; пересечение областей означает коллизию</title>
@@ -140,7 +144,7 @@ export default function NeedleChannelControl() {
       <strong>Один прямой проход</strong><nav className="flex gap-3"><a className="underline" href="?upper-bundle=1">Три визита</a><a className="underline" href="./">К мастерской</a></nav>
     </header>
     <div className="relative min-h-0 flex-1">
-      {mode === 'section' ? <ChannelSection model={model} needle={needle} /> :
+      {mode === 'section' ? <ChannelSection model={model} needle={needle} resolved={!!resolved} /> :
         <TemariScene inspection={{ view, focus }} onError={setError}><CatchGeometry model={model} needle={needle}
           transparent={mode === 'transparent'} resolved={resolved ?? null} /></TemariScene>}
       <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[calc(100%-1.5rem)] rounded-lg bg-ink/85 px-3 py-2 text-xs text-linen" aria-label="Легенда контроля">
