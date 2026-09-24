@@ -968,12 +968,19 @@ function gatherUnderBite(
     const earlier = ops[k];
     if (!earlier) continue;
     const next = ops.find((op, j) => j > k && op.pole === earlier.pole && op.set === earlier.set);
+    // The open thread continues into the NEXT row at the seam. Its first
+    // already-laid flank is also incident to the initial mark, but is not
+    // that chronological next op. Include it separately in the existing
+    // geometric approximation; do not weld the thread or claim contact physics.
+    const first = ops.find(op => op.pole === earlier.pole && op.set === earlier.set);
+    const initialFlank = first && first.i < earlier.i && first.kai === earlier.kai
+      && dist2(first.lay.from, earlier.mark.at) < 1e-20 ? first : undefined;
     const from = polarAround(pole, earlier.mark.at).theta;
     const fromHalf = angleBetween(earlier.bite.enter, earlier.bite.exit) / 2;
     const span = Math.max(top.theta - from, 1e-9);
     const limitAt = (theta: number) =>
       fromHalf - radius + (half - radius - margin - (fromHalf - radius)) * ((theta - from) / span);
-    for (const op of [earlier, next]) {
+    for (const op of [earlier, next, initialFlank]) {
       if (!op) continue;
       // A first-round flank is one arc with no via; lay its points out first.
       const via = op.lay.via?.length ? op.lay.via

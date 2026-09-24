@@ -355,8 +355,11 @@ describe("kagari recipe atom", () => {
     // two-thread first bite; 272 once the bottom stitch is stretched 2 mm and
     // the petals lengthen; 338 while the wedge widened a thread on each side
     // a round, back to 272 at one thread in total — GT14's wedge); the same
-    // count comes out with the cap rejection switched off.
-    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 48], [10, 160, 152, 272]]) {
+    // count comes out with the cap rejection switched off. 24.09: including
+    // the omitted initial flank of each thread in the existing geometric
+    // approximation changes 272 to 266. All per-arc annotations independently
+    // match a run with both cap and coarse-distance rejections disabled.
+    for (const [layers, arcs, carrying, points] of [[1, 16, 8, 8], [3, 48, 40, 48], [10, 160, 152, 266]]) {
       const stitches = stitchesFromOps(compileKiku("simple", "out", "even", 0, 0, layers!, "all"))
         .filter((s) => s.kind === "arc");
       assert.equal(stitches.length, arcs, `arcs at ${layers} rounds`);
