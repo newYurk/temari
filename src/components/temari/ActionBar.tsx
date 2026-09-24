@@ -10,6 +10,7 @@ import { CRAFT_ACTIONS, dispatchCommand, getCraftState } from "./actions";
 import { IconKiku, IconNeedle } from "./icons";
 import { MarkingDiagram } from "./MarkingDiagram";
 import { setTheme, useTheme } from "./theme";
+import { toggleRowColors, useRowColors } from "./row-colors";
 
 type Stage = "jiwari" | "kagari";
 type Panel = "pattern" | "threads" | "more" | "help";
@@ -62,6 +63,7 @@ function KikuHelp() {
 
 export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
   const theme = useTheme();
+  const rowColors = useRowColors();
   const s = useTemari(useShallow((s) => ({
     division: s.division, motif: s.motif, craft: s.craft, pins: s.pins,
     facingPole: s.facingPole, jiwariOn: s.jiwariOn, jiwariPhase: s.jiwariPhase,
@@ -215,7 +217,8 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
     instruction = kagariPhaseHint(motif, division, kagariDir, kagariLaid, kagariPlan.length,
       kagariPlaying, Math.max(0, stitchPoleIndex(kagariPlan[0]!, division, motif)), kagariSet,
       kagariSet === 1 && kikuLayers < kikuSpec(division, kagariSpacing, "fit").capacity,
-      kikuLayers, kikuSpec(division, kagariSpacing, "fit").capacity);
+      kikuLayers, kikuSpec(division, kagariSpacing, "fit").capacity,
+      kagariPlan[Math.min(kagariLaid, kagariPlan.length - 1)]);
   } else if (motif === "kiku") {
     instruction = "Метки готовы. Нажмите «Начать кику».";
   } else if (jiwariOn && jiwariPhase !== "done") {
@@ -504,6 +507,10 @@ export function ActionBar({ chromeRef }: { chromeRef?: Ref<HTMLDivElement> }) {
           ) : null}
           {panel === "more" ? (
             <>
+              <button type="button" onClick={toggleRowColors} aria-pressed={rowColors}
+                className={cn("flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-sm hover:bg-ink/5", focusStyle)}>
+                <Palette className="size-5" />{rowColors ? "Обычные цвета нитей" : "Различать ряды цветом"}
+              </button>
               <button type="button" onClick={() => openPanel("help")}
                 className={cn("flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-sm hover:bg-ink/5", focusStyle)}>
                 <CircleHelp className="size-5" />Справка

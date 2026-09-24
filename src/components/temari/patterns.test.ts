@@ -3,6 +3,14 @@ import assert from "node:assert/strict";
 import { fillKikuSewn, kikuSpec, stitchesForSlot, hitKikuSlot, kikuThetas, around, nextKagariPole, compileKiku, stitchesFromOps, kikuFlank, kikuMarkPins, kikuWorkingPins, kikuMarksReady, snapToKikuMark, kikuPinHint, generateTitleMari, motifSupport, UnsupportedPatternError, generateMotif, motifStitchPlan, stitchesFromSewn, kagariPhaseHint, MOTIF_LIST, type MotifId } from "./patterns.ts";
 import { STITCH_THREAD_MM, unitFromMm } from "./measure.ts";
 
+it("batch progress names the actual row and group instead of counting each group as another row", () => {
+  const plan = motifStitchPlan("simple", "kiku", "out", "even", 0, 0, 10, "all").slice(16);
+  assert.match(kagariPhaseHint("kiku", "simple", "out", 0, plan.length, true, 0, 1, true, 10, 10, plan[0]),
+    /первые 4 · круг 2/);
+  assert.match(kagariPhaseHint("kiku", "simple", "out", plan.length - 1, plan.length, true, 0, 1, true, 10, 10, plan.at(-1)),
+    /вторые 4 · круг 10/);
+});
+
 function merPhi(p: [number, number, number]) {
   return Math.atan2(-p[0], -p[2]);
 }

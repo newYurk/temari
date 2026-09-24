@@ -24,6 +24,8 @@ import {
   KAGARI_SPACING_META,
   isClosedContour,
   motifStitchPlan,
+  compileKiku,
+  stitchesFromOps,
   stitchFocus,
   stitchPoleIndex,
   nextKagariPole,
@@ -383,6 +385,38 @@ function kikuExtra(s: TemariState, toLayer: number): Stitch[] {
     }
   }
   return extra;
+}
+
+/**
+ * Replay only the catches actually laid, including their changes to older
+ * flanks. Slicing a full future compilation would leak later gathers backwards.
+ * Match by operation identity without recolouring material or touching other poles.
+ * This synchronizes the legacy recipe; it does not validate its contact model.
+ */
+function causalKikuGeometry(s: TemariState, laidCount: number) {
+  const newest = s.kagariPlan[laidCount - 1];
+  if (s.motif !== "kiku" || newest?.kind !== "arc" || newest.pole === undefined) return {};
+  const executed = [...s.kagariKept, ...s.kagariPlan.slice(0, laidCount)]
+    .filter((stitch): stitch is Extract<Stitch, { kind: "arc" }> => stitch.kind === "arc"
+      && stitch.pole === newest.pole && !!stitch.operation && stitch.set !== undefined && stitch.kai !== undefined);
+  if (!executed.length) return {};
+  const sets = new Set(executed.map(stitch => stitch.set!));
+  const onlySet = sets.size === 1 ? executed[0]!.set! : "all";
+  const rows = Math.max(...executed.map(stitch => stitch.kai!)) + 1;
+  const prefix = stitchesFromOps(compileKiku(s.division, s.kagariDir, s.kagariSpacing,
+    newest.pole, 0, rows, onlySet, executed.length));
+  // Imported/noncanonical histories must not invent absent intermediate catches.
+  if (prefix.length !== executed.length || prefix.some((stitch, i) => stitch.kind !== "arc"
+    || stitch.operation?.operationId !== executed[i]!.operation!.operationId)) return {};
+  const byId = new Map(prefix.flatMap(stitch => stitch.kind === "arc" && stitch.operation
+    ? [[stitch.operation.operationId, stitch] as const] : []));
+  const refresh = (stitch: Stitch): Stitch => {
+    if (stitch.kind !== "arc" || !stitch.operation) return stitch;
+    const shape = byId.get(stitch.operation.operationId);
+    return shape ? { ...shape, color: stitch.color, operation: stitch.operation } : stitch;
+  };
+  return { kagariKept: s.kagariKept.map(refresh),
+    kagariPlan: s.kagariPlan.map((stitch, i) => i < laidCount ? refresh(stitch) : stitch) };
 }
 
 /** Deeper than a flower has groups; a long session cannot grow it without bound. */
@@ -1330,17 +1364,23 @@ export const useTemari = create<TemariState>((set, get) => ({
     const state = get();
     if (!state.kagariPlaying) return;
     const next = state.kagariLaid + 1;
+    const geometry = causalKikuGeometry(state, Math.min(next, state.kagariPlan.length));
     if (next >= state.kagariPlan.length) {
       feel.kikuFill();
       // Pins are pulled as the work covers them: none are left in a finished flower.
       const full = state.motif === "kiku" && state.kagariSet === 1 &&
         state.kikuLayers >= kikuSpec(state.division, state.kagariSpacing, "fit").capacity;
-      const marks = full ? kikuWorkingPins(state.division, state.facingPole) : [];
+      // Turning the camera can change facingPole while the scheduled stitches
+      // still belong to the original flower. Finish that operation's pole.
+      const last = state.kagariPlan.at(-1);
+      const completedPole = last?.kind === "arc" ? last.pole : undefined;
+      const marks = full && completedPole !== undefined ? kikuWorkingPins(state.division, completedPole) : [];
       // The first group finished: the hand takes the second thread now, so the
       // palette shows what it holds rather than what was just sewn.
       const takesSecond = state.motif === "kiku" && state.kagariSet === 0 &&
         state.kagariPlan.length > 0;
       set({
+        ...geometry,
         kagariLaid: state.kagariPlan.length,
         kagariPlaying: false,
         ...(takesSecond ? { selectedColor: state.kagariColors[1], kagariEdit: null } : {}),
@@ -1355,6 +1395,7 @@ export const useTemari = create<TemariState>((set, get) => ({
     const newest = state.kagariPlan[next - 1];
     const focus = stitchFocus(newest, state.division, state.motif);
     set({
+      ...geometry,
       kagariLaid: next,
       kagariFocus: sameFocus(state.kagariFocus, focus) ? state.kagariFocus : focus,
     });

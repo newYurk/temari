@@ -787,6 +787,7 @@ export function stackedArcChainParts(
       return [];
     }
     const one = stackedArcCord(chain[0]!, kind);
+    one.userData.operationId = chain[0]!.operation?.operationId;
     return (one.getAttribute("position")?.count ?? 0) > 0 ? [one] : [];
   }
   const parts: THREE.BufferGeometry[] = [];
@@ -817,6 +818,7 @@ export function stackedArcChainParts(
       false,
       twistPerUnit(kind),
     );
+    geo.userData.operationId = at.operation?.operationId;
     geo.userData.centerline = shaped.map((p) => p.clone());
     parts.push(geo);
   };
@@ -1265,6 +1267,7 @@ export function createMotifGeometryParts(
       if (part.color !== colorIndex) continue;
       const geo = cachedTube(part.pts, stitchRadius(kind), false, false, twistPerUnit(kind));
       geo.userData.centerline = part.pts.map((p) => p.clone());
+      geo.userData.operationId = part.at.operation?.operationId;
       parts.push(geo);
     }
   } else if (cord) {
