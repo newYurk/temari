@@ -203,12 +203,23 @@ describe('quasistatic discrete circular yarn: explicit elastic/contact engineeri
     assert.throws(() => evaluateYarnEquilibrium({ ...base, sphere: undefined }), /nominal sphere/);
   });
 
-  it('rejects partial index-assigned channels for sliding feed until topological boundaries exist', () => {
-    const base = inChannel(yarn('partial-sliding-channel', [[0, 0, -3], [0, 0, 0], [0, 0, 3]], [3, 3]));
+  it('supports an ordered channel partition without turning its shared mesh node into a material anchor', () => {
+    const base = inChannel(yarn('partitioned-sliding-channel',
+      [[0, 0, -3], [0, 0, -1.5], [0, 0, 0], [0, 0, 1.5], [0, 0, 3]], [1.5, 1.5, 1.5, 1.5]));
     const passage = base.threads[0].channelPassages![0];
-    const thread = { ...base.threads[0], feed: { tensionN: .05, availableLengthMm: 12 },
-      channelPassages: [{ ...passage, lastNode: 1 }] };
-    assert.throws(() => evaluateYarnEquilibrium({ ...base, threads: [thread] }), /complete observed mesh/);
+    const thread = { ...base.threads[0], feed: { tensionN: .05, availableLengthMm: 10, discretization: 'equal-chord' as const },
+      channelPassages: [{ ...passage, id: 'first-channel', lastNode: 2, toleranceMm: .002 },
+        { ...passage, id: 'second-channel', firstNode: 2, toleranceMm: .002 }] };
+    const result = solveYarnEquilibrium({ ...base, threads: [thread] });
+    assert.equal(result.status, 'converged', JSON.stringify(result.diagnostics));
+    assert.equal(result.threads[0].nodes.filter(node => node.fixed).length, 2);
+    assert.deepEqual(result.meshConstraints.map(c => c.nodeIndex), [1, 3],
+      'the free shared topology node splits only the numerical gauge');
+    assert.equal(result.contacts.filter(c => c.kind === 'needle-channel-node' && c.id.endsWith(':2')).length, 2);
+    const gapped = { ...thread, channelPassages: [
+      { ...thread.channelPassages[0], lastNode: 1 }, { ...thread.channelPassages[1], firstNode: 2 },
+    ] };
+    assert.throws(() => evaluateYarnEquilibrium({ ...base, threads: [gapped] }), /ordered complete partition/);
   });
 
   it('uses finite contacts, reports immovable overlaps, and never silently invents a contact normal', () => {

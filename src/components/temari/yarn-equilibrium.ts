@@ -26,8 +26,9 @@ export type YarnChannelPassage = {
   id: string;
   /** Inclusive mesh interval whose complete polygonal segments must remain in
    * the fixed world-space union of the exterior and this assigned channel.
-   * In sliding mode these indices are not fixed material coordinates; assigning
-   * several channels needs explicit topological boundaries. */
+   * In sliding mode these indices are not fixed material coordinates. Several
+   * channels must form an ordered complete partition; their shared free node is
+   * a topological mesh boundary, not a material anchor. */
   firstNode: number;
   lastNode: number;
   domain: NeedleChannelDomain;
@@ -225,6 +226,7 @@ function prepare(input: YarnEquilibriumInput) {
   if (!input.threads.length || new Set(input.threads.map(t => t.id)).size !== input.threads.length) throw new RangeError('Threads need unique IDs');
   if (input.sphere && (!pointValid(input.sphere.centerMm) || !positive(input.sphere.radiusMm))) throw new RangeError('Invalid sphere');
   const positions: V[] = [], fixed: boolean[] = [], starts: number[] = [], segments: Segment[] = [];
+  const channelBoundaryNodes: Set<number>[] = [];
   for (const [thread, yarn] of input.threads.entries()) {
     if (!yarn.id || !positive(yarn.radiusMm) || !positive(yarn.axialStiffnessN) || !positive(yarn.bendingStiffnessNmm2)
       || yarn.nodes.length < 2 || yarn.restLengthsMm.length !== yarn.nodes.length - 1 || !yarn.restLengthsMm.every(positive)) throw new RangeError(`Invalid yarn ${yarn.id}`);
@@ -234,7 +236,7 @@ function prepare(input: YarnEquilibriumInput) {
       throw new RangeError('Equal-chord mesh needs held observation endpoints');
     if (yarn.segmentMinimumSphereRadiiMm && (yarn.segmentMinimumSphereRadiiMm.length !== yarn.restLengthsMm.length
       || yarn.segmentMinimumSphereRadiiMm.some(r => !Number.isFinite(r) || r < 0))) throw new RangeError('Invalid segment axis exclusion radii');
-    const channelNodes = new Set<number>(), channelSegments = new Set<number>(), passageIds = new Set<string>();
+    const channelSegments = new Set<number>(), passageIds = new Set<string>();
     for (const passage of yarn.channelPassages ?? []) {
       if (!passage.id?.trim() || passageIds.has(passage.id)
         || !Number.isSafeInteger(passage.firstNode) || !Number.isSafeInteger(passage.lastNode)
@@ -252,20 +254,21 @@ function prepare(input: YarnEquilibriumInput) {
         || Math.abs(passage.domain.bodyRadiusMm - input.sphere.radiusMm) > 1e-10 * Math.max(1, input.sphere.radiusMm)) {
         throw new RangeError('Assigned channel must use the equilibrium yarn radius and nominal sphere');
       }
-      for (let i = passage.firstNode; i <= passage.lastNode; i++) {
-        if (channelNodes.has(i)) throw new RangeError('Assigned needle-channel node intervals must not overlap');
-        channelNodes.add(i);
-      }
       for (let i = passage.firstNode; i < passage.lastNode; i++) {
         if (channelSegments.has(i)) throw new RangeError('Assigned needle-channel segment intervals must not overlap');
         channelSegments.add(i);
       }
     }
-    if (yarn.feed && yarn.channelPassages?.length
-      && (yarn.channelPassages.length !== 1 || yarn.channelPassages[0].firstNode !== 0
-        || yarn.channelPassages[0].lastNode !== yarn.nodes.length - 1)) {
-      throw new RangeError('Sliding feed currently requires one assigned channel covering the complete observed mesh');
+    const topologyBoundaries = new Set<number>();
+    if (yarn.feed && yarn.channelPassages?.length) {
+      const passages = yarn.channelPassages;
+      if (passages[0].firstNode !== 0 || passages.at(-1)!.lastNode !== yarn.nodes.length - 1
+        || passages.slice(1).some((passage, i) => passage.firstNode !== passages[i]!.lastNode)) {
+        throw new RangeError('Sliding feed channels must be an ordered complete partition of the observed mesh');
+      }
+      passages.slice(1).forEach(passage => topologyBoundaries.add(passage.firstNode));
     }
+    channelBoundaryNodes.push(topologyBoundaries);
     const start = positions.length; starts.push(start);
     for (const node of yarn.nodes) {
       if (!pointValid(node.positionMm) || typeof node.fixed !== 'boolean'
@@ -289,7 +292,7 @@ function prepare(input: YarnEquilibriumInput) {
     pairs.push([a, b]);
     if (pairs.length > options.maxContactPairs) throw new RangeError('Contact-pair budget exceeded; no equilibrium was computed');
   }
-  return { input, options, positions, fixed, starts, segments, pairs };
+  return { input, options, positions, fixed, starts, segments, pairs, channelBoundaryNodes };
 }
 type Prepared = ReturnType<typeof prepare>;
 
@@ -464,7 +467,9 @@ function evaluate(prep: Prepared, points: V[]) {
   // No stretching energy, rest length reset, or material source is introduced.
   for (const [ti, yarn] of prep.input.threads.entries()) if (yarn.feed?.discretization === 'equal-chord') {
     for (let i = 1; i < yarn.nodes.length - 1; i++) {
-      if (yarn.nodes[i].fixed) continue; // Held ports split mesh intervals.
+      // Held positions and free topological channel boundaries both split the
+      // numerical gauge. Neither condition fixes a material coordinate.
+      if (yarn.nodes[i].fixed || prep.channelBoundaryNodes[ti].has(i)) continue;
       const node = prep.starts[ti] + i, left = sub(points[node], points[node - 1]), right = sub(points[node + 1], points[node]);
       const Lleft = length(left), Lright = length(right), t0 = scale(left, 1 / Lleft), t1 = scale(right, 1 / Lright);
       constraints.push({ mesh: { thread: ti, nodeIndex: i },
