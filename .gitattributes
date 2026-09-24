@@ -1,5 +1,0 @@
-# Карта ремесла собирается скриптом из src/components/temari/library.ts.
-# Пометка нужна одному: GitHub сворачивает такие файлы в diff, чтобы правку
-# каталога было видно, а её отражение в 50 заметках не мешало читать.
-Temari-Obsidian/**/*.md linguist-generated=true
-Temari-Obsidian/00*.md  linguist-generated=true

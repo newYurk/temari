@@ -1,6 +1,5 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
 import { DIVISION_CATALOG, MOTIF_CATALOG, type MotifEntry } from "./library.ts";
 import { DIVISION_IDS, runtimeDivisionFor } from "./division-config.ts";
 import {
@@ -10,14 +9,6 @@ import {
 import { KIKU_8_POINT } from "./kagari.ts";
 
 const motif = (id: string) => MOTIF_CATALOG.find((m) => m.id === id)!;
-const note = (path: string) => readFileSync(new URL(`../../../Temari-Obsidian/${path}`, import.meta.url), "utf8");
-const motifNote = (m: MotifEntry) => {
-  const files = readdirSync(new URL("../../../Temari-Obsidian/02 Узоры/", import.meta.url));
-  const file = files.find((name) => note(`02 Узоры/${name}`).includes(`\nid: "${m.id}"\n`));
-  assert.ok(file, `note for ${m.id}`);
-  return note(`02 Узоры/${file}`);
-};
-const section = (text: string, heading: string) => text.split(`## ${heading}\n`)[1]?.split("\n## ")[0] ?? "";
 
 describe("exact catalogue compatibility", () => {
   it("catalogue has one entry for each exact division ID", () => {
@@ -99,7 +90,7 @@ describe("exact catalogue compatibility", () => {
     assert.throws(() => validateCatalogCompatibility([m]), /source URLs/);
   });
 
-  it("rejects duplicate IDs and division claims instead of emitting ambiguous links", () => {
+  it("rejects duplicate IDs and division claims as ambiguous", () => {
     assert.throws(() => validateCatalogCompatibility([motif("kiku-16"), motif("kiku-16")]), /duplicate motif/);
     const m: MotifEntry = {
       ...motif("kiku-16"),
@@ -118,56 +109,5 @@ describe("exact catalogue compatibility", () => {
       recipe: { ...KIKU_8_POINT, divisionId: "s16" },
     };
     assert.throws(() => validateCatalogCompatibility([m]), /адаптера/);
-  });
-});
-
-describe("generated Obsidian compatibility", () => {
-  it("emits confirmed division edges only, never candidate dependencies", () => {
-    for (const m of MOTIF_CATALOG) {
-      const text = motifNote(m);
-      const yaml = text.split("---")[1]!;
-      const edges = yaml.match(/разметка:\n((?:  - .+\n)+)/)?.[1] ?? "";
-      const expected = confirmedDivisions(m).map((id) => DIVISION_CATALOG.find((d) => d.id === id)!.names.ru);
-      assert.deepEqual([...edges.matchAll(/\[\[(.+?)\]\]/g)].map((match) => match[1]), expected, m.id);
-      if (m.compatibility.state !== "documented") {
-        for (const d of DIVISION_CATALOG) assert.ok(!text.includes(`[[${d.names.ru}]]`), m.id);
-      }
-    }
-  });
-
-  it("kiku-16 visibly says S16 candidate, unknown implementation and no S8 edge", () => {
-    const text = motifNote(motif("kiku-16"));
-    assert.match(text, /разметка_кандидаты:\n  - "s16"/);
-    assert.match(text, /простое 16/);
-    assert.match(text, /заявлено в каталоге, не проверено/);
-    assert.match(text, /Рецепт этой строки исполняется: \*\*нет\*\*/);
-    assert.doesNotMatch(text, /\[\[простое 8\]\]/);
-    assert.doesNotMatch(text, /Семья поддержана компилятором: \*\*да/);
-  });
-
-  it("every generated reverse section agrees with outgoing evidence, including empty lists", () => {
-    for (const d of DIVISION_CATALOG) {
-      const text = note(`03 Разметки/${d.names.ru}.md`);
-      for (const [heading, state] of [
-        ["Варианты с подтверждённой совместимостью", "documented"],
-        ["Заявлено в каталоге, нужно проверить", "unverified"],
-      ] as const) {
-        const names = [...section(text, heading).matchAll(/^- ([^:\n]+): /gm)].map((m) => m[1]);
-        const expected = motifsForDivision(d.id).filter((m) => m.compatibility.state === state).map((m) => m.names.ru);
-        assert.deepEqual(names, expected, `${d.id}: ${state}`);
-      }
-    }
-  });
-
-  it("has one matrix row per variant and separates source, runtime and acceptance", () => {
-    const matrix = note("00 Совместимость узоров.md");
-    for (const m of MOTIF_CATALOG) {
-      const row = matrix.split("\n").filter((line) => line.startsWith(`| ${m.names.ru} |`));
-      assert.equal(row.length, 1, m.id);
-      assert.equal(row[0].includes("рецепт исполняется"), !!m.recipe, m.id);
-    }
-    assert.match(matrix, /не означает «невозможно»/);
-    assert.match(matrix, /человеческая оценка/);
-    assert.match(note("00 Карта ремесла.md"), /\[\[00 Совместимость узоров\]\]/);
   });
 });

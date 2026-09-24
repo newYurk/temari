@@ -43,7 +43,7 @@ export function catalogImplementation(motif: MotifEntry, divisionId: DivisionId)
   return { implemented: true, reason: "точный рецепт подключён; это не приёмка полного узора" };
 }
 
-/** Fail generation before writing a misleading vault, even if its files match. */
+/** Reject an inconsistent catalogue: duplicate or unknown IDs, empty claims, missing sources, unexecuted recipes. */
 export function validateCatalogCompatibility(motifs: readonly MotifEntry[] = MOTIF_CATALOG): void {
   const ids = new Set(DIVISION_CATALOG.map((d) => d.id));
   const motifIds = new Set<string>();
