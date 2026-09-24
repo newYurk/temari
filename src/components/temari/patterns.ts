@@ -498,6 +498,8 @@ export function kikuSpec(
   const toObi = 1 + Math.floor(Math.max(0, obi - firstOuter) / Math.max(stretch, 1e-9));
   const toRim = 1 + Math.floor(Math.max(0, ceiling - firstOuter) / Math.max(stretch, 1e-9));
   const fit = Math.max(1, toObi);
+  // Angular recipe budget only: neither fit nor capacity certifies finite-volume
+  // packing, accessible needle passes, or a physical maximum number of rows.
   const capacity = Math.max(fit, toRim);
   const rounds =
     wanted === "fit" ? fit : Math.max(1, Math.min(capacity, Math.round(wanted)));
