@@ -1413,6 +1413,74 @@ function smoothStitchPath(
   return uniform;
 }
 
+type ResolvedThreadFrame = { tangent: THREE.Vector3; heightNormal: THREE.Vector3 };
+
+/**
+ * Render an already resolved open centerline in its own coordinate units.
+ * One ring per input node: no smoothing, interpolation, taper or radial lift.
+ * `radius` is the width semiaxis; `radius * heightScale` is the height semiaxis.
+ * This only constructs a mesh; it does not certify contact or tube regularity.
+ */
+export function createResolvedThreadGeometry(
+  points: THREE.Vector3[], radius: number, heightScale = 1,
+): THREE.BufferGeometry {
+  const heightRadius = radius * heightScale;
+  if (!Number.isFinite(radius) || radius <= 0 || !Number.isFinite(heightScale) || heightScale <= 0
+    || !Number.isFinite(heightRadius) || heightRadius <= 0) {
+    throw new RangeError("Resolved thread section must have positive finite semiaxes");
+  }
+  if (points.length < 2 || points.some(p => ![p.x, p.y, p.z].every(Number.isFinite))) {
+    throw new RangeError("Resolved thread needs at least two finite points");
+  }
+  const segments = points.slice(1).map((p, i) => {
+    const segment = p.clone().sub(points[i]!);
+    if (!Number.isFinite(segment.length()) || segment.lengthSq() === 0) {
+      throw new RangeError("Resolved thread has an undefined segment tangent");
+    }
+    return segment.normalize();
+  });
+  const tangents = points.map((_, i) => {
+    const tangent = i === 0 ? segments[0]!.clone() : i === points.length - 1
+      ? segments.at(-1)!.clone() : segments[i - 1]!.clone().add(segments[i]!);
+    if (tangent.lengthSq() < 1e-20) throw new RangeError("Resolved thread has a reversing cusp");
+    return tangent.normalize();
+  });
+  const normals = points.map((p, i) => {
+    const radial = p.clone().normalize(), tangent = tangents[i]!;
+    const normal = radial.addScaledVector(tangent, -radial.dot(tangent));
+    return normal.lengthSq() > 1e-20 ? normal.normalize() : undefined;
+  });
+  const defined = normals.flatMap((normal, i) => normal ? [i] : []);
+  if (!defined.length) {
+    // A wholly radial line has no rotation-covariant ellipse orientation.
+    // Do not invent a world-axis frame for an otherwise resolved solution.
+    throw new RangeError("Resolved thread section orientation is undefined on a wholly radial path");
+  }
+  const frames = tangents.map((tangent, i): ResolvedThreadFrame => {
+    let heightNormal = normals[i]?.clone();
+    if (!heightNormal) {
+      const nearest = defined.reduce((best, j) => Math.abs(j - i) < Math.abs(best - i) ? j : best);
+      const sourceTangent = tangents[nearest]!;
+      heightNormal = normals[nearest]!.clone();
+      // Transport a neighbouring geometric frame to a radial tangent. In
+      // the antiparallel case its normal is already perpendicular to both.
+      if (sourceTangent.dot(tangent) > -1 + 1e-12) {
+        heightNormal.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(sourceTangent, tangent));
+      }
+      heightNormal.addScaledVector(tangent, -heightNormal.dot(tangent)).normalize();
+    }
+    return { tangent, heightNormal };
+  });
+  const geometry = tubeOnSphere(points, radius, false, false, 0, heightScale, false, frames);
+  // Keep doubles for comparison with the solver; mesh positions are Float32.
+  geometry.userData.centerline = points.map(p => p.clone());
+  geometry.userData.section = { widthRadius: radius, heightRadius, radialSegments: 20 };
+  geometry.userData.frames = frames.map(frame => ({
+    tangent: frame.tangent.clone(), heightNormal: frame.heightNormal.clone(),
+  }));
+  return geometry;
+}
+
 /**
  * Pearl on the mari. Sphere-radial frames, not Frenet.
  *
@@ -1435,10 +1503,12 @@ function tubeOnSphere(
   heightScale = 1,
   /** Needle passages need smooth joins; preserve wrap sampling and its budget. */
   smoothJoins = false,
+  /** Separate resolved-path entry: the supplied nodes and frames are final. */
+  resolvedFrames?: readonly ResolvedThreadFrame[],
 ) {
   if (pts.length < 2) return new THREE.BufferGeometry();
-  const path: THREE.Vector3[] = smoothJoins ? smoothStitchPath(pts, radius, closed) : [];
-  if (!smoothJoins) {
+  const path: THREE.Vector3[] = resolvedFrames ? pts : smoothJoins ? smoothStitchPath(pts, radius, closed) : [];
+  if (!resolvedFrames && !smoothJoins) {
     const segs = closed ? pts.length : pts.length - 1;
     for (let i = 0; i < segs; i++) {
       for (let s = 0; s < 4; s++) {
@@ -1473,31 +1543,36 @@ function tubeOnSphere(
   const tangents: THREE.Vector3[] = [];
   for (let i = 0; i < nPath; i++) {
     const p = path[i]!;
-    const prev = path[closed ? (i - 1 + nPath) % nPath : Math.max(0, i - 1)]!;
-    const next = path[closed ? (i + 1) % nPath : Math.min(nPath - 1, i + 1)]!;
-    const before = p.clone().sub(prev), after = next.clone().sub(p);
-    const left = before.length(), right = after.length();
-    // A dense pickup meets a sparse flank. The unweighted secant biases the
-    // frame toward the distant sample and can fold a finite-width tube there.
-    if (smoothJoins && left > 1e-12 && right > 1e-12) {
-      _t.copy(before).multiplyScalar(right / left).addScaledVector(after, left / right);
+    if (resolvedFrames) {
+      _t.copy(resolvedFrames[i]!.tangent);
+      _side.copy(resolvedFrames[i]!.heightNormal);
     } else {
-      _t.subVectors(next, prev);
+      const prev = path[closed ? (i - 1 + nPath) % nPath : Math.max(0, i - 1)]!;
+      const next = path[closed ? (i + 1) % nPath : Math.min(nPath - 1, i + 1)]!;
+      const before = p.clone().sub(prev), after = next.clone().sub(p);
+      const left = before.length(), right = after.length();
+      // A dense pickup meets a sparse flank. The unweighted secant biases the
+      // frame toward the distant sample and can fold a finite-width tube there.
+      if (smoothJoins && left > 1e-12 && right > 1e-12) {
+        _t.copy(before).multiplyScalar(right / left).addScaledVector(after, left / right);
+      } else {
+        _t.subVectors(next, prev);
+      }
+      if (_t.lengthSq() < 1e-12) {
+        _t.crossVectors(p, Math.abs(p.y) < 0.9 ? _mid.set(0, 1, 0) : _mid.set(1, 0, 0));
+      }
+      _t.normalize();
+      tangents.push(_t.clone());
+      _radial.copy(p).normalize();
+      _side.copy(_radial).addScaledVector(_t, -_radial.dot(_t));
+      if (_side.lengthSq() < 1e-12) {
+        _side.crossVectors(_t, Math.abs(_t.y) < 0.9 ? _mid.set(0, 1, 0) : _mid.set(1, 0, 0));
+      }
+      _side.normalize();
     }
-    if (_t.lengthSq() < 1e-12) {
-      _t.crossVectors(p, Math.abs(p.y) < 0.9 ? _mid.set(0, 1, 0) : _mid.set(1, 0, 0));
-    }
-    _t.normalize();
-    tangents.push(_t.clone());
-    _radial.copy(p).normalize();
-    _side.copy(_radial).addScaledVector(_t, -_radial.dot(_t));
-    if (_side.lengthSq() < 1e-12) {
-      _side.crossVectors(_t, Math.abs(_t.y) < 0.9 ? _mid.set(0, 1, 0) : _mid.set(1, 0, 0));
-    }
-    _side.normalize();
     _mid.crossVectors(_t, _side).normalize();
     const r = radius * scaleAt(along[i] ?? 0);
-    const h = Math.max(0.2, heightScale);
+    const h = resolvedFrames ? heightScale : Math.max(0.2, heightScale);
     for (let j = 0; j <= radialSegs; j++) {
       const ang = (j / radialSegs) * Math.PI * 2;
       const c = Math.cos(ang);
