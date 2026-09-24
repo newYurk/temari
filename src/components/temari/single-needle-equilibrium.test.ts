@@ -92,6 +92,7 @@ describe('one renderer-independent working thread through an assigned foundation
     const forward = auditAssignedPassage(original, domain);
     assert.equal(forward.status, 'passed');
     assert.deepEqual(forward.pairing.crossings.map(c => c.mouth), ['entry', 'exit']);
+    assert.deepEqual(forward.crossings.map(c => c.radialDirection), ['inward', 'outward']);
     // On the axis, the exclusion envelope has a longer chord than nominal R.
     const L = Math.hypot(...domain.exitMm.map((x, i) => x - domain.entryMm[i]));
     const halfEnvelopeChord = Math.sqrt((L / 2) ** 2
@@ -110,6 +111,37 @@ describe('one renderer-independent working thread through an assigned foundation
     const twice = { ...original, nodes: [...original.nodes, ...reversed.nodes.slice(1)] };
     const duplicatePass = auditAssignedPassage(twice, domain);
     assert.equal(duplicatePass.crossings.length, 4); assert.equal(duplicatePass.status, 'rejected');
+  });
+
+  it('rejects an exterior detour that exits entry then enters exit instead of traversing the channel', () => {
+    const y = Math.sqrt(99);
+    const domain: NeedleChannelDomain = { sphereCenterMm: [0, 0, 0], bodyRadiusMm: 10,
+      entryMm: [-1, y, 0], exitMm: [1, y, 0], threadRadiusMm: .1, channelRadiusMm: .2 };
+    const corners: PointMm[] = [[-1, y, 0], [-2, y, 0], [-2, 11, 0], [2, 11, 0], [2, y, 0], [1, y, 0]];
+    const points: PointMm[] = [corners[0]];
+    for (let i = 1; i < corners.length; i++) {
+      const a = corners[i - 1], b = corners[i];
+      const count = Math.ceil(Math.hypot(...b.map((x, k) => x - a[k])) / .25);
+      for (let j = 1; j <= count; j++) points.push(a.map((x, k) => x + j / count * (b[k] - x)) as unknown as PointMm);
+    }
+    const thread: EquilibriumYarn = { id: 'exterior-detour', radiusMm: .1, axialStiffnessN: 1, bendingStiffnessNmm2: .01,
+      nodes: points.map(positionMm => ({ positionMm, fixed: false })),
+      restLengthsMm: points.slice(1).map((p, i) => Math.hypot(...p.map((x, k) => x - points[i][k]))) };
+    const audit = auditAssignedPassage(thread, domain);
+    assert.equal(audit.crossings.length, 2); assert.deepEqual(audit.outsideSegmentIndices, []);
+    assert.deepEqual(audit.unresolvedSegmentIndices, []); assert.equal(audit.hasBuriedAxis, true);
+    assert.deepEqual(audit.pairing.crossings.map(c => c.mouth), ['entry', 'exit']);
+    assert.deepEqual(audit.crossings.map(c => c.radialDirection), ['outward', 'inward']);
+    assert.equal(audit.status, 'rejected');
+    // Reaching the envelope at a polygonal vertex and turning back is a touch,
+    // not an inward crossing followed by a distinct outward crossing.
+    const mouthX = -Math.sqrt(10.1 ** 2 - y ** 2);
+    const touch = auditAssignedPassage({ ...thread,
+      nodes: [-2, mouthX, -2].map(x => ({ positionMm: [x, y, 0] as PointMm, fixed: false })),
+      restLengthsMm: [2 + mouthX, 2 + mouthX] }, domain);
+    assert.equal(touch.crossings.length, 1);
+    assert.equal(touch.crossings[0].radialDirection, 'ambiguous');
+    assert.equal(touch.pairing.status, 'unresolved'); assert.equal(touch.status, 'unresolved');
   });
 
   it('admits a shallow channel route above nominal R without relaxing the exclusion envelope or clearance', () => {

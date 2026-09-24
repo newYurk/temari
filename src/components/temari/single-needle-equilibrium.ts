@@ -114,7 +114,12 @@ export function buildSingleNeedleEquilibriumInput(options: SingleNeedleEquilibri
   };
 }
 
-type PassageCrossing = { segmentIndex: number; t: number; pointMm: PointMm; channelGapMm: number };
+type PassageCrossing = {
+  segmentIndex: number; t: number; pointMm: PointMm; channelGapMm: number;
+  /** (x-O) dot segmentDelta, half the derivative of squared radial distance. */
+  radialDotMm2: number;
+  radialDirection: 'inward' | 'outward' | 'ambiguous';
+};
 
 export type AssignedPassageAudit = {
   status: 'passed' | 'rejected' | 'unresolved';
@@ -201,13 +206,23 @@ function auditSphereCrossings(thread: EquilibriumYarn, domain: NeedleChannelDoma
       if (t < -1e-10 || t > 1 + 1e-10) continue;
       const q = Math.max(0, Math.min(1, t));
       const pointMm = a.map((x, k) => x + q * d[k]!) as unknown as PointMm;
+      const radialDotMm2 = d.reduce((sum, x, k) => sum + (m[k] + q * d[k]) * x, 0);
+      const directionAllowance = 128 * Number.EPSILON * Math.max(1, Math.abs(B) / 2, q * A, R * Math.sqrt(A));
+      if (![radialDotMm2, directionAllowance].every(Number.isFinite)) throw new RangeError('Non-finite crossing-direction arithmetic.');
+      const radialDirection: PassageCrossing['radialDirection'] = Math.abs(radialDotMm2) <= directionAllowance
+        ? 'ambiguous' : radialDotMm2 < 0 ? 'inward' : 'outward';
       // Merge only the same event shared by adjacent polygonal segments, not
       // later revisits of the same spatial hole along the working thread.
       const previous = crossings.at(-1);
       if (previous && Math.abs(previous.segmentIndex + previous.t - i - q) <= 1e-10
-        && distance(previous.pointMm, pointMm) <= toleranceMm) continue;
+        && distance(previous.pointMm, pointMm) <= toleranceMm) {
+        // A polygonal vertex may touch the sphere and turn back. Opposite
+        // one-sided directions cannot establish an inward/outward crossing.
+        if (previous.radialDirection !== radialDirection) previous.radialDirection = 'ambiguous';
+        continue;
+      }
       crossings.push({ segmentIndex: i, t: q, pointMm,
-        channelGapMm: pointNeedleChannelClearance(pointMm, domain).channelGapMm });
+        channelGapMm: pointNeedleChannelClearance(pointMm, domain).channelGapMm, radialDotMm2, radialDirection });
     }
   }
   const hasBuriedAxis = thread.nodes.some(n => distance(n.positionMm, center) < R - toleranceMm)
@@ -248,13 +263,16 @@ function auditFiniteAssignedPassage(thread: EquilibriumYarn, domain: NeedleChann
     return { crossingIndex, axisParameter: along / axisLengthMm,
       mouth: Math.abs(fromMiddle) <= toleranceMm ? 'ambiguous' : fromMiddle < 0 ? 'entry' : 'exit' };
   });
-  const pairingStatus = !separatedMouths ? 'unresolved' : paired.length !== 2 ? 'rejected'
+  const ambiguousDirection = crossings.some(c => c.radialDirection === 'ambiguous');
+  const pairingStatus = !separatedMouths || ambiguousDirection ? 'unresolved' : paired.length !== 2 ? 'rejected'
     : paired.some(c => c.mouth === 'ambiguous') ? 'unresolved'
-    : paired[0].mouth === 'entry' && paired[1].mouth === 'exit' ? 'passed' : 'rejected';
+    : paired[0].mouth === 'entry' && paired[1].mouth === 'exit'
+      && crossings[0].radialDirection === 'inward' && crossings[1].radialDirection === 'outward' ? 'passed' : 'rejected';
   const pairing: AssignedPassageAudit['pairing'] = {
     status: pairingStatus, expectedDirection: 'entry-to-exit', axisLengthMm, midplaneClearanceMm, crossings: paired,
   };
-  const status = outside.length || crossings.length !== 2 || !hasBuriedAxis || !portsInsideChannel || pairingStatus === 'rejected' ? 'rejected'
+  const status = outside.length || (!ambiguousDirection
+    && (crossings.length !== 2 || !hasBuriedAxis || !portsInsideChannel || pairingStatus === 'rejected')) ? 'rejected'
     : unresolved.length || pairingStatus === 'unresolved' ? 'unresolved' : 'passed';
   return { status, toleranceMm, segments, outsideSegmentIndices: segments.flatMap((s, i) =>
     s.clearance === 'outside-domain' ? [i] : []), unresolvedSegmentIndices: segments.flatMap((s, i) =>
@@ -263,6 +281,7 @@ function auditFiniteAssignedPassage(thread: EquilibriumYarn, domain: NeedleChann
   crossings, hasBuriedAxis, portsInsideChannel, nominalSurface, pairing,
   diagnostics: !separatedMouths
     ? ['The middle channel disk is not strictly inside the thread-axis exclusion envelope; two separated mouths are not established.']
+    : ambiguousDirection ? ['A tangent or polygonal touch has no established inward/outward crossing direction.']
     : pairingStatus === 'passed' ? [] : [pairingStatus === 'unresolved'
     ? 'A surface crossing cannot be assigned to a channel mouth within tolerance.'
     : 'The path must enter through the entry mouth and leave through the exit mouth exactly once.'] };
