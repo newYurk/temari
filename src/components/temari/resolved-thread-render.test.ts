@@ -73,13 +73,49 @@ describe('resolved thread mesh preserves the supplied solution', () => {
     const points = [new Vector3(1, 0, 0), new Vector3(1.01, 0, 0),
       new Vector3(1.03, .03, .01), new Vector3(1.04, .1, .04)];
     const rotation = new Quaternion().setFromAxisAngle(new Vector3(.3, .7, -.2).normalize(), 1.137);
-    const original = createResolvedThreadGeometry(points, .003, .5);
-    const rotated = createResolvedThreadGeometry(points.map(p => p.clone().applyQuaternion(rotation)), .003, .5);
-    for (const attribute of ['position', 'normal']) for (let i = 0; i < original.getAttribute(attribute).count; i++) {
-      nearPoint(vertex(rotated, i, attribute), vertex(original, i, attribute).applyQuaternion(rotation));
+    for (const heightScale of [1, .5]) {
+      const original = createResolvedThreadGeometry(points, .003, heightScale);
+      const rotated = createResolvedThreadGeometry(points.map(p => p.clone().applyQuaternion(rotation)), .003, heightScale);
+      for (const attribute of ['position', 'normal']) for (let i = 0; i < original.getAttribute(attribute).count; i++) {
+        nearPoint(vertex(rotated, i, attribute), vertex(original, i, attribute).applyQuaternion(rotation));
+      }
+      assert.deepEqual(Array.from(rotated.getIndex()!.array), Array.from(original.getIndex()!.array));
+      original.dispose(); rotated.dispose();
     }
-    assert.deepEqual(Array.from(rotated.getIndex()!.array), Array.from(original.getIndex()!.array));
-    original.dispose(); rotated.dispose();
+  });
+
+  it('does not flip a circular ring phase where a gentle planar parabola has a radial tangent', () => {
+    // p(t)=(1+t,.2*t²,0), t in [-.2,.2]. Its curvature is at most .4,
+    // so r*k <= .004. The plane binormal is the same +z at every sample,
+    // including t=0 where independently projected radial frames are singular.
+    const points = Array.from({ length: 9 }, (_, i) => {
+      const t = (i - 4) * .05;
+      return new Vector3(1 + t, .2 * t * t, 0);
+    });
+    const radius = .01, mesh = createResolvedThreadGeometry(points, radius);
+    assert.deepEqual(mesh.userData.centerline, points);
+    assert.equal(mesh.getAttribute('position').count, points.length * ring);
+    for (let i = 0; i < points.length; i++) {
+      nearPoint(vertex(mesh, i * ring + 5).sub(points[i]!), new Vector3(0, 0, radius));
+      nearPoint(vertex(mesh, i * ring + 15).sub(points[i]!), new Vector3(0, 0, -radius));
+    }
+    mesh.dispose();
+  });
+
+  it('does not hide a folded finite tube at an inadmissibly short sharp turn', () => {
+    const points = [new Vector3(-1, 1, 0), new Vector3(0, 1, 0),
+      new Vector3(.01, 1, 0), new Vector3(.01, 2, 0)];
+    const mesh = createResolvedThreadGeometry(points, .355), indices = mesh.getIndex()!;
+    let folded = 0;
+    for (let i = 0; i < indices.count; i += 3) {
+      const ids = [indices.getX(i), indices.getX(i + 1), indices.getX(i + 2)];
+      const [a, b, c] = ids.map(id => vertex(mesh, id));
+      const outward = ids.reduce((sum, id) => sum.add(vertex(mesh, id, 'normal')), new Vector3());
+      if (b!.sub(a!).cross(c!.sub(a!)).dot(outward) < -1e-12) folded++;
+    }
+    assert.ok(folded > 0, 'Transport must not repair or conceal an invalid supplied centerline');
+    assert.deepEqual(mesh.userData.centerline, points);
+    mesh.dispose();
   });
 
   it('does not mutate input nodes and keeps centerline metadata independent of the caller', () => {

@@ -1419,6 +1419,8 @@ type ResolvedThreadFrame = { tangent: THREE.Vector3; heightNormal: THREE.Vector3
  * Render an already resolved open centerline in its own coordinate units.
  * One ring per input node: no smoothing, interpolation, taper or radial lift.
  * `radius` is the width semiaxis; `radius * heightScale` is the height semiaxis.
+ * A round section uses minimum-rotation transport; ellipses retain their
+ * sphere-radial height orientation. Neither choice alters the supplied axis.
  * This only constructs a mesh; it does not certify contact or tube regularity.
  */
 export function createResolvedThreadGeometry(
@@ -1471,6 +1473,27 @@ export function createResolvedThreadGeometry(
     }
     return { tangent, heightNormal };
   });
+  if (heightScale === 1) {
+    // A circle has no privileged radial axis. Reprojecting it independently at
+    // every node can reverse the ring phase when the tangent crosses radial,
+    // twisting mesh strips despite an otherwise gentle centerline. Transport
+    // one geometric frame instead; do not invent torsion or move the points.
+    const seed = defined[0]!;
+    const transport = (from: number, to: number) => {
+      const a = frames[from]!, b = frames[to]!;
+      const axis = new THREE.Vector3().crossVectors(a.tangent, b.tangent);
+      const sine = axis.length(), cosine = THREE.MathUtils.clamp(a.tangent.dot(b.tangent), -1, 1);
+      b.heightNormal.copy(a.heightNormal);
+      if (sine > Number.EPSILON) {
+        b.heightNormal.applyQuaternion(new THREE.Quaternion().setFromAxisAngle(axis.divideScalar(sine), Math.atan2(sine, cosine)));
+      }
+      // For an exactly antiparallel pair the existing normal supplies a
+      // geometric pi-rotation axis and is unchanged; no world-axis fallback.
+      b.heightNormal.addScaledVector(b.tangent, -b.heightNormal.dot(b.tangent)).normalize();
+    };
+    for (let i = seed + 1; i < frames.length; i++) transport(i - 1, i);
+    for (let i = seed - 1; i >= 0; i--) transport(i + 1, i);
+  }
   const geometry = tubeOnSphere(points, radius, false, false, 0, heightScale, false, frames);
   // Keep doubles for comparison with the solver; mesh positions are Float32.
   geometry.userData.centerline = points.map(p => p.clone());
