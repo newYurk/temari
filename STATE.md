@@ -97,4 +97,5 @@ force-push запрещён; ветка живой сайт не меняет, �
 
 Публичная страница — только `public/design.html`; затем `node scripts/sync-design.mjs --write` и
 `--check`. Новое допущение попадает в [docs/assumptions.md](docs/assumptions.md) тем же коммитом, что
-и в код. Режим работы — Astra: Ultra для модели и трудной математики, High для реализации.
+и в код. Исследовательская база ремесла (словарь, источники, trace GT14): [docs/knowledge/README.md](docs/knowledge/README.md).
+Режим работы — Astra: Ultra для модели и трудной математики, High для реализации.
